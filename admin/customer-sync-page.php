@@ -1,38 +1,57 @@
 <?php
 /**
- * Displays the customer synchronization page for the Softone WooCommerce Integration.
+ * Displays the customer sync page for the Softone WooCommerce Integration.
  */
 function softone_customers_page() {
-    if (isset($_POST['sync_customers']) && check_admin_referer('softone_sync_customers_action', 'softone_sync_customers_nonce')) {
+    if (isset($_POST['sync_customers'])) {
         $result = softone_sync_customers();
-        echo '<div class="notice notice-success"><p>' . $result . '</p></div>';
+        if (is_array($result) && isset($result['success']) && $result['success']) {
+            echo '<div class="notice notice-success"><p>' . esc_html($result['message']) . '</p></div>';
+        } else {
+            echo '<div class="notice notice-error"><p>Failed to synchronize customers.</p></div>';
+        }
     }
     ?>
     <div class="wrap">
-        <h1>Sync Softone Customers</h1>
+        <h1>Customer Sync</h1>
         <form method="post">
-            <?php wp_nonce_field('softone_sync_customers_action', 'softone_sync_customers_nonce'); ?>
-            <input type="hidden" name="sync_customers" value="1">
+            <input type="hidden" name="sync_customers" value="1" />
             <?php submit_button('Sync Customers'); ?>
         </form>
-        <h2>Synced Customers</h2>
-        <table class="widefat">
+        <?php if (isset($result) && is_array($result) && isset($result['customers'])): ?>
+        <h2>Synchronized Customers</h2>
+        <table class="widefat fixed" cellspacing="0">
             <thead>
                 <tr>
                     <th>ID</th>
+                    <th>Code</th>
                     <th>Name</th>
                     <th>Email</th>
+                    <th>Address</th>
+                    <th>City</th>
+                    <th>Zip</th>
+                    <th>Country</th>
+                    <th>Phone</th>
                 </tr>
             </thead>
             <tbody>
-                <?php
-                $customers = get_option('softone_synced_customers', []);
-                foreach ($customers as $customer) {
-                    echo '<tr><td>' . esc_html($customer['id']) . '</td><td>' . esc_html($customer['name']) . '</td><td>' . esc_html($customer['email']) . '</td></tr>';
-                }
-                ?>
+                <?php foreach ($result['customers'] as $customer): ?>
+                <tr>
+                    <td><?php echo esc_html($customer['TRDR']); ?></td>
+                    <td><?php echo esc_html($customer['CODE']); ?></td>
+                    <td><?php echo esc_html($customer['NAME']); ?></td>
+                    <td><?php echo esc_html($customer['EMAIL']); ?></td>
+                    <td><?php echo esc_html($customer['ADDRESS']); ?></td>
+                    <td><?php echo esc_html($customer['CITY']); ?></td>
+                    <td><?php echo esc_html($customer['ZIP']); ?></td>
+                    <td><?php echo esc_html($customer['COUNTRY']); ?></td>
+                    <td><?php echo esc_html($customer['PHONE1']); ?></td>
+                </tr>
+                <?php endforeach; ?>
             </tbody>
         </table>
+        <?php endif; ?>
     </div>
     <?php
 }
+?>

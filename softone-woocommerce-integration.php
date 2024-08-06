@@ -162,13 +162,43 @@ function softone_sync_customers() {
     if (class_exists('WooCommerce')) {
         $api = new Softone_API();
         $customers = $api->get_customers();
-        if ($customers) {
-            update_option('softone_synced_customers', array_map('sanitize_text_field', $customers));
+        if ($customers && isset($customers['rows'])) {
+            foreach ($customers['rows'] as $customer) {
+                // Check if customer exists by email
+                $existing_customer_id = email_exists($customer['EMAIL']);
+                if ($existing_customer_id) {
+                    // Update existing customer
+                    wp_update_user([
+                        'ID' => $existing_customer_id,
+                        'first_name' => sanitize_text_field($customer['NAME']),
+                        'billing_address_1' => sanitize_text_field($customer['ADDRESS']),
+                        'billing_city' => sanitize_text_field($customer['CITY']),
+                        'billing_postcode' => sanitize_text_field($customer['ZIP']),
+                        'billing_country' => sanitize_text_field($customer['COUNTRY']),
+                        'billing_phone' => sanitize_text_field($customer['PHONE1']),
+                    ]);
+                } else {
+                    // Create new customer
+                    wp_insert_user([
+                        'user_login' => sanitize_user($customer['CODE']),
+                        'user_pass' => wp_generate_password(),
+                        'user_email' => sanitize_email($customer['EMAIL']),
+                        'first_name' => sanitize_text_field($customer['NAME']),
+                        'billing_address_1' => sanitize_text_field($customer['ADDRESS']),
+                        'billing_city' => sanitize_text_field($customer['CITY']),
+                        'billing_postcode' => sanitize_text_field($customer['ZIP']),
+                        'billing_country' => sanitize_text_field($customer['COUNTRY']),
+                        'billing_phone' => sanitize_text_field($customer['PHONE1']),
+                        'role' => 'customer',
+                    ]);
+                }
+            }
+            update_option('softone_synced_customers', array_map('sanitize_text_field', $customers['rows']));
             softone_log('sync_customers', 'Customers synchronized successfully.');
-            return 'Customers synchronized successfully.';
+            return ['success' => true, 'message' => 'Customers synchronized successfully.', 'customers' => $customers['rows']];
         } else {
             softone_log('sync_customers', 'Failed to synchronize customers.');
-            return 'Failed to synchronize customers.';
+            return ['success' => false, 'message' => 'Failed to synchronize customers.'];
         }
     }
 }
@@ -177,16 +207,40 @@ function softone_sync_products() {
     if (class_exists('WooCommerce')) {
         $api = new Softone_API();
         $products = $api->get_products();
-        if ($products) {
-            update_option('softone_synced_products', array_map('sanitize_text_field', $products));
+        if ($products && isset($products['rows'])) {
+            foreach ($products['rows'] as $product) {
+                // Check if product exists by SKU
+                $existing_product_id = wc_get_product_id_by_sku($product['SKU']);
+                if ($existing_product_id) {
+                    // Update existing product
+                    $product_obj = new WC_Product($existing_product_id);
+                    $product_obj->set_name(sanitize_text_field($product['DESC']));
+                    $product_obj->set_price(sanitize_text_field($product['RETAILPRICE']));
+                    $product_obj->set_regular_price(sanitize_text_field($product['RETAILPRICE']));
+                    $product_obj->set_stock_quantity(sanitize_text_field($product['Stock QTY']));
+                    $product_obj->save();
+                } else {
+                    // Create new product
+                    $new_product = new WC_Product();
+                    $new_product->set_name(sanitize_text_field($product['DESC']));
+                    $new_product->set_sku(sanitize_text_field($product['SKU']));
+                    $new_product->set_price(sanitize_text_field($product['RETAILPRICE']));
+                    $new_product->set_regular_price(sanitize_text_field($product['RETAILPRICE']));
+                    $new_product->set_stock_quantity(sanitize_text_field($product['Stock QTY']));
+                    $new_product->set_manage_stock(true);
+                    $new_product->save();
+                }
+            }
+            update_option('softone_synced_products', array_map('sanitize_text_field', $products['rows']));
             softone_log('sync_products', 'Products synchronized successfully.');
-            return 'Products synchronized successfully.';
+            return ['success' => true, 'message' => 'Products synchronized successfully.', 'products' => $products['rows']];
         } else {
             softone_log('sync_products', 'Failed to synchronize products.');
-            return 'Failed to synchronize products.';
+            return ['success' => false, 'message' => 'Failed to synchronize products.'];
         }
     }
 }
+
 
 function softone_sync_orders() {
     if (class_exists('WooCommerce')) {

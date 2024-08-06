@@ -1,38 +1,55 @@
 <?php
 /**
- * Displays the product synchronization page for the Softone WooCommerce Integration.
+ * Displays the product sync page for the Softone WooCommerce Integration.
  */
 function softone_products_page() {
-    if (isset($_POST['sync_products']) && check_admin_referer('softone_sync_products_action', 'softone_sync_products_nonce')) {
+    if (isset($_POST['sync_products'])) {
         $result = softone_sync_products();
-        echo '<div class="notice notice-success"><p>' . $result . '</p></div>';
+        if (is_array($result) && isset($result['success']) && $result['success']) {
+            echo '<div class="notice notice-success"><p>' . esc_html($result['message']) . '</p></div>';
+        } else {
+            echo '<div class="notice notice-error"><p>Failed to synchronize products.</p></div>';
+        }
     }
     ?>
     <div class="wrap">
-        <h1>Sync Softone Products</h1>
+        <h1>Product Sync</h1>
         <form method="post">
-            <?php wp_nonce_field('softone_sync_products_action', 'softone_sync_products_nonce'); ?>
-            <input type="hidden" name="sync_products" value="1">
+            <input type="hidden" name="sync_products" value="1" />
             <?php submit_button('Sync Products'); ?>
         </form>
-        <h2>Synced Products</h2>
-        <table class="widefat">
+        <?php if (isset($result) && is_array($result) && isset($result['products'])): ?>
+        <h2>Synchronized Products</h2>
+        <table class="widefat fixed" cellspacing="0">
             <thead>
                 <tr>
                     <th>ID</th>
+                    <th>Code</th>
                     <th>Name</th>
                     <th>Price</th>
+                    <th>Category</th>
+                    <th>SubCategory</th>
+                    <th>Barcode</th>
+                    <th>Stock</th>
                 </tr>
             </thead>
             <tbody>
-                <?php
-                $products = get_option('softone_synced_products', []);
-                foreach ($products as $product) {
-                    echo '<tr><td>' . esc_html($product['id']) . '</td><td>' . esc_html($product['name']) . '</td><td>' . esc_html($product['price']) . '</td></tr>';
-                }
-                ?>
+                <?php foreach ($result['products'] as $product): ?>
+                <tr>
+                    <td><?php echo esc_html($product['MTRL']); ?></td>
+                    <td><?php echo esc_html($product['CODE']); ?></td>
+                    <td><?php echo esc_html($product['DESC']); ?></td>
+                    <td><?php echo esc_html($product['RETAILPRICE']); ?></td>
+                    <td><?php echo esc_html($product['COMMECATEGORY_NAME']); ?></td>
+                    <td><?php echo esc_html($product['SUBMECATEGORY_NAME']); ?></td>
+                    <td><?php echo esc_html($product['BARCODE']); ?></td>
+                    <td><?php echo esc_html($product['Stock QTY']); ?></td>
+                </tr>
+                <?php endforeach; ?>
             </tbody>
         </table>
+        <?php endif; ?>
     </div>
     <?php
 }
+?>
