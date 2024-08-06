@@ -33,6 +33,19 @@ require_once SOFTONE_PLUGIN_PATH . 'admin/customer-sync-page.php';
 require_once SOFTONE_PLUGIN_PATH . 'admin/product-sync-page.php';
 require_once SOFTONE_PLUGIN_PATH . 'admin/order-sync-page.php';
 require_once SOFTONE_PLUGIN_PATH . 'admin/logs-page.php';
+require 'plugin-update-checker/plugin-update-checker.php';
+
+use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
+
+$myUpdateChecker = PucFactory::buildUpdateChecker(
+	'https://github.com/GeorgeWebDevCy/softone-woocommerce-integration',
+	__FILE__,
+	'softone-woocommerce-integration'
+);
+
+//Set the branch that contains the stable release.
+$myUpdateChecker->setBranch('main');
+
 
 // Initialize plugin
 function softone_woocommerce_integration_init() {
