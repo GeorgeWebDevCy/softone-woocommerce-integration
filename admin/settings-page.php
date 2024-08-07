@@ -28,6 +28,9 @@ function softone_admin_settings() {
     // Add settings fields
     add_settings_field('softone_api_username', 'API Username', 'softone_api_username_callback', 'softone-settings', 'softone_settings_section');
     add_settings_field('softone_api_password', 'API Password', 'softone_api_password_callback', 'softone-settings', 'softone_settings_section');
+
+    register_setting('softone_settings_group', 'softone_api_username');
+    register_setting('softone_settings_group', 'softone_api_password');
 }
 
 // Callbacks for settings fields

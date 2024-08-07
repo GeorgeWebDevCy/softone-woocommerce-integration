@@ -38,14 +38,13 @@ require 'plugin-update-checker/plugin-update-checker.php';
 use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
 
 $myUpdateChecker = PucFactory::buildUpdateChecker(
-	'https://github.com/GeorgeWebDevCy/softone-woocommerce-integration',
-	__FILE__,
-	'softone-woocommerce-integration'
+    'https://github.com/GeorgeWebDevCy/softone-woocommerce-integration',
+    __FILE__,
+    'softone-woocommerce-integration'
 );
 
 //Set the branch that contains the stable release.
 $myUpdateChecker->setBranch('main');
-
 
 // Initialize plugin
 function softone_woocommerce_integration_init() {
@@ -304,7 +303,6 @@ function softone_sync_products() {
     }
 }
 
-
 function softone_sync_orders() {
     if (class_exists('WooCommerce')) {
         $api = new Softone_API();
@@ -316,3 +314,7 @@ function softone_sync_orders() {
         return 'Orders synchronized successfully.';
     }
 }
+
+
+
+

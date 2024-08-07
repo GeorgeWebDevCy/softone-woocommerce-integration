@@ -191,15 +191,51 @@ class Softone_API {
      * @return bool True on success, false on failure.
      */
     public function create_order($order) {
+        $items = [];
+
+        foreach ($order->get_items() as $item_id => $item) {
+            $product = $item->get_product();
+            $items[] = [
+                'MTRL' => $product->get_sku(),
+                'QTY1' => $item->get_quantity(),
+                'PRICE' => $item->get_total(),
+            ];
+        }
+
+        // Capture payment method
+        $payment_method = $order->get_payment_method(); // e.g., 'cod', 'paypal', etc.
+        $payment_method_title = $order->get_payment_method_title(); // e.g., 'Cash on Delivery', 'PayPal'
+
+        // Include payment method in comments
+        $order_comments = $order->get_customer_note();
+        $order_comments .= "\nPayment Method: " . $payment_method_title;
+
         $order_data = [
-            // Map WooCommerce order data to Softone order data format
+            'SALDOC' => [
+                [
+                    'SERIES' => 3000, // This should be defined based on your Softone settings
+                    'TRDR' => $order->get_billing_email(), // Map this appropriately
+                    'TRNDATE' => gmdate('Y-m-d H:i:s', strtotime($order->get_date_created())),
+                    'COMMENTS' => $order_comments, // Add payment method to the comments
+                ]
+            ],
+            'ITELINES' => $items
         ];
-        return $this->request('setData', [
+
+        $response = $this->request('setData', [
             'clientID' => $this->session,
             'appID' => 1000,
             'object' => 'SALDOC',
             'data' => $order_data
         ]);
+
+        if ($response) {
+            softone_log('create_order', 'Order sent to Softone successfully: ' . $order->get_id());
+            return true;
+        } else {
+            softone_log('create_order', 'Failed to send order to Softone: ' . $order->get_id());
+            return false;
+        }
     }
 }
 ?>

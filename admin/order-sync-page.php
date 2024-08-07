@@ -15,6 +15,38 @@ function softone_orders_page() {
             <input type="hidden" name="sync_orders" value="1">
             <?php submit_button('Sync Orders'); ?>
         </form>
+        <?php
+        // Assuming softone_get_orders() function retrieves orders from Softone
+        $orders = softone_get_orders();
+        if ($orders) {
+            ?>
+            <h2>Synchronized Orders</h2>
+            <table class="widefat fixed" cellspacing="0">
+                <thead>
+                    <tr>
+                        <th>Order ID</th>
+                        <th>Customer</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($orders as $order): ?>
+                    <tr>
+                        <td><?php echo esc_html($order['id']); ?></td>
+                        <td><?php echo esc_html($order['customer']); ?></td>
+                        <td><?php echo esc_html($order['date']); ?></td>
+                        <td><?php echo esc_html($order['status']); ?></td>
+                        <td><?php echo esc_html($order['total']); ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php
+        }
+        ?>
     </div>
     <?php
 }
+?>
