@@ -125,12 +125,18 @@ class Softone_API {
             ]),
             'headers' => ['Content-Type' => 'application/json']
         ]);
-
+    
         $body = wp_remote_retrieve_body($response);
+        $body = mb_convert_encoding($body, 'UTF-8', 'UTF-8');
+        $body = preg_replace('/[^\\x00-\\x7F\\xC2-\\xF4][\\x80-\\xBF]*/', '', $body);
+        softone_log('get_products', 'Response body: ' . $body);
+    
         $data = json_decode($body, true);
-
+        softone_log('get_products', 'Decoded: ' . print_r($data, true));
+    
         return isset($data['rows']) ? array_slice($data['rows'], $offset, $limit) : [];
     }
+    
 
     public function sync_product_to_woocommerce($item) {
         $sku = $item['SKU'];
