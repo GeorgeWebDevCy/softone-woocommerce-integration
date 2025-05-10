@@ -114,7 +114,7 @@ class Softone_API {
     }
     
     
-    ppublic function get_products($offset = 0, $limit = 10) {
+    public function get_products($offset = 0, $limit = 10) {
         $response = wp_remote_post($this->endpoint, [
             'body' => wp_json_encode([
                 'service' => 'SqlData',
