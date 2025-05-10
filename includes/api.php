@@ -107,7 +107,7 @@ class Softone_API {
         }
     }
 
-    public function get_products($offset = 0, $limit = 10) {
+    public function get_products() {
         $response = wp_remote_post($this->endpoint, [
             'body' => wp_json_encode([
                 'service' => 'SqlData',
@@ -125,13 +125,13 @@ class Softone_API {
         }
 
         $body = wp_remote_retrieve_body($response);
-        // Decode SoftOne ISO-8859-7 encoded Greek text
         $body = mb_convert_encoding($body, 'UTF-8', 'ISO-8859-7,UTF-8');
         $body = iconv('UTF-8', 'UTF-8//IGNORE', $body);
         if ($body === false) {
             softone_log('get_products', '❌ iconv conversion failed.');
             return [];
         }
+
         $body = trim($body);
         softone_log('get_products', 'Cleaned body: ' . $body);
 
@@ -142,11 +142,11 @@ class Softone_API {
         }
 
         if (!isset($data['rows']) || !is_array($data['rows'])) {
-            softone_log('get_products', 'Missing or invalid "rows" in API response: ' . print_r($data, true));
+            softone_log('get_products', 'Missing or invalid \"rows\" in API response: ' . print_r($data, true));
             return [];
         }
 
-        $items = array_slice($data['rows'], $offset, $limit);
+        $items = $data['rows'];
         softone_log('get_products', 'Decoded rows count: ' . count($items));
         return $items;
     }
@@ -220,48 +220,53 @@ class Softone_API {
     }
 }
 
+// AJAX handler for batch syncing
 add_action('wp_ajax_softone_sync_products', function () {
     check_ajax_referer('softone_sync_products_nonce');
 
     $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
-    $limit = isset($_POST['limit']) ? intval($_POST['limit']) : 10;
+    $limit = 20;
 
     $api = new Softone_API();
+    $all_items = $api->get_products();
+    $total = count($all_items);
+
     $log = [];
+    $added = 0;
+    $updated = 0;
+    $failed = 0;
 
-    try {
-        $log[] = "🔍 Fetching products from SoftOne: offset $offset, limit $limit";
-        $items = $api->get_products($offset, $limit);
-
-        if (!is_array($items) || count($items) === 0) {
-            $log[] = "❌ No products returned from API.";
-            wp_send_json([
-                'message' => implode("\n", $log),
-                'done' => true,
-                'progress' => 100
-            ]);
-        }
-
-        foreach ($items as $i => $item) {
-            try {
-                $result = $api->sync_product_to_woocommerce($item);
-                $log[] = "✅ [$i] $result";
-            } catch (Throwable $e) {
-                $log[] = "❌ [$i] Failed SKU: " . ($item['SKU'] ?? '[UNKNOWN]') . ' – Error: ' . $e->getMessage();
-            }
-        }
-
+    $batch = array_slice($all_items, $offset, $limit);
+    if (empty($batch)) {
         wp_send_json([
-            'message' => implode("\n", $log),
-            'done' => count($items) < $limit,
-            'progress' => min(100, round((($offset + count($items)) / 200) * 100))
-        ]);
-
-    } catch (Exception $e) {
-        wp_send_json([
-            'message' => "❌ sync_products error: " . $e->getMessage(),
+            'message' => "✅ Sync complete. Added: $added, Updated: $updated, Failed: $failed",
             'done' => true,
             'progress' => 100
         ]);
     }
+
+    foreach ($batch as $i => $item) {
+        try {
+            $result = $api->sync_product_to_woocommerce($item);
+            if (str_starts_with($result, 'Added')) $added++;
+            elseif (str_starts_with($result, 'Updated')) $updated++;
+            $log[] = "✅ [$offset+$i] $result";
+        } catch (Throwable $e) {
+            $failed++;
+            $log[] = "❌ [$offset+$i] Failed SKU: " . ($item['SKU'] ?? '[UNKNOWN]') . ' – Error: ' . $e->getMessage();
+        }
+    }
+
+    $progress = min(100, round((($offset + $limit) / $total) * 100));
+    $next_offset = $offset + $limit;
+
+    wp_send_json([
+        'message' => implode("\n", $log),
+        'done' => $next_offset >= $total,
+        'offset' => $next_offset,
+        'progress' => $progress,
+        'added' => $added,
+        'updated' => $updated,
+        'failed' => $failed
+    ]);
 });
