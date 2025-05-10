@@ -25,6 +25,8 @@ class Softone_API {
      */
     private function login_and_authenticate() {
         // Log credentials used for debugging
+        softone_log('Login', 'Raw username from settings: [' . $this->username . ']');
+softone_log('Login', 'Raw password from settings: [' . $this->password . ']');
         softone_log('Login', 'Attempting login with username: ' . $this->username . ', password: ' . $this->password);
     
         // Login
