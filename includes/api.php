@@ -153,17 +153,10 @@ add_action('wp_ajax_softone_sync_products', function () {
             $result = $api->sync_product_to_woocommerce($item);
             if (str_starts_with($result, 'Added')) $added++;
             elseif (str_starts_with($result, 'Updated')) $updated++;
-
-            $cat = $item['COMMECATEGORY NAME'] ?? '-';
-            $sub = $item['SUBMECATEGORY NAME'] ?? '-';
-            $log[] = "✅ [" . ($offset + $i) . "] SKU: {$item['SKU']} → {$result} | Category: $cat / $sub";
+            $log[] = "✅ [$offset+$i] $result";
         } catch (Throwable $e) {
             $failed++;
-            $log[] = "❌ [" . ($offset + $i) . "] Failed SKU: " . ($item['SKU'] ?? '[UNKNOWN]') . ' – Error: ' . $e->getMessage();
-        }
-    } catch (Throwable $e) {
-            $failed++;
-            $log[] = "❌ [" . ($offset + $i) . "] Failed SKU: " . ($item['SKU'] ?? '[UNKNOWN]') . ' – Error: ' . $e->getMessage();
+            $log[] = "❌ [$offset+$i] Failed SKU: " . ($item['SKU'] ?? '[UNKNOWN]') . ' – Error: ' . $e->getMessage();
         }
     }
     $progress = min(100, round((($offset + $limit) / $total) * 100));
