@@ -50,7 +50,11 @@ The plugin uses WordPress cron jobs to sync data. Customers and orders are synce
 * Initial release.
 
 = 2.0.0 =
-* Agaims.
+* Agains.
+
+= 2.0.1 =
+* Agains.
+
 
 == Arbitrary section ==
 
