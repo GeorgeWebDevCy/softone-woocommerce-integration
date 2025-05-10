@@ -131,11 +131,14 @@ class Softone_API {
             return [];
         }
     
-        softone_log('get_products', 'Raw response: ' . print_r($response, true));
-    
+        // Extract raw body
         $body = wp_remote_retrieve_body($response);
+    
+        // Clean encoding – allow Greek characters and remove corrupt bytes
         $body = mb_convert_encoding($body, 'UTF-8', 'UTF-8');
-        $body = preg_replace('/[^\x00-\x7F\xC2-\xF4][\x80-\xBF]*/', '', $body);
+        $body = preg_replace('/[\\x00-\\x1F\\x80-\\xFF]+/u', '', $body); // remove control chars
+        $body = preg_replace('/[^\\x20-\\x7E\\xA0-\\xFF\\x{0370}-\\x{03FF}\\x{1F00}-\\x{1FFF}]/u', '', $body); // allow extended + Greek
+    
         softone_log('get_products', 'Cleaned body: ' . $body);
     
         $data = json_decode($body, true);
@@ -144,13 +147,14 @@ class Softone_API {
             return [];
         }
     
-        if (!isset($data['rows'])) {
-            softone_log('get_products', 'Missing "rows" in API response: ' . print_r($data, true));
+        if (!isset($data['rows']) || !is_array($data['rows'])) {
+            softone_log('get_products', 'Missing or invalid "rows" in API response: ' . print_r($data, true));
             return [];
         }
     
-        softone_log('get_products', 'Decoded rows count: ' . count($data['rows']));
-        return array_slice($data['rows'], $offset, $limit);
+        $items = array_slice($data['rows'], $offset, $limit);
+        softone_log('get_products', 'Decoded rows count: ' . count($items));
+        return $items;
     }
     
     
