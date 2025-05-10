@@ -135,14 +135,24 @@ class Softone_API {
     
         $body = wp_remote_retrieve_body($response);
         $body = mb_convert_encoding($body, 'UTF-8', 'UTF-8');
-        $body = preg_replace('/[^\\x00-\\x7F\\xC2-\\xF4][\\x80-\\xBF]*/', '', $body);
+        $body = preg_replace('/[^\x00-\x7F\xC2-\xF4][\x80-\xBF]*/', '', $body);
         softone_log('get_products', 'Cleaned body: ' . $body);
     
         $data = json_decode($body, true);
-        softone_log('get_products', 'Decoded data: ' . print_r($data, true));
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            softone_log('get_products', 'JSON decode error: ' . json_last_error_msg());
+            return [];
+        }
     
-        return isset($data['rows']) ? array_slice($data['rows'], $offset, $limit) : [];
+        if (!isset($data['rows'])) {
+            softone_log('get_products', 'Missing "rows" in API response: ' . print_r($data, true));
+            return [];
+        }
+    
+        softone_log('get_products', 'Decoded rows count: ' . count($data['rows']));
+        return array_slice($data['rows'], $offset, $limit);
     }
+    
     
     
 
