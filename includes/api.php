@@ -114,7 +114,7 @@ class Softone_API {
     }
     
     
-    public function get_products($offset = 0, $limit = 10) {
+    ppublic function get_products($offset = 0, $limit = 10) {
         $response = wp_remote_post($this->endpoint, [
             'body' => wp_json_encode([
                 'service' => 'SqlData',
@@ -126,16 +126,24 @@ class Softone_API {
             'headers' => ['Content-Type' => 'application/json']
         ]);
     
+        if (is_wp_error($response)) {
+            softone_log('get_products', 'Request error: ' . $response->get_error_message());
+            return [];
+        }
+    
+        softone_log('get_products', 'Raw response: ' . print_r($response, true));
+    
         $body = wp_remote_retrieve_body($response);
         $body = mb_convert_encoding($body, 'UTF-8', 'UTF-8');
         $body = preg_replace('/[^\\x00-\\x7F\\xC2-\\xF4][\\x80-\\xBF]*/', '', $body);
-        softone_log('get_products', 'Response body: ' . $body);
+        softone_log('get_products', 'Cleaned body: ' . $body);
     
         $data = json_decode($body, true);
-        softone_log('get_products', 'Decoded: ' . print_r($data, true));
+        softone_log('get_products', 'Decoded data: ' . print_r($data, true));
     
         return isset($data['rows']) ? array_slice($data['rows'], $offset, $limit) : [];
     }
+    
     
 
     public function sync_product_to_woocommerce($item) {
