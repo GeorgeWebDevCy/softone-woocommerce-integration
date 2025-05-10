@@ -164,13 +164,13 @@ class Softone_API {
         softone_log('sync_product', "Processing item:\n" . print_r($item, true));
     
         try {
-            // Validate required fields
             if (empty($item['SKU']) || empty($item['DESC'])) {
                 throw new Exception('Missing SKU or description.');
             }
     
-            $sku = trim($item['SKU']);
-            $name = trim($item['DESC']);
+            // Convert and sanitize input fields
+            $sku = sanitize_text_field(mb_convert_encoding(trim($item['SKU']), 'UTF-8', 'UTF-8'));
+            $name = sanitize_text_field(mb_convert_encoding(trim($item['DESC']), 'UTF-8', 'UTF-8'));
             $price = isset($item['RETAILPRICE']) && is_numeric($item['RETAILPRICE']) ? floatval($item['RETAILPRICE']) : 0;
             $qty = isset($item['Stock QTY']) && is_numeric($item['Stock QTY']) ? intval($item['Stock QTY']) : 0;
     
@@ -183,9 +183,18 @@ class Softone_API {
             $product->set_stock_quantity($qty);
             $product->set_manage_stock(true);
     
-            // Category and subcategory
+            // Optional: set short description (if supported by API)
+            if (!empty($item['DESCRIPTION'])) {
+                $desc = mb_convert_encoding($item['DESCRIPTION'], 'UTF-8', 'UTF-8');
+                $product->set_description(wp_kses_post($desc));
+            }
+    
+            // Category assignment
             $cat_name = isset($item['COMMECATEGORY NAME']) ? trim($item['COMMECATEGORY NAME']) : 'Uncategorized';
             $subcat_name = isset($item['SUBMECATEGORY NAME']) ? trim($item['SUBMECATEGORY NAME']) : '';
+    
+            $cat_name = sanitize_text_field(mb_convert_encoding($cat_name, 'UTF-8', 'UTF-8'));
+            $subcat_name = sanitize_text_field(mb_convert_encoding($subcat_name, 'UTF-8', 'UTF-8'));
     
             softone_log('sync_product', "Assigning categories: $cat_name > $subcat_name");
     
@@ -214,9 +223,10 @@ class Softone_API {
             if ($subcat_id) {
                 $category_ids[] = $subcat_id;
             }
+    
             $product->set_category_ids($category_ids);
     
-            // Save product
+            // Save and return result
             $id = $product->save();
             softone_log('sync_product', "✔️ Product {$sku} saved. ID: {$id}");
     
@@ -227,7 +237,7 @@ class Softone_API {
             return "❌ Failed to sync SKU {$item['SKU']}: " . $e->getMessage();
         }
     }
-    
+     
     
 }
 
