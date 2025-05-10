@@ -1,6 +1,6 @@
 <?php
 /**
- * Handles interactions with the Softone API.
+ * Handles interactions with the Softone API and WooCommerce product sync.
  */
 class Softone_API {
 
@@ -16,20 +16,15 @@ class Softone_API {
         $this->client_id = get_option('softone_client_id');
         $this->session = get_option('softone_api_session');
 
-        // Perform login and authentication
         $this->login_and_authenticate();
     }
 
-    /**
-     * Logs in to the Softone API and authenticates.
-     */
     private function login_and_authenticate() {
-        // Log credentials used for debugging
-        softone_log('Login', 'Raw username from settings: [' . $this->username . ']');
-softone_log('Login', 'Raw password from settings: [' . $this->password . ']');
-        softone_log('Login', 'Attempting login with username: ' . $this->username . ', password: ' . $this->password);
-    
-        // Login
+        // Avoid logging sensitive info in production
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            softone_log('Login', 'Using credentials from settings.');
+        }
+
         $login_response = wp_remote_post($this->endpoint, [
             'body' => wp_json_encode([
                 'service' => 'login',
@@ -39,43 +34,22 @@ softone_log('Login', 'Raw password from settings: [' . $this->password . ']');
             ]),
             'headers' => ['Content-Type' => 'application/json']
         ]);
-    
-        if (is_wp_error($login_response)) {
-            softone_log('Login', 'Login request failed: ' . $login_response->get_error_message());
-            return false;
-        }
-    
+
         $login_body = wp_remote_retrieve_body($login_response);
-        if (!$login_body) {
-            softone_log('Login', 'Login failed: Empty response body');
-            return false;
-        }
-    
-        // Log the raw response body for debugging
-        softone_log('Login', 'Raw response body: ' . $login_body);
-    
-        $login_body = mb_convert_encoding($login_body, 'UTF-8', 'UTF-8');
         $login_data = json_decode($login_body, true);
-    
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            softone_log('Login', 'Login failed: Invalid JSON response - ' . json_last_error_msg());
-            return false;
-        }
-    
-        if (isset($login_data['success']) && $login_data['success']) {
+
+        if (!empty($login_data['success'])) {
             $this->client_id = $login_data['clientID'];
             update_option('softone_client_id', $this->client_id);
-            softone_log('Login', 'Login successful');
         } else {
-            softone_log('Login', 'Login failed: ' . json_encode($login_data));
+            softone_log('Login', 'Login failed.');
             return false;
         }
-    
-        // Authenticate
+
         $auth_response = wp_remote_post($this->endpoint, [
             'body' => wp_json_encode([
                 'service' => 'authenticate',
-                'clientID' => sanitize_text_field($this->client_id),
+                'clientID' => $this->client_id,
                 'company' => 10,
                 'branch' => 101,
                 'module' => 0,
@@ -83,162 +57,95 @@ softone_log('Login', 'Raw password from settings: [' . $this->password . ']');
             ]),
             'headers' => ['Content-Type' => 'application/json']
         ]);
-    
-        if (is_wp_error($auth_response)) {
-            softone_log('Authenticate', 'Authenticate request failed: ' . $auth_response->get_error_message());
-            return false;
-        }
-    
+
         $auth_body = wp_remote_retrieve_body($auth_response);
-        if (!$auth_body) {
-            softone_log('Authenticate', 'Authenticate failed: Empty response body');
-            return false;
-        }
-    
-        softone_log('Authenticate', 'Raw response body: ' . $auth_body);
-    
-        $auth_body = mb_convert_encoding($auth_body, 'UTF-8', 'UTF-8');
         $auth_data = json_decode($auth_body, true);
-    
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            softone_log('Authenticate', 'Authenticate failed: Invalid JSON response - ' . json_last_error_msg());
-            return false;
-        }
-    
-        if (isset($auth_data['success']) && $auth_data['success']) {
+
+        if (!empty($auth_data['success'])) {
             $this->session = $auth_data['clientID'];
             update_option('softone_api_session', $this->session);
-            softone_log('Authenticate', 'Authenticate successful');
             return true;
-        } else {
-            softone_log('Authenticate', 'Authenticate failed: ' . json_encode($auth_data));
-            return false;
         }
+
+        softone_log('Authenticate', 'Authentication failed.');
+        return false;
     }
-    
 
-    /**
-     * Makes a request to the Softone API.
-     *
-     * @param string $service The service to call.
-     * @param array $data The data to send.
-     * @return mixed The response from the API.
-     */
-    private function request($service, $data) {
-        $data['service'] = sanitize_text_field($service);
-        $data['session'] = $this->session;
-
+    public function get_products($offset = 0, $limit = 10) {
         $response = wp_remote_post($this->endpoint, [
-            'body' => wp_json_encode(array_map('sanitize_text_field', $data)),
+            'body' => wp_json_encode([
+                'service' => 'SqlData',
+                'clientid' => $this->session,
+                'appId' => 1000,
+                'SqlName' => 'getItems',
+                'pMins' => 99999
+            ]),
             'headers' => ['Content-Type' => 'application/json']
         ]);
 
-        if (is_wp_error($response)) {
-            softone_log($service, 'API request failed: ' . $response->get_error_message());
-            return false;
-        }
-
         $body = wp_remote_retrieve_body($response);
-        if (!$body) {
-            softone_log($service, 'API request failed: Empty response body');
-            return false;
-        }
-
-        // Ensure the response is properly encoded in UTF-8
-        $body = mb_convert_encoding($body, 'UTF-8', 'UTF-8');
-
         $data = json_decode($body, true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            softone_log($service, 'API request failed: Invalid JSON response - ' . json_last_error_msg());
-            return false;
-        }
 
-        if (!isset($data['success']) || !$data['success']) {
-            softone_log($service, 'API request failed: ' . json_encode($data));
-            return false;
-        }
-
-        return $data;
+        return isset($data['rows']) ? array_slice($data['rows'], $offset, $limit) : [];
     }
 
-    /**
-     * Fetches customers from the Softone API.
-     *
-     * @return array|false The customers data or false on failure.
-     */
-    public function get_customers() {
-        return $this->request('SqlData', [
-            'clientid' => $this->session,
-            'appId' => 1000,
-            'SqlName' => 'getCustomers'
-        ]);
-    }
+    public function sync_product_to_woocommerce($item) {
+        $sku = $item['SKU'];
+        $existing_id = wc_get_product_id_by_sku($sku);
 
-    /**
-     * Fetches products from the Softone API.
-     *
-     * @return array|false The products data or false on failure.
-     */
-    public function get_products() {
-        return $this->request('SqlData', [
-            'clientid' => $this->session,
-            'appId' => 1000,
-            'SqlName' => 'getItems'
-        ]);
-    }
+        $product = $existing_id ? wc_get_product($existing_id) : new WC_Product_Simple();
+        $product->set_name($item['DESC']);
+        $product->set_regular_price($item['RETAILPRICE']);
+        $product->set_sku($sku);
+        $product->set_stock_quantity($item['Stock QTY']);
+        $product->set_manage_stock(true);
 
-    /**
-     * Creates an order in the Softone API.
-     *
-     * @param WC_Order $order The WooCommerce order.
-     * @return bool True on success, false on failure.
-     */
-    public function create_order($order) {
-        $items = [];
+        // Category assignment
+        $cat_name = $item['COMMECATEGORY NAME'];
+        $subcat_name = $item['SUBMECATEGORY NAME'];
 
-        foreach ($order->get_items() as $item_id => $item) {
-            $product = $item->get_product();
-            $items[] = [
-                'MTRL' => $product->get_sku(),
-                'QTY1' => $item->get_quantity(),
-                'PRICE' => $item->get_total(),
-            ];
+        $cat_id = term_exists($cat_name, 'product_cat');
+        if (!$cat_id) {
+            $cat_id = wp_insert_term($cat_name, 'product_cat');
         }
+        $cat_id = is_array($cat_id) ? $cat_id['term_id'] : $cat_id;
 
-        // Capture payment method
-        $payment_method = $order->get_payment_method(); // e.g., 'cod', 'paypal', etc.
-        $payment_method_title = $order->get_payment_method_title(); // e.g., 'Cash on Delivery', 'PayPal'
-
-        // Include payment method in comments
-        $order_comments = $order->get_customer_note();
-        $order_comments .= "\nPayment Method: " . $payment_method_title;
-
-        $order_data = [
-            'SALDOC' => [
-                [
-                    'SERIES' => 3000, // This should be defined based on your Softone settings
-                    'TRDR' => $order->get_billing_email(), // Map this appropriately
-                    'TRNDATE' => gmdate('Y-m-d H:i:s', strtotime($order->get_date_created())),
-                    'COMMENTS' => $order_comments, // Add payment method to the comments
-                ]
-            ],
-            'ITELINES' => $items
-        ];
-
-        $response = $this->request('setData', [
-            'clientID' => $this->session,
-            'appID' => 1000,
-            'object' => 'SALDOC',
-            'data' => $order_data
-        ]);
-
-        if ($response) {
-            softone_log('create_order', 'Order sent to Softone successfully: ' . $order->get_id());
-            return true;
-        } else {
-            softone_log('create_order', 'Failed to send order to Softone: ' . $order->get_id());
-            return false;
+        $subcat_id = term_exists($subcat_name, 'product_cat');
+        if (!$subcat_id) {
+            $subcat_id = wp_insert_term($subcat_name, 'product_cat', ['parent' => $cat_id]);
         }
+        $subcat_id = is_array($subcat_id) ? $subcat_id['term_id'] : $subcat_id;
+
+        $product->set_category_ids([$cat_id, $subcat_id]);
+
+        $id = $product->save();
+        return $existing_id ? "Updated: $sku (ID $id)" : "Added: $sku (ID $id)";
     }
 }
-?>
+
+// AJAX handler
+add_action('wp_ajax_softone_sync_products', function () {
+    check_ajax_referer('softone_sync_products_nonce');
+
+    $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
+    $limit = isset($_POST['limit']) ? intval($_POST['limit']) : 10;
+
+    $api = new Softone_API();
+    $items = $api->get_products($offset, $limit);
+    $log = [];
+
+    foreach ($items as $item) {
+        try {
+            $result = $api->sync_product_to_woocommerce($item);
+            $log[] = '✅ ' . $result;
+        } catch (Exception $e) {
+            $log[] = '❌ Error for SKU ' . $item['SKU'] . ': ' . $e->getMessage();
+        }
+    }
+
+    wp_send_json([
+        'message' => implode("\n", $log),
+        'done' => count($items) < $limit,
+        'progress' => min(100, round((($offset + count($items)) / 200) * 100))
+    ]);
+});
