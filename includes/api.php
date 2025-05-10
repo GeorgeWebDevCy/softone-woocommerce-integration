@@ -125,7 +125,8 @@ class Softone_API {
         }
 
         $body = wp_remote_retrieve_body($response);
-        // Strong UTF-8 cleanup
+        // Decode SoftOne ISO-8859-7 encoded Greek text
+        $body = mb_convert_encoding($body, 'UTF-8', 'ISO-8859-7,UTF-8');
         $body = iconv('UTF-8', 'UTF-8//IGNORE', $body);
         if ($body === false) {
             softone_log('get_products', '❌ iconv conversion failed.');
