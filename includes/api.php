@@ -174,21 +174,42 @@ add_action('wp_ajax_softone_sync_products', function () {
     $limit = isset($_POST['limit']) ? intval($_POST['limit']) : 10;
 
     $api = new Softone_API();
-    $items = $api->get_products($offset, $limit);
     $log = [];
 
-    foreach ($items as $item) {
-        try {
-            $result = $api->sync_product_to_woocommerce($item);
-            $log[] = '✅ ' . $result;
-        } catch (Exception $e) {
-            $log[] = '❌ Error for SKU ' . $item['SKU'] . ': ' . $e->getMessage();
-        }
-    }
+    try {
+        $log[] = "🔍 Fetching products from SoftOne: offset $offset, limit $limit";
+        $items = $api->get_products($offset, $limit);
 
-    wp_send_json([
-        'message' => implode("\n", $log),
-        'done' => count($items) < $limit,
-        'progress' => min(100, round((($offset + count($items)) / 200) * 100))
-    ]);
+        if (!is_array($items) || count($items) === 0) {
+            $log[] = "❌ No products returned from API.";
+            wp_send_json([
+                'message' => implode("\n", $log),
+                'done' => true,
+                'progress' => 100
+            ]);
+        }
+
+        foreach ($items as $item) {
+            try {
+                $result = $api->sync_product_to_woocommerce($item);
+                $log[] = '✅ ' . $result;
+            } catch (Exception $e) {
+                $sku = isset($item['SKU']) ? $item['SKU'] : '[UNKNOWN]';
+                $log[] = '❌ Error for SKU ' . $sku . ': ' . $e->getMessage();
+            }
+        }
+
+        wp_send_json([
+            'message' => implode("\n", $log),
+            'done' => count($items) < $limit,
+            'progress' => min(100, round((($offset + count($items)) / 200) * 100))
+        ]);
+
+    } catch (Exception $e) {
+        wp_send_json([
+            'message' => "❌ sync_products error: " . $e->getMessage(),
+            'done' => true,
+            'progress' => 100
+        ]);
+    }
 });
