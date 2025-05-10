@@ -32,12 +32,11 @@ class Softone_API {
             'appId' => 1000
         ];
     
-        // Log full payload for debugging (without password)
         $safe_payload = $login_payload;
-        $safe_payload['password'] = str_repeat('*', strlen($login_payload['password']));
+        $safe_payload['password'] = str_repeat('*', strlen($safe_payload['password']));
         softone_log('Login', 'Login request payload: ' . json_encode($safe_payload));
     
-        // Make login request
+        // Send login request
         $login_response = wp_remote_post($this->endpoint, [
             'body' => wp_json_encode($login_payload),
             'headers' => ['Content-Type' => 'application/json']
@@ -48,8 +47,12 @@ class Softone_API {
             return false;
         }
     
+        // Get and clean up response
         $login_body = wp_remote_retrieve_body($login_response);
-        softone_log('Login', 'Raw response body: ' . $login_body);
+        $login_body = mb_convert_encoding($login_body, 'UTF-8', 'UTF-8');
+        $login_body = preg_replace('/[^\\x00-\\x7F\\xC2-\\xF4][\\x80-\\xBF]*/', '', $login_body);
+    
+        softone_log('Login', 'Cleaned response body: ' . $login_body);
     
         $login_data = json_decode($login_body, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
@@ -89,7 +92,9 @@ class Softone_API {
         }
     
         $auth_body = wp_remote_retrieve_body($auth_response);
-        softone_log('Authenticate', 'Raw response body: ' . $auth_body);
+        $auth_body = mb_convert_encoding($auth_body, 'UTF-8', 'UTF-8');
+        $auth_body = preg_replace('/[^\\x00-\\x7F\\xC2-\\xF4][\\x80-\\xBF]*/', '', $auth_body);
+        softone_log('Authenticate', 'Cleaned response body: ' . $auth_body);
     
         $auth_data = json_decode($auth_body, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
@@ -107,6 +112,7 @@ class Softone_API {
             return false;
         }
     }
+    
     
     public function get_products($offset = 0, $limit = 10) {
         $response = wp_remote_post($this->endpoint, [
