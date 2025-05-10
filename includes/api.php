@@ -161,65 +161,73 @@ class Softone_API {
     
 
     public function sync_product_to_woocommerce($item) {
-        // Log the full item being processed
         softone_log('sync_product', "Processing item:\n" . print_r($item, true));
     
-        // Basic field safety
-        $sku = isset($item['SKU']) ? trim($item['SKU']) : '';
-        $name = isset($item['DESC']) ? trim($item['DESC']) : 'Unnamed Product';
-        $price = isset($item['RETAILPRICE']) && is_numeric($item['RETAILPRICE']) ? floatval($item['RETAILPRICE']) : 0;
-        $qty = isset($item['Stock QTY']) && is_numeric($item['Stock QTY']) ? intval($item['Stock QTY']) : 0;
-    
-        if (empty($sku)) {
-            throw new Exception('Missing SKU – skipping product.');
-        }
-    
-        // Check if product already exists
-        $existing_id = wc_get_product_id_by_sku($sku);
-        $product = $existing_id ? wc_get_product($existing_id) : new WC_Product_Simple();
-    
-        $product->set_name($name);
-        $product->set_regular_price($price);
-        $product->set_sku($sku);
-        $product->set_stock_quantity($qty);
-        $product->set_manage_stock(true);
-    
-        // Category assignment
-        $cat_name = isset($item['COMMECATEGORY NAME']) ? trim($item['COMMECATEGORY NAME']) : 'Uncategorized';
-        $subcat_name = isset($item['SUBMECATEGORY NAME']) ? trim($item['SUBMECATEGORY NAME']) : '';
-    
-        $cat_id = term_exists($cat_name, 'product_cat');
-        if (!$cat_id) {
-            $cat_id = wp_insert_term($cat_name, 'product_cat');
-            if (is_wp_error($cat_id)) {
-                throw new Exception('Failed to create main category: ' . $cat_id->get_error_message());
+        try {
+            // Validate required fields
+            if (empty($item['SKU']) || empty($item['DESC'])) {
+                throw new Exception('Missing SKU or description.');
             }
-        }
-        $cat_id = is_array($cat_id) ? $cat_id['term_id'] : $cat_id;
     
-        $subcat_id = null;
-        if (!empty($subcat_name)) {
-            $subcat_id = term_exists($subcat_name, 'product_cat');
-            if (!$subcat_id) {
-                $subcat_id = wp_insert_term($subcat_name, 'product_cat', ['parent' => $cat_id]);
-                if (is_wp_error($subcat_id)) {
-                    throw new Exception('Failed to create subcategory: ' . $subcat_id->get_error_message());
+            $sku = trim($item['SKU']);
+            $name = trim($item['DESC']);
+            $price = isset($item['RETAILPRICE']) && is_numeric($item['RETAILPRICE']) ? floatval($item['RETAILPRICE']) : 0;
+            $qty = isset($item['Stock QTY']) && is_numeric($item['Stock QTY']) ? intval($item['Stock QTY']) : 0;
+    
+            $existing_id = wc_get_product_id_by_sku($sku);
+            $product = $existing_id ? wc_get_product($existing_id) : new WC_Product_Simple();
+    
+            $product->set_name($name);
+            $product->set_regular_price($price);
+            $product->set_sku($sku);
+            $product->set_stock_quantity($qty);
+            $product->set_manage_stock(true);
+    
+            // Category and subcategory
+            $cat_name = isset($item['COMMECATEGORY NAME']) ? trim($item['COMMECATEGORY NAME']) : 'Uncategorized';
+            $subcat_name = isset($item['SUBMECATEGORY NAME']) ? trim($item['SUBMECATEGORY NAME']) : '';
+    
+            softone_log('sync_product', "Assigning categories: $cat_name > $subcat_name");
+    
+            $cat_id = term_exists($cat_name, 'product_cat');
+            if (!$cat_id) {
+                $cat_id = wp_insert_term($cat_name, 'product_cat');
+                if (is_wp_error($cat_id)) {
+                    throw new Exception('Failed to create main category: ' . $cat_id->get_error_message());
                 }
             }
-            $subcat_id = is_array($subcat_id) ? $subcat_id['term_id'] : $subcat_id;
+            $cat_id = is_array($cat_id) ? $cat_id['term_id'] : $cat_id;
+    
+            $subcat_id = null;
+            if (!empty($subcat_name)) {
+                $subcat_id = term_exists($subcat_name, 'product_cat');
+                if (!$subcat_id) {
+                    $subcat_id = wp_insert_term($subcat_name, 'product_cat', ['parent' => $cat_id]);
+                    if (is_wp_error($subcat_id)) {
+                        throw new Exception('Failed to create subcategory: ' . $subcat_id->get_error_message());
+                    }
+                }
+                $subcat_id = is_array($subcat_id) ? $subcat_id['term_id'] : $subcat_id;
+            }
+    
+            $category_ids = [$cat_id];
+            if ($subcat_id) {
+                $category_ids[] = $subcat_id;
+            }
+            $product->set_category_ids($category_ids);
+    
+            // Save product
+            $id = $product->save();
+            softone_log('sync_product', "✔️ Product {$sku} saved. ID: {$id}");
+    
+            return ($existing_id ? "Updated" : "Added") . ": $sku (ID $id)";
+    
+        } catch (Throwable $e) {
+            softone_log('sync_product', "❌ Error syncing SKU {$item['SKU']}: " . $e->getMessage());
+            return "❌ Failed to sync SKU {$item['SKU']}: " . $e->getMessage();
         }
-    
-        $category_ids = [$cat_id];
-        if ($subcat_id) {
-            $category_ids[] = $subcat_id;
-        }
-    
-        $product->set_category_ids($category_ids);
-    
-        $id = $product->save();
-    
-        return ($existing_id ? "Updated" : "Added") . ": $sku (ID $id)";
     }
+    
     
 }
 
