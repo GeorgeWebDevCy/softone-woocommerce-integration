@@ -14,61 +14,65 @@ function softone_products_page() {
 
         <pre id="sync-log" style="background: #111; color: #0f0; padding: 10px; margin-top: 20px; height: 300px; overflow: auto; font-size: 13px;"></pre>
     </div>
-
     <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const logEl = document.getElementById('sync-log');
-        const bar = document.getElementById('sync-bar');
-        const btn = document.getElementById('sync-products-btn');
+document.addEventListener('DOMContentLoaded', () => {
+    const logEl = document.getElementById('sync-log');
+    const bar = document.getElementById('sync-bar');
+    const btn = document.getElementById('sync-products-btn');
 
-        let offset = 0;
-        let added = 0;
-        let updated = 0;
-        let failed = 0;
+    let offset = 0;
+    let added = 0;
+    let updated = 0;
+    let failed = 0;
 
-        function syncNext() {
-            fetch(ajaxurl, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: new URLSearchParams({
-                    action: 'softone_sync_products',
-                    offset,
-                    _ajax_nonce: softone_sync_products.nonce
-                })
+    function syncNext() {
+        fetch(ajaxurl, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: new URLSearchParams({
+                action: 'softone_sync_products',
+                offset,
+                _ajax_nonce: softone_sync_products.nonce
             })
-            .then(res => res.json())
-            .then(data => {
-                offset = data.offset ?? 0;
-                added += data.added ?? 0;
-                updated += data.updated ?? 0;
-                failed += data.failed ?? 0;
+        })
+        .then(res => res.json())
+        .then(data => {
+            offset = data.offset ?? 0;
+            added += data.added ?? 0;
+            updated += data.updated ?? 0;
+            failed += data.failed ?? 0;
 
-                bar.style.width = data.progress + '%';
-                logEl.textContent += data.message + '\\n';
-                logEl.scrollTop = logEl.scrollHeight;
+            bar.style.width = data.progress + '%';
 
-                if (data.done) {
-                    logEl.textContent += `\\n✅ Sync complete: ${added} added, ${updated} updated, ${failed} failed.\\n`;
-                    btn.disabled = false;
-                } else {
-                    syncNext();
-                }
-            })
-            .catch(err => {
-                logEl.textContent += '❌ AJAX error: ' + err.message + '\\n';
+            // Log output (no extra \n)
+            logEl.textContent += data.message;
+            if (!data.message.endsWith("\n")) logEl.textContent += "\n";
+
+            logEl.scrollTop = logEl.scrollHeight;
+
+            if (data.done) {
+                logEl.textContent += `\n✅ Sync complete: ${added} added, ${updated} updated, ${failed} failed.\n`;
                 btn.disabled = false;
-            });
-        }
-
-        btn.addEventListener('click', () => {
-            btn.disabled = true;
-            logEl.textContent = '🚀 Starting product sync...\\n';
-            bar.style.width = '0%';
-            offset = 0;
-            added = updated = failed = 0;
-            syncNext();
+            } else {
+                syncNext();
+            }
+        })
+        .catch(err => {
+            logEl.textContent += '❌ AJAX error: ' + err.message + '\n';
+            btn.disabled = false;
         });
+    }
+
+    btn.addEventListener('click', () => {
+        btn.disabled = true;
+        logEl.textContent = '🚀 Starting product sync...\n';
+        bar.style.width = '0%';
+        offset = 0;
+        added = updated = failed = 0;
+        syncNext();
     });
-    </script>
+});
+</script>
+
     <?php
 }
