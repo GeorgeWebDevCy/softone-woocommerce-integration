@@ -315,6 +315,10 @@ function softone_sync_orders() {
     }
 }
 
-
+add_action('admin_enqueue_scripts', function () {
+    wp_localize_script('jquery', 'softone_sync_products', [
+        'nonce' => wp_create_nonce('softone_sync_products_nonce')
+    ]);
+});
 
 

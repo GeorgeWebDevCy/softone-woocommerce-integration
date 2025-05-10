@@ -1,55 +1,74 @@
 <?php
 /**
- * Displays the product sync page for the Softone WooCommerce Integration.
+ * Displays the AJAX product sync page for the Softone WooCommerce Integration.
  */
 function softone_products_page() {
-    if (isset($_POST['sync_products'])) {
-        $result = softone_sync_products();
-        if (is_array($result) && isset($result['success']) && $result['success']) {
-            echo '<div class="notice notice-success"><p>' . esc_html($result['message']) . '</p></div>';
-        } else {
-            echo '<div class="notice notice-error"><p>Failed to synchronize products.</p></div>';
-        }
-    }
     ?>
     <div class="wrap">
         <h1>Product Sync</h1>
-        <form method="post">
-            <input type="hidden" name="sync_products" value="1" />
-            <?php submit_button('Sync Products'); ?>
-        </form>
-        <?php if (isset($result) && is_array($result) && isset($result['products'])): ?>
-        <h2>Synchronized Products</h2>
-        <table class="widefat fixed" cellspacing="0">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Code</th>
-                    <th>Name</th>
-                    <th>Price</th>
-                    <th>Category</th>
-                    <th>SubCategory</th>
-                    <th>Barcode</th>
-                    <th>Stock</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($result['products'] as $product): ?>
-                <tr>
-                    <td><?php echo esc_html($product['MTRL']); ?></td>
-                    <td><?php echo esc_html($product['CODE']); ?></td>
-                    <td><?php echo esc_html($product['DESC']); ?></td>
-                    <td><?php echo esc_html($product['RETAILPRICE']); ?></td>
-                    <td><?php echo esc_html($product['COMMECATEGORY_NAME']); ?></td>
-                    <td><?php echo esc_html($product['SUBMECATEGORY_NAME']); ?></td>
-                    <td><?php echo esc_html($product['BARCODE']); ?></td>
-                    <td><?php echo esc_html($product['Stock QTY']); ?></td>
-                </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-        <?php endif; ?>
+        <button id="sync-products-btn" class="button button-primary">Start Sync</button>
+
+        <div id="sync-progress" style="margin-top: 20px; width: 100%; background: #eee; height: 20px; border-radius: 4px; overflow: hidden;">
+            <div id="sync-bar" style="height: 100%; background: #0073aa; width: 0%; transition: width 0.3s;"></div>
+        </div>
+
+        <pre id="sync-log" style="background: #111; color: #0f0; padding: 10px; margin-top: 20px; height: 300px; overflow: auto; font-size: 13px;"></pre>
     </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const logEl = document.getElementById('sync-log');
+        const bar = document.getElementById('sync-bar');
+        const btn = document.getElementById('sync-products-btn');
+
+        let offset = 0;
+        let added = 0;
+        let updated = 0;
+        let failed = 0;
+
+        function syncNext() {
+            fetch(ajaxurl, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: new URLSearchParams({
+                    action: 'softone_sync_products',
+                    offset,
+                    _ajax_nonce: softone_sync_products.nonce
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                offset = data.offset ?? 0;
+                added += data.added ?? 0;
+                updated += data.updated ?? 0;
+                failed += data.failed ?? 0;
+
+                bar.style.width = data.progress + '%';
+                logEl.textContent += data.message + '\\n';
+                logEl.scrollTop = logEl.scrollHeight;
+
+                if (data.done) {
+                    logEl.textContent += `\\n✅ Sync complete: ${added} added, ${updated} updated, ${failed} failed.\\n`;
+                    btn.disabled = false;
+                } else {
+                    syncNext();
+                }
+            })
+            .catch(err => {
+                logEl.textContent += '❌ AJAX error: ' + err.message + '\\n';
+                btn.disabled = false;
+            });
+        }
+
+        btn.addEventListener('click', () => {
+            btn.disabled = true;
+            logEl.textContent = '🚀 Starting product sync...\\n';
+            bar.style.width = '0%';
+            offset = 0;
+            added = updated = failed = 0;
+            syncNext();
+        });
+    });
+    </script>
     <?php
 }
-?>
