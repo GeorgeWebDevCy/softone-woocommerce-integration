@@ -125,8 +125,13 @@ class Softone_API {
         }
 
         $body = wp_remote_retrieve_body($response);
-        $body = mb_convert_encoding($body, 'UTF-8', 'UTF-8');
-        $body = preg_replace('/[^\x00-\x7F\xC2-\xF4][\x80-\xBF]*/', '', $body);
+        // Strong UTF-8 cleanup
+        $body = iconv('UTF-8', 'UTF-8//IGNORE', $body);
+        if ($body === false) {
+            softone_log('get_products', '❌ iconv conversion failed.');
+            return [];
+        }
+        $body = trim($body);
         softone_log('get_products', 'Cleaned body: ' . $body);
 
         $data = json_decode($body, true);
