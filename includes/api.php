@@ -115,49 +115,48 @@ class Softone_API {
     }
 
     /**
- * Makes a request to the Softone API.
- *
- * @param string $service The service to call.
- * @param array $data The data to send.
- * @return mixed The response from the API.
- */
-private function request($service, $data) {
-    $data['service'] = sanitize_text_field($service);
-    $data['session'] = $this->session;
+     * Makes a request to the Softone API.
+     *
+     * @param string $service The service to call.
+     * @param array $data The data to send.
+     * @return mixed The response from the API.
+     */
+    private function request($service, $data) {
+        $data['service'] = sanitize_text_field($service);
+        $data['session'] = $this->session;
 
-    $response = wp_remote_post($this->endpoint, [
-        'body' => wp_json_encode(array_map('sanitize_text_field', $data)),
-        'headers' => ['Content-Type' => 'application/json']
-    ]);
+        $response = wp_remote_post($this->endpoint, [
+            'body' => wp_json_encode(array_map('sanitize_text_field', $data)),
+            'headers' => ['Content-Type' => 'application/json']
+        ]);
 
-    if (is_wp_error($response)) {
-        softone_log($service, 'API request failed: ' . $response->get_error_message());
-        return false;
+        if (is_wp_error($response)) {
+            softone_log($service, 'API request failed: ' . $response->get_error_message());
+            return false;
+        }
+
+        $body = wp_remote_retrieve_body($response);
+        if (!$body) {
+            softone_log($service, 'API request failed: Empty response body');
+            return false;
+        }
+
+        // Ensure the response is properly encoded in UTF-8
+        $body = mb_convert_encoding($body, 'UTF-8', 'UTF-8');
+
+        $data = json_decode($body, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            softone_log($service, 'API request failed: Invalid JSON response - ' . json_last_error_msg());
+            return false;
+        }
+
+        if (!isset($data['success']) || !$data['success']) {
+            softone_log($service, 'API request failed: ' . json_encode($data));
+            return false;
+        }
+
+        return $data;
     }
-
-    $body = wp_remote_retrieve_body($response);
-    if (!$body) {
-        softone_log($service, 'API request failed: Empty response body');
-        return false;
-    }
-
-    // Ensure the response is properly encoded in UTF-8
-    $body = mb_convert_encoding($body, 'UTF-8', 'UTF-8');
-
-    $data = json_decode($body, true);
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        softone_log($service, 'API request failed: Invalid JSON response - ' . json_last_error_msg());
-        return false;
-    }
-
-    if (!isset($data['success']) || !$data['success']) {
-        softone_log($service, 'API request failed: ' . json_encode($data));
-        return false;
-    }
-
-    return $data;
-}
-
 
     /**
      * Fetches customers from the Softone API.

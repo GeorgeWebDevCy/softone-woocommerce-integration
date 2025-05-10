@@ -3,7 +3,7 @@
  * Plugin Name: Softone WooCommerce Integration
  * Plugin URI: https://wordpress.org/plugins/softone-woocommerce-integration/
  * Description: Integrates WooCommerce with Softone API for customer, product, and order synchronization.
- * Version: 1.0.0
+ * Version: 2.0.0
  * Author: George Nicolaou
  * Author URI: https://profiles.wordpress.org/georgenicolaou/
  * Text Domain: softone-woocommerce-integration
@@ -53,12 +53,11 @@ function softone_woocommerce_integration_init() {
     // Register settings
     add_action('admin_init', 'softone_register_settings');
     // Add cron jobs
+    add_action('softone_cron_sync_customers', 'softone_sync_customers');
     add_action('softone_cron_sync_products', 'softone_sync_products');
     add_action('softone_cron_sync_orders', 'softone_sync_orders');
     // Hook into WooCommerce order processed
     add_action('woocommerce_checkout_order_processed', 'softone_create_order', 10, 1);
-    // Hook into WooCommerce customer creation
-    add_action('user_register', 'softone_send_new_customer_to_api', 10, 1);
     // Schedule cron jobs
     softone_schedule_cron_jobs();
 }
@@ -66,6 +65,9 @@ add_action('plugins_loaded', 'softone_woocommerce_integration_init');
 
 // Schedule cron jobs
 function softone_schedule_cron_jobs() {
+    if (!wp_next_scheduled('softone_cron_sync_customers')) {
+        wp_schedule_event(time(), 'hourly', 'softone_cron_sync_customers');
+    }
     if (!wp_next_scheduled('softone_cron_sync_products')) {
         wp_schedule_event(time(), 'two_hours', 'softone_cron_sync_products');
     }
@@ -76,6 +78,7 @@ function softone_schedule_cron_jobs() {
 
 // Clear scheduled cron jobs on deactivation
 function softone_clear_scheduled_cron_jobs() {
+    wp_clear_scheduled_hook('softone_cron_sync_customers');
     wp_clear_scheduled_hook('softone_cron_sync_products');
     wp_clear_scheduled_hook('softone_cron_sync_orders');
 }
@@ -153,36 +156,52 @@ function softone_create_order($order_id) {
     }
 }
 
-// Function to send new customers to Softone
-function softone_send_new_customer_to_api($customer_id) {
-    $user = get_userdata($customer_id);
-    if ($user && in_array('customer', $user->roles)) {
+// Sync functions
+function softone_sync_customers() {
+    if (class_exists('WooCommerce')) {
         $api = new Softone_API();
-        $customer_data = [
-            'CUSTOMER' => [
-                [
-                    'CODE' => $user->user_login,
-                    'NAME' => $user->first_name,
-                    'EMAIL' => $user->user_email,
-                    'ADDRESS' => get_user_meta($customer_id, 'billing_address_1', true),
-                    'CITY' => get_user_meta($customer_id, 'billing_city', true),
-                    'ZIP' => get_user_meta($customer_id, 'billing_postcode', true),
-                    'COUNTRY' => get_user_meta($customer_id, 'billing_country', true),
-                    'PHONE1' => get_user_meta($customer_id, 'billing_phone', true),
-                ]
-            ]
-        ];
-        $api->request('setData', [
-            'clientID' => $api->session,
-            'appID' => 1000,
-            'object' => 'CUSTOMER',
-            'data' => $customer_data
-        ]);
-        softone_log('send_new_customer', 'New customer sent to Softone: ' . $user->user_login);
+        $customers = $api->get_customers();
+        if ($customers && isset($customers['rows'])) {
+            foreach ($customers['rows'] as $customer) {
+                // Check if customer exists by email
+                $existing_customer_id = email_exists($customer['EMAIL']);
+                if ($existing_customer_id) {
+                    // Update existing customer
+                    wp_update_user([
+                        'ID' => $existing_customer_id,
+                        'first_name' => sanitize_text_field($customer['NAME']),
+                        'billing_address_1' => sanitize_text_field($customer['ADDRESS']),
+                        'billing_city' => sanitize_text_field($customer['CITY']),
+                        'billing_postcode' => sanitize_text_field($customer['ZIP']),
+                        'billing_country' => sanitize_text_field($customer['COUNTRY']),
+                        'billing_phone' => sanitize_text_field($customer['PHONE1']),
+                    ]);
+                } else {
+                    // Create new customer
+                    wp_insert_user([
+                        'user_login' => sanitize_user($customer['CODE']),
+                        'user_pass' => wp_generate_password(),
+                        'user_email' => sanitize_email($customer['EMAIL']),
+                        'first_name' => sanitize_text_field($customer['NAME']),
+                        'billing_address_1' => sanitize_text_field($customer['ADDRESS']),
+                        'billing_city' => sanitize_text_field($customer['CITY']),
+                        'billing_postcode' => sanitize_text_field($customer['ZIP']),
+                        'billing_country' => sanitize_text_field($customer['COUNTRY']),
+                        'billing_phone' => sanitize_text_field($customer['PHONE1']),
+                        'role' => 'customer',
+                    ]);
+                }
+            }
+            update_option('softone_synced_customers', array_map('sanitize_text_field', $customers['rows']));
+            softone_log('sync_customers', 'Customers synchronized successfully.');
+            return ['success' => true, 'message' => 'Customers synchronized successfully.', 'customers' => $customers['rows']];
+        } else {
+            softone_log('sync_customers', 'Failed to synchronize customers.');
+            return ['success' => false, 'message' => 'Failed to synchronize customers.'];
+        }
     }
 }
 
-// Sync products
 function softone_sync_products() {
     if (class_exists('WooCommerce')) {
         $api = new Softone_API();
@@ -295,4 +314,7 @@ function softone_sync_orders() {
         return 'Orders synchronized successfully.';
     }
 }
+
+
+
 
