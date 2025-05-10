@@ -20,57 +20,94 @@ class Softone_API {
     }
 
     private function login_and_authenticate() {
-        // Avoid logging sensitive info in production
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            softone_log('Login', 'Using credentials from settings.');
-        }
-
+        // Log credential presence safely
+        softone_log('Login', 'Starting login process.');
+        softone_log('Login', 'Username length: ' . strlen($this->username));
+        softone_log('Login', 'Password length: ' . strlen($this->password));
+    
+        $login_payload = [
+            'service' => 'login',
+            'username' => sanitize_text_field($this->username),
+            'password' => sanitize_text_field($this->password),
+            'appId' => 1000
+        ];
+    
+        // Log full payload for debugging (without password)
+        $safe_payload = $login_payload;
+        $safe_payload['password'] = str_repeat('*', strlen($login_payload['password']));
+        softone_log('Login', 'Login request payload: ' . json_encode($safe_payload));
+    
+        // Make login request
         $login_response = wp_remote_post($this->endpoint, [
-            'body' => wp_json_encode([
-                'service' => 'login',
-                'username' => sanitize_text_field($this->username),
-                'password' => sanitize_text_field($this->password),
-                'appId' => 1000
-            ]),
+            'body' => wp_json_encode($login_payload),
             'headers' => ['Content-Type' => 'application/json']
         ]);
-
+    
+        if (is_wp_error($login_response)) {
+            softone_log('Login', 'Login request failed: ' . $login_response->get_error_message());
+            return false;
+        }
+    
         $login_body = wp_remote_retrieve_body($login_response);
+        softone_log('Login', 'Raw response body: ' . $login_body);
+    
         $login_data = json_decode($login_body, true);
-
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            softone_log('Login', 'Login failed: Invalid JSON response - ' . json_last_error_msg());
+            return false;
+        }
+    
         if (!empty($login_data['success'])) {
             $this->client_id = $login_data['clientID'];
             update_option('softone_client_id', $this->client_id);
+            softone_log('Login', 'Login successful.');
         } else {
-            softone_log('Login', 'Login failed.');
+            softone_log('Login', 'Login failed: ' . json_encode($login_data));
             return false;
         }
-
+    
+        // Authenticate
+        $auth_payload = [
+            'service' => 'authenticate',
+            'clientID' => $this->client_id,
+            'company' => 10,
+            'branch' => 101,
+            'module' => 0,
+            'refid' => 1000
+        ];
+    
+        softone_log('Authenticate', 'Authentication request payload: ' . json_encode($auth_payload));
+    
         $auth_response = wp_remote_post($this->endpoint, [
-            'body' => wp_json_encode([
-                'service' => 'authenticate',
-                'clientID' => $this->client_id,
-                'company' => 10,
-                'branch' => 101,
-                'module' => 0,
-                'refid' => 1000
-            ]),
+            'body' => wp_json_encode($auth_payload),
             'headers' => ['Content-Type' => 'application/json']
         ]);
-
+    
+        if (is_wp_error($auth_response)) {
+            softone_log('Authenticate', 'Authenticate request failed: ' . $auth_response->get_error_message());
+            return false;
+        }
+    
         $auth_body = wp_remote_retrieve_body($auth_response);
+        softone_log('Authenticate', 'Raw response body: ' . $auth_body);
+    
         $auth_data = json_decode($auth_body, true);
-
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            softone_log('Authenticate', 'Authenticate failed: Invalid JSON response - ' . json_last_error_msg());
+            return false;
+        }
+    
         if (!empty($auth_data['success'])) {
             $this->session = $auth_data['clientID'];
             update_option('softone_api_session', $this->session);
+            softone_log('Authenticate', 'Authentication successful.');
             return true;
+        } else {
+            softone_log('Authenticate', 'Authentication failed: ' . json_encode($auth_data));
+            return false;
         }
-
-        softone_log('Authenticate', 'Authentication failed.');
-        return false;
     }
-
+    
     public function get_products($offset = 0, $limit = 10) {
         $response = wp_remote_post($this->endpoint, [
             'body' => wp_json_encode([
