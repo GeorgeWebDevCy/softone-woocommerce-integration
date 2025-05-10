@@ -3,7 +3,7 @@
  * Plugin Name: Softone WooCommerce Integration
  * Plugin URI: https://wordpress.org/plugins/softone-woocommerce-integration/
  * Description: Integrates WooCommerce with Softone API for customer, product, and order synchronization.
- * Version: 2.2.2
+ * Version: 2.2.3
  * Author: George Nicolaou
  * Author URI: https://profiles.wordpress.org/georgenicolaou/
  * Text Domain: softone-woocommerce-integration
@@ -321,4 +321,50 @@ add_action('admin_enqueue_scripts', function () {
     ]);
 });
 
+add_action('init', function () {
+    add_rewrite_rule('^softone-sync-products-cron/?$', 'index.php?softone_batch_sync=1', 'top');
+});
+
+add_filter('query_vars', function ($vars) {
+    $vars[] = 'softone_batch_sync';
+    return $vars;
+});
+
+add_action('template_redirect', function () {
+    if (get_query_var('softone_batch_sync') == 1) {
+        // SECURITY
+        $expected_key = 'r8Kx12A9ZtX';
+        if (!isset($_GET['key']) || $_GET['key'] !== $expected_key) {
+            wp_die('Invalid access key');
+        }
+
+        $offset = intval(get_option('softone_cron_offset', 0));
+        $limit = 20;
+
+        $api = new Softone_API();
+        $products = $api->get_products();
+        $total = count($products);
+
+        if ($offset >= $total) {
+            // Reset
+            update_option('softone_cron_offset', 0);
+            echo "✅ All products synced. Resetting offset.\n";
+            exit;
+        }
+
+        $batch = array_slice($products, $offset, $limit);
+        $count = 0;
+
+        foreach ($batch as $item) {
+            $api->sync_product_to_woocommerce($item);
+            $count++;
+        }
+
+        $next_offset = $offset + $limit;
+        update_option('softone_cron_offset', $next_offset);
+
+        echo "✅ Synced $count products (offset $offset → $next_offset of $total)\n";
+        exit;
+    }
+});
 
