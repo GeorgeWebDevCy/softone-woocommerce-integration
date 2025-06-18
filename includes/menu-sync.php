@@ -142,19 +142,6 @@ function softone_run_auto_sync_product_menu() {
 }
 add_action('softone_debounced_auto_sync_product_menu', 'softone_run_auto_sync_product_menu');
 
-// Admin page to manually trigger sync under the Softone menu
-function softone_register_product_menu_sync_page() {
-    add_submenu_page(
-        'softone-settings',
-        'Sync Product Categories',
-        'Menu Sync',
-        'manage_options',
-        'softone-sync-product-menu',
-        'softone_render_sync_product_menu_page'
-    );
-}
-add_action('admin_menu', 'softone_register_product_menu_sync_page');
-
 function softone_render_sync_product_menu_page() {
     if (!current_user_can('manage_options')) {
         wp_die(__('You do not have sufficient permissions to access this page.', 'softone-woocommerce-integration'));
