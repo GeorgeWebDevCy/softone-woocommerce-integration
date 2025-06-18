@@ -45,6 +45,11 @@ function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Men
         $all_term_ids = [];
 
         foreach ($product_cats as $term) {
+            // Skip default "Uncategorized" category
+            if ($term->slug === 'uncategorized') {
+                continue;
+            }
+
             $term_map[$term->term_id] = $term;
             $term_children[$term->parent][] = $term->term_id;
             $all_term_ids[] = $term->term_id;
@@ -52,7 +57,7 @@ function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Men
 
         $new_menu_item_ids = [];
 
-        $add_recursive = function ($parent_term_id, $parent_menu_id) use (&$add_recursive, $term_children, $term_map, &$existing_menu_items, $menu_id, &$new_menu_item_ids) {
+        $add_recursive = function ($parent_term_id, $parent_menu_id) use (&$add_recursive, $term_children, $term_map, &$existing_menu_items, $menu_id, &$new_menu_item_ids, $product_root_id) {
             if (!isset($term_children[$parent_term_id])) return;
 
             foreach ($term_children[$parent_term_id] as $term_id) {
@@ -63,14 +68,22 @@ function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Men
                 }
 
                 $term = $term_map[$term_id];
-                $menu_item_id = wp_update_nav_menu_item($menu_id, 0, [
-                    'menu-item-title' => $term->name,
-                    'menu-item-object' => 'product_cat',
-                    'menu-item-object-id' => $term->term_id,
-                    'menu-item-type' => 'taxonomy',
-                    'menu-item-status' => 'publish',
-                    'menu-item-parent-id' => $parent_menu_id,
-                ]);
+
+                $args = [
+                    'menu-item-title'      => $term->name,
+                    'menu-item-object'     => 'product_cat',
+                    'menu-item-object-id'  => $term->term_id,
+                    'menu-item-type'       => 'taxonomy',
+                    'menu-item-status'     => 'publish',
+                    'menu-item-parent-id'  => $parent_menu_id,
+                ];
+
+                // Add mega menu class for top level categories when using Divi
+                if ($parent_menu_id == $product_root_id) {
+                    $args['menu-item-classes'] = 'mega-menu';
+                }
+
+                $menu_item_id = wp_update_nav_menu_item($menu_id, 0, $args);
 
                 if (is_wp_error($menu_item_id)) continue;
 
