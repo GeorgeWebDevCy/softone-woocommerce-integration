@@ -117,7 +117,19 @@ class Softone_API {
             if (!empty($item['COMMECATEGORY NAME'])) $cat_path[] = $item['COMMECATEGORY NAME'];
             if (!empty($item['SUBMECATEGORY NAME'])) $cat_path[] = $item['SUBMECATEGORY NAME'];
             $product->set_category_ids($this->create_category_tree($cat_path));
+            $brand_name = '';
+            foreach (['BRAND NAME','BRAND','BRANDNAME','MTRBRAND NAME','MTRBRANDS NAME'] as $bk) {
+                if (!empty($item[$bk])) { $brand_name = $item[$bk]; break; }
+            }
+            $brand_term_id = 0;
+            if ($brand_name) {
+                $brand_name = sanitize_text_field(mb_convert_encoding(trim($brand_name), 'UTF-8', 'UTF-8'));
+                $term = term_exists($brand_name, 'product_brand');
+                if (!$term) { $term = wp_insert_term($brand_name, 'product_brand'); }
+                if (!is_wp_error($term)) { $brand_term_id = is_array($term) ? $term['term_id'] : $term; }
+            }
             $id = $product->save();
+            if ($brand_term_id) { wp_set_object_terms($id, [$brand_term_id], 'product_brand'); }
             return ($existing_id ? "Updated" : "Added") . ": $sku (ID $id)";
         } catch (Throwable $e) {
             return "❌ Failed to sync SKU {$item['SKU']}: " . $e->getMessage();
