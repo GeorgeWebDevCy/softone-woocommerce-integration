@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.15
+Stable tag: 2.2.16
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -53,8 +53,8 @@ The plugin uses WordPress cron jobs to sync data. Customers and orders are synce
 
 == Changelog ==
 
-= 2.2.15 =
-* Expanded documentation in both README files.
+= 2.2.16 =
+* Ensure product categories in the navigation menu are ordered alphabetically.
 
 = 1.0.0 =
 * Initial release.
@@ -64,8 +64,8 @@ The plugin uses WordPress cron jobs to sync data. Customers and orders are synce
 = 1.0.0 =
 * Initial release.
 
-= 2.2.15 =
-* Expanded documentation.
+= 2.2.16 =
+* Product categories are now ordered alphabetically in the menu.
 
 = 2.0.0 =
 * Agains.
