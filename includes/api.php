@@ -122,7 +122,7 @@ class Softone_API {
                 if (!empty($item[$bk])) { $brand_name = $item[$bk]; break; }
             }
             $brand_term_id = 0;
-            if ($brand_name) {
+            if ($brand_name && taxonomy_exists('product_brand')) {
                 $brand_name = sanitize_text_field(mb_convert_encoding(trim($brand_name), 'UTF-8', 'UTF-8'));
                 $term = term_exists($brand_name, 'product_brand');
                 if (!$term) { $term = wp_insert_term($brand_name, 'product_brand'); }

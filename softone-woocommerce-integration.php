@@ -3,7 +3,7 @@
  * Plugin Name: Softone WooCommerce Integration
  * Plugin URI: https://wordpress.org/plugins/softone-woocommerce-integration/
  * Description: Integrates WooCommerce with Softone API for customer, product, and order synchronization.
- * Version: 2.2.11
+ * Version: 2.2.12
  * Author: George Nicolaou
  * Author URI: https://profiles.wordpress.org/georgenicolaou/
  * Text Domain: softone-woocommerce-integration
@@ -72,18 +72,21 @@ add_action('plugins_loaded', 'softone_load_textdomain');
 // Register product brand taxonomy
 function softone_register_brand_taxonomy() {
     $labels = [
-        'name' => _x('Brands', 'taxonomy general name', 'softone-woocommerce-integration'),
+        'name'          => _x('Brands', 'taxonomy general name', 'softone-woocommerce-integration'),
         'singular_name' => _x('Brand', 'taxonomy singular name', 'softone-woocommerce-integration'),
     ];
     $args = [
-        'hierarchical' => true,
-        'labels' => $labels,
-        'show_ui' => true,
+        'hierarchical'      => true,
+        'labels'            => $labels,
+        'show_ui'           => true,
         'show_admin_column' => true,
-        'query_var' => true,
-        'rewrite' => ['slug' => 'brand'],
+        'query_var'         => true,
+        'rewrite'           => ['slug' => 'brand'],
     ];
-    register_taxonomy('product_brand', ['product'], $args);
+
+    if (!taxonomy_exists('product_brand')) {
+        register_taxonomy('product_brand', ['product'], $args);
+    }
 }
 add_action('init', 'softone_register_brand_taxonomy');
 
