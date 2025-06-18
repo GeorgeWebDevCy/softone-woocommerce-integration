@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.13
+Stable tag: 2.2.15
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -13,7 +13,19 @@ Integrates WooCommerce with Softone API for customer, product, and order synchro
 
 == Description ==
 
-The Softone WooCommerce Integration plugin allows you to synchronize your WooCommerce store with Softone ERP system. It provides functionalities to sync customers, products, and orders between WooCommerce and Softone.
+The Softone WooCommerce Integration plugin connects WooCommerce to the Softone
+ERP system and keeps both platforms in sync.
+
+* Synchronise customers, products and orders using the Softone API.
+* Automatic cron-based sync runs in the background (products and menu every two
+  minutes, customers and orders hourly).
+* Manual sync pages with progress indicators for customers, products and
+  orders.
+* Navigation menu sync mirrors the WooCommerce product category hierarchy under
+  your main menu.
+* Creates a **product_brand** taxonomy and assigns Softone brand data to
+  products.
+* Logs every API request with an admin page for reviewing and clearing logs.
 
 == Installation ==
 
@@ -41,6 +53,9 @@ The plugin uses WordPress cron jobs to sync data. Customers and orders are synce
 
 == Changelog ==
 
+= 2.2.15 =
+* Expanded documentation in both README files.
+
 = 1.0.0 =
 * Initial release.
 
@@ -48,6 +63,9 @@ The plugin uses WordPress cron jobs to sync data. Customers and orders are synce
 
 = 1.0.0 =
 * Initial release.
+
+= 2.2.15 =
+* Expanded documentation.
 
 = 2.0.0 =
 * Agains.
