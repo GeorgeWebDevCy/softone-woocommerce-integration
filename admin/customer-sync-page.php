@@ -8,30 +8,30 @@ function softone_customers_page() {
         if (is_array($result) && isset($result['success']) && $result['success']) {
             echo '<div class="notice notice-success"><p>' . esc_html($result['message']) . '</p></div>';
         } else {
-            echo '<div class="notice notice-error"><p>Failed to synchronize customers.</p></div>';
+            echo '<div class="notice notice-error"><p>' . esc_html__('Failed to synchronize customers.', 'softone-woocommerce-integration') . '</p></div>';
         }
     }
     ?>
     <div class="wrap">
-        <h1>Customer Sync</h1>
+        <h1><?php esc_html_e('Customer Sync', 'softone-woocommerce-integration'); ?></h1>
         <form method="post">
             <input type="hidden" name="sync_customers" value="1" />
-            <?php submit_button('Sync Customers'); ?>
+            <?php submit_button(__('Sync Customers', 'softone-woocommerce-integration')); ?>
         </form>
         <?php if (isset($result) && is_array($result) && isset($result['customers'])): ?>
-        <h2>Synchronized Customers</h2>
+        <h2><?php esc_html_e('Synchronized Customers', 'softone-woocommerce-integration'); ?></h2>
         <table class="widefat fixed" cellspacing="0">
             <thead>
                 <tr>
-                    <th>ID</th>
-                    <th>Code</th>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Address</th>
-                    <th>City</th>
-                    <th>Zip</th>
-                    <th>Country</th>
-                    <th>Phone</th>
+                    <th><?php esc_html_e('ID', 'softone-woocommerce-integration'); ?></th>
+                    <th><?php esc_html_e('Code', 'softone-woocommerce-integration'); ?></th>
+                    <th><?php esc_html_e('Name', 'softone-woocommerce-integration'); ?></th>
+                    <th><?php esc_html_e('Email', 'softone-woocommerce-integration'); ?></th>
+                    <th><?php esc_html_e('Address', 'softone-woocommerce-integration'); ?></th>
+                    <th><?php esc_html_e('City', 'softone-woocommerce-integration'); ?></th>
+                    <th><?php esc_html_e('Zip', 'softone-woocommerce-integration'); ?></th>
+                    <th><?php esc_html_e('Country', 'softone-woocommerce-integration'); ?></th>
+                    <th><?php esc_html_e('Phone', 'softone-woocommerce-integration'); ?></th>
                 </tr>
             </thead>
             <tbody>

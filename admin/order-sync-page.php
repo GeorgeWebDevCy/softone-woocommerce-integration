@@ -5,30 +5,30 @@
 function softone_orders_page() {
     if (isset($_POST['sync_orders']) && check_admin_referer('softone_sync_orders_action', 'softone_sync_orders_nonce')) {
         $result = softone_sync_orders();
-        echo '<div class="notice notice-success"><p>' . $result . '</p></div>';
+        echo '<div class="notice notice-success"><p>' . esc_html($result) . '</p></div>';
     }
     ?>
     <div class="wrap">
-        <h1>Sync WooCommerce Orders to Softone</h1>
+        <h1><?php esc_html_e('Sync WooCommerce Orders to Softone', 'softone-woocommerce-integration'); ?></h1>
         <form method="post">
             <?php wp_nonce_field('softone_sync_orders_action', 'softone_sync_orders_nonce'); ?>
             <input type="hidden" name="sync_orders" value="1">
-            <?php submit_button('Sync Orders'); ?>
+            <?php submit_button(__('Sync Orders', 'softone-woocommerce-integration')); ?>
         </form>
         <?php
         // Assuming softone_get_orders() function retrieves orders from Softone
         $orders = softone_get_orders();
         if ($orders) {
             ?>
-            <h2>Synchronized Orders</h2>
+            <h2><?php esc_html_e('Synchronized Orders', 'softone-woocommerce-integration'); ?></h2>
             <table class="widefat fixed" cellspacing="0">
                 <thead>
                     <tr>
-                        <th>Order ID</th>
-                        <th>Customer</th>
-                        <th>Date</th>
-                        <th>Status</th>
-                        <th>Total</th>
+                        <th><?php esc_html_e('Order ID', 'softone-woocommerce-integration'); ?></th>
+                        <th><?php esc_html_e('Customer', 'softone-woocommerce-integration'); ?></th>
+                        <th><?php esc_html_e('Date', 'softone-woocommerce-integration'); ?></th>
+                        <th><?php esc_html_e('Status', 'softone-woocommerce-integration'); ?></th>
+                        <th><?php esc_html_e('Total', 'softone-woocommerce-integration'); ?></th>
                     </tr>
                 </thead>
                 <tbody>
