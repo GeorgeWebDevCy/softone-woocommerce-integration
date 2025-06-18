@@ -32,3 +32,17 @@ customer, product and order data between the two systems.
 
 Once configured, the plugin will automatically keep customers, products and
 orders in sync with Softone.
+
+## Divi Mega Menus
+
+Divi supports mega menus by adding the `mega-menu` CSS class to a top level menu
+item. When this class is present, any child menu items are displayed in a
+multi‑column layout. The menu link should be set to `#` so it functions purely
+as a trigger.
+
+## Multi‑level Menu Sync
+
+Product categories imported from Softone are mirrored in your WordPress menu.
+The plugin ensures a **Products** menu item exists and is flagged with
+`mega-menu`. Each Softone category becomes a submenu item beneath this parent,
+and subcategories are nested to reflect their hierarchy.

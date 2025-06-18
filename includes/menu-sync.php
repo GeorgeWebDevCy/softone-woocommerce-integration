@@ -4,6 +4,48 @@
  * Syncs WooCommerce product categories under "Products" in "Main Menu"
  */
 
+// Ensure menu and root item exist
+function softone_ensure_menu_structure($menu_name = 'Main Menu', $parent_title = 'Products') {
+    $menu = wp_get_nav_menu_object($menu_name);
+    if (!$menu) {
+        $menu_id = wp_create_nav_menu($menu_name);
+    } else {
+        $menu_id = $menu->term_id;
+    }
+
+    $items = wp_get_nav_menu_items($menu_id);
+    $product_root_id = null;
+    if ($items) {
+        foreach ($items as $item) {
+            if ($item->title === $parent_title && ($item->url === '#' || $item->type === 'custom')) {
+                $product_root_id = $item->ID;
+                break;
+            }
+        }
+    }
+
+    if (!$product_root_id) {
+        $product_root_id = wp_update_nav_menu_item($menu_id, 0, [
+            'menu-item-title'  => $parent_title,
+            'menu-item-url'    => '#',
+            'menu-item-type'   => 'custom',
+            'menu-item-status' => 'publish',
+        ]);
+    }
+
+    $classes = get_post_meta($product_root_id, '_menu_item_classes', true);
+    if (!is_array($classes)) {
+        $classes = is_string($classes) ? explode(' ', $classes) : [];
+    }
+    $classes = array_unique(array_filter(array_map('trim', $classes)));
+    if (!in_array('mega-menu', $classes, true)) {
+        $classes[] = 'mega-menu';
+    }
+    update_post_meta($product_root_id, '_menu_item_classes', $classes);
+
+    return [$menu_id, $product_root_id];
+}
+
 // Main sync function
 function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Menu', $parent_title = 'Products') {
     static $running = false;
@@ -11,37 +53,16 @@ function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Men
     $running = true;
 
     try {
-        $menu = wp_get_nav_menu_object($menu_name);
-        if (!$menu) throw new Exception("Menu '{$menu_name}' not found");
+        list($menu_id, $product_root_id) = softone_ensure_menu_structure($menu_name, $parent_title);
 
-        $menu_id = $menu->term_id;
         $menu_items = wp_get_nav_menu_items($menu_id, ['orderby' => 'menu_order']);
-        $product_root_id = null;
         $existing_menu_items = [];
 
         foreach ($menu_items as $item) {
-            if ($item->title === $parent_title && ($item->url === '#' || $item->type === 'custom')) {
-                $product_root_id = $item->ID;
-
-                // Ensure the parent menu item acts as a mega menu trigger
-                $classes = get_post_meta($product_root_id, '_menu_item_classes', true);
-                if (!is_array($classes)) {
-                    $classes = is_string($classes) ? explode(' ', $classes) : [];
-                }
-                $classes = array_unique(array_filter(array_map('trim', $classes)));
-
-                if (!in_array('mega-menu', $classes, true)) {
-                    $classes[] = 'mega-menu';
-                }
-
-                update_post_meta($product_root_id, '_menu_item_classes', $classes);
-            }
             if ($item->type === 'taxonomy' && $item->object === 'product_cat') {
                 $existing_menu_items[$item->menu_item_parent][$item->object_id] = $item->ID;
             }
         }
-
-        if (!$product_root_id) throw new Exception("Parent menu item '{$parent_title}' not found in menu");
 
         $product_cats = get_terms([
             'taxonomy' => 'product_cat',

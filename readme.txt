@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.18
+Stable tag: 2.2.19
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -51,7 +51,22 @@ The plugin uses WordPress cron jobs to sync data. Customers and orders are synce
 4. Order Sync Page.
 5. Logs Page.
 
+== Divi Mega Menus ==
+
+Divi creates a mega menu when a parent item includes the `mega-menu` CSS class
+and its URL is `#`. The plugin automatically applies this class to the
+"Products" menu entry so child categories are shown in columns.
+
+== Softone Multi Level Menu ==
+
+Softone categories are converted to WooCommerce product categories. The Menu
+Sync tool mirrors this hierarchy under the **Products** menu item, creating
+nested submenus for each level.
+
 == Changelog ==
+
+= 2.2.19 =
+* Automatically create the Products menu with mega-menu support.
 
 = 2.2.18 =
 * Ensure mega-menu class is added without trailing spaces.
@@ -69,6 +84,9 @@ The plugin uses WordPress cron jobs to sync data. Customers and orders are synce
 
 = 1.0.0 =
 * Initial release.
+
+= 2.2.19 =
+* Automatically creates the mega-menu ready Products entry.
 
 = 2.2.16 =
 * Product categories are now ordered alphabetically in the menu.
