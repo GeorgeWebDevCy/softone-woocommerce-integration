@@ -3,7 +3,7 @@
  * Plugin Name: Softone WooCommerce Integration
  * Plugin URI: https://wordpress.org/plugins/softone-woocommerce-integration/
  * Description: Integrates WooCommerce with Softone API for customer, product, and order synchronization.
- * Version: 2.2.13
+ * Version: 2.2.14
  * Author: George Nicolaou
  * Author URI: https://profiles.wordpress.org/georgenicolaou/
  * Text Domain: softone-woocommerce-integration
@@ -56,6 +56,7 @@ function softone_woocommerce_integration_init() {
     // Add cron jobs
     add_action('softone_cron_sync_customers', 'softone_sync_customers');
     add_action('softone_cron_sync_products', 'softone_sync_products');
+    add_action('softone_cron_sync_menu', 'softone_run_auto_sync_product_menu');
     add_action('softone_cron_sync_orders', 'softone_sync_orders');
     // Hook into WooCommerce order processed
     add_action('woocommerce_checkout_order_processed', 'softone_create_order', 10, 1);
@@ -98,6 +99,9 @@ function softone_schedule_cron_jobs() {
     if (!wp_next_scheduled('softone_cron_sync_products')) {
         wp_schedule_event(time(), 'two_minutes', 'softone_cron_sync_products');
     }
+    if (!wp_next_scheduled('softone_cron_sync_menu')) {
+        wp_schedule_event(time(), 'two_minutes', 'softone_cron_sync_menu');
+    }
     if (!wp_next_scheduled('softone_cron_sync_orders')) {
         wp_schedule_event(time(), 'hourly', 'softone_cron_sync_orders');
     }
@@ -107,6 +111,7 @@ function softone_schedule_cron_jobs() {
 function softone_clear_scheduled_cron_jobs() {
     wp_clear_scheduled_hook('softone_cron_sync_customers');
     wp_clear_scheduled_hook('softone_cron_sync_products');
+    wp_clear_scheduled_hook('softone_cron_sync_menu');
     wp_clear_scheduled_hook('softone_cron_sync_orders');
 }
 register_deactivation_hook(__FILE__, 'softone_clear_scheduled_cron_jobs');
@@ -237,9 +242,11 @@ function softone_sync_customers() {
 function softone_sync_products() {
     if (class_exists('WooCommerce')) {
         $api = new Softone_API();
-        $products = $api->get_products();
-        if ($products && isset($products['rows'])) {
-            foreach ($products['rows'] as $product) {
+        $last_sync = get_option('softone_last_product_sync');
+        $minutes = $last_sync ? max(1, ceil((time() - strtotime($last_sync)) / 60)) : 99999;
+        $products = $api->get_products($minutes);
+        if ($products) {
+            foreach ($products as $product) {
                 // Check if product exists by SKU
                 $existing_product_id = wc_get_product_id_by_sku($product['SKU']);
                 if ($existing_product_id) {
@@ -351,12 +358,13 @@ function softone_sync_products() {
                     if ($brand_term_id) { wp_set_object_terms($new_product->get_id(), [$brand_term_id], 'product_brand'); }
                 }
             }
-            update_option('softone_synced_products', array_map('sanitize_text_field', $products['rows']));
+            update_option('softone_synced_products', array_map('sanitize_text_field', $products));
+            update_option('softone_last_product_sync', current_time('mysql'));
             softone_log('sync_products', __('Products synchronized successfully.', 'softone-woocommerce-integration'));
             if (function_exists('softone_sync_woocommerce_product_categories_menu')) {
                 softone_sync_woocommerce_product_categories_menu('Main Menu', 'Products');
             }
-            return ['success' => true, 'message' => __('Products synchronized successfully.', 'softone-woocommerce-integration'), 'products' => $products['rows']];
+            return ['success' => true, 'message' => __('Products synchronized successfully.', 'softone-woocommerce-integration'), 'products' => $products];
         } else {
             softone_log('sync_products', __('Failed to synchronize products.', 'softone-woocommerce-integration'));
             return ['success' => false, 'message' => __('Failed to synchronize products.', 'softone-woocommerce-integration')];
@@ -403,7 +411,9 @@ add_action('template_redirect', function () {
         $limit = 20;
 
         $api = new Softone_API();
-        $products = $api->get_products();
+        $last_sync = get_option('softone_last_product_sync');
+        $minutes = $last_sync ? max(1, ceil((time() - strtotime($last_sync)) / 60)) : 99999;
+        $products = $api->get_products($minutes);
         $total = count($products);
 
         if ($offset >= $total) {
@@ -423,6 +433,7 @@ add_action('template_redirect', function () {
 
         $next_offset = $offset + $limit;
         update_option('softone_cron_offset', $next_offset);
+        update_option('softone_last_product_sync', current_time('mysql'));
 
         echo "✅ Synced $count products (offset $offset → $next_offset of $total)\n";
         exit;
