@@ -26,12 +26,15 @@ function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Men
                 // Ensure the parent menu item acts as a mega menu trigger
                 $classes = get_post_meta($product_root_id, '_menu_item_classes', true);
                 if (!is_array($classes)) {
-                    $classes = array_filter(array_map('trim', is_string($classes) ? explode(' ', $classes) : []));
+                    $classes = is_string($classes) ? explode(' ', $classes) : [];
                 }
+                $classes = array_unique(array_filter(array_map('trim', $classes)));
+
                 if (!in_array('mega-menu', $classes, true)) {
                     $classes[] = 'mega-menu';
-                    update_post_meta($product_root_id, '_menu_item_classes', $classes);
                 }
+
+                update_post_meta($product_root_id, '_menu_item_classes', $classes);
             }
             if ($item->type === 'taxonomy' && $item->object === 'product_cat') {
                 $existing_menu_items[$item->menu_item_parent][$item->object_id] = $item->ID;
