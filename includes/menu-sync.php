@@ -44,9 +44,6 @@ function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Men
             'taxonomy' => 'product_cat',
             'hide_empty' => false,
             'update_term_meta_cache' => false,
-            // Ensure categories are retrieved in alphabetical order
-            'orderby' => 'name',
-            'order'   => 'ASC',
         ]);
 
         if (is_wp_error($product_cats)) {
