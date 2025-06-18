@@ -14,7 +14,11 @@ class Softone_API {
         $this->password = get_option('softone_api_password');
         $this->client_id = get_option('softone_client_id');
         $this->session = get_option('softone_api_session');
-        $this->login_and_authenticate();
+        $expires = get_option('softone_api_session_expires');
+
+        if (!$this->session || !$expires || $expires < time()) {
+            $this->login_and_authenticate();
+        }
     }
 
     private function login_and_authenticate() {
@@ -56,17 +60,18 @@ class Softone_API {
         if (!empty($auth_data['success'])) {
             $this->session = $auth_data['clientID'];
             update_option('softone_api_session', $this->session);
+            update_option('softone_api_session_expires', time() + 1800); // 30 min
         }
     }
 
-    public function get_products() {
+    public function get_products($minutes = 99999) {
         $response = wp_remote_post($this->endpoint, [
             'body' => wp_json_encode([
                 'service' => 'SqlData',
                 'clientid' => $this->session,
                 'appId' => 1000,
                 'SqlName' => 'getItems',
-                'pMins' => 99999
+                'pMins' => $minutes
             ]),
             'headers' => ['Content-Type' => 'application/json']
         ]);

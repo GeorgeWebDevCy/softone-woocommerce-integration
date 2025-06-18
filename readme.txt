@@ -29,7 +29,7 @@ Yes, this plugin requires WooCommerce to be installed and active.
 
 = How often does the plugin sync data? =
 
-The plugin uses WordPress cron jobs to sync data. Customers and orders are synced hourly, and products are synced every two hours.
+The plugin uses WordPress cron jobs to sync data. Customers and orders are synced hourly, while products and the menu are synced every two minutes.
 
 == Screenshots ==
 
