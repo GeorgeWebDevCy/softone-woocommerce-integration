@@ -3,7 +3,7 @@
  * Plugin Name: Softone WooCommerce Integration
  * Plugin URI: https://wordpress.org/plugins/softone-woocommerce-integration/
  * Description: Integrates WooCommerce with Softone API for customer, product, and order synchronization.
- * Version: 2.2.10
+ * Version: 2.2.11
  * Author: George Nicolaou
  * Author URI: https://profiles.wordpress.org/georgenicolaou/
  * Text Domain: softone-woocommerce-integration
@@ -68,6 +68,24 @@ function softone_load_textdomain() {
     load_plugin_textdomain('softone-woocommerce-integration', false, dirname(plugin_basename(__FILE__)) . '/languages');
 }
 add_action('plugins_loaded', 'softone_load_textdomain');
+
+// Register product brand taxonomy
+function softone_register_brand_taxonomy() {
+    $labels = [
+        'name' => _x('Brands', 'taxonomy general name', 'softone-woocommerce-integration'),
+        'singular_name' => _x('Brand', 'taxonomy singular name', 'softone-woocommerce-integration'),
+    ];
+    $args = [
+        'hierarchical' => true,
+        'labels' => $labels,
+        'show_ui' => true,
+        'show_admin_column' => true,
+        'query_var' => true,
+        'rewrite' => ['slug' => 'brand'],
+    ];
+    register_taxonomy('product_brand', ['product'], $args);
+}
+add_action('init', 'softone_register_brand_taxonomy');
 
 // Schedule cron jobs
 function softone_schedule_cron_jobs() {
@@ -260,7 +278,20 @@ function softone_sync_products() {
                         $product_obj->set_category_ids($category_ids);
                     }
 
+                    $brand_name = '';
+                    foreach (['BRAND NAME','BRAND','BRANDNAME','MTRBRAND NAME','MTRBRANDS NAME'] as $bk) {
+                        if (!empty($product[$bk])) { $brand_name = $product[$bk]; break; }
+                    }
+                    $brand_term_id = 0;
+                    if ($brand_name) {
+                        $brand_name = sanitize_text_field($brand_name);
+                        $term = term_exists($brand_name, 'product_brand');
+                        if (!$term) { $term = wp_insert_term($brand_name, 'product_brand'); }
+                        if (!is_wp_error($term)) { $brand_term_id = is_array($term) ? $term['term_id'] : $term; }
+                    }
+
                     $product_obj->save();
+                    if ($brand_term_id) { wp_set_object_terms($existing_product_id, [$brand_term_id], 'product_brand'); }
                 } else {
                     // Create new product
                     $new_product = new WC_Product();
@@ -301,7 +332,20 @@ function softone_sync_products() {
                         $new_product->set_category_ids($category_ids);
                     }
 
+                    $brand_name = '';
+                    foreach (['BRAND NAME','BRAND','BRANDNAME','MTRBRAND NAME','MTRBRANDS NAME'] as $bk) {
+                        if (!empty($product[$bk])) { $brand_name = $product[$bk]; break; }
+                    }
+                    $brand_term_id = 0;
+                    if ($brand_name) {
+                        $brand_name = sanitize_text_field($brand_name);
+                        $term = term_exists($brand_name, 'product_brand');
+                        if (!$term) { $term = wp_insert_term($brand_name, 'product_brand'); }
+                        if (!is_wp_error($term)) { $brand_term_id = is_array($term) ? $term['term_id'] : $term; }
+                    }
+
                     $new_product->save();
+                    if ($brand_term_id) { wp_set_object_terms($new_product->get_id(), [$brand_term_id], 'product_brand'); }
                 }
             }
             update_option('softone_synced_products', array_map('sanitize_text_field', $products['rows']));
