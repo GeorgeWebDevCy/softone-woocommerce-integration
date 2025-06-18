@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.17
+Stable tag: 2.2.18
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -53,6 +53,9 @@ The plugin uses WordPress cron jobs to sync data. Customers and orders are synce
 
 == Changelog ==
 
+= 2.2.18 =
+* Ensure mega-menu class is added without trailing spaces.
+
 = 2.2.17 =
 * Restore original product category ordering in the navigation menu.
 
@@ -72,6 +75,9 @@ The plugin uses WordPress cron jobs to sync data. Customers and orders are synce
 
 = 2.2.17 =
 * Restores WooCommerce category order in the menu.
+
+= 2.2.18 =
+* Prevent whitespace issues when setting mega-menu class.
 
 = 2.0.0 =
 * Agains.
