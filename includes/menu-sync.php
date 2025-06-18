@@ -147,7 +147,7 @@ add_action('admin_menu', 'softone_register_product_menu_sync_page');
 
 function softone_render_sync_product_menu_page() {
     if (!current_user_can('manage_options')) {
-        wp_die(__('You do not have sufficient permissions to access this page.'));
+        wp_die(__('You do not have sufficient permissions to access this page.', 'softone-woocommerce-integration'));
     }
 
     $message = '';
@@ -160,17 +160,17 @@ function softone_render_sync_product_menu_page() {
             $result = softone_sync_woocommerce_product_categories_menu('Main Menu', 'Products');
             if ($result) {
                 update_option('softone_last_product_menu_sync', current_time('mysql'));
-                $message = '✅ Product categories synced successfully.';
+                $message = __('✅ Product categories synced successfully.', 'softone-woocommerce-integration');
                 $message_type = 'success';
             } else {
-                $message = '❌ There was an error syncing product categories. Check logs.';
+                $message = __('❌ There was an error syncing product categories. Check logs.', 'softone-woocommerce-integration');
                 $message_type = 'error';
             }
         }
     }
     ?>
     <div class="wrap">
-        <h1>Sync WooCommerce Product Categories</h1>
+        <h1><?php esc_html_e('Sync WooCommerce Product Categories', 'softone-woocommerce-integration'); ?></h1>
 
         <?php if ($message) : ?>
             <div class="notice notice-<?php echo esc_attr($message_type); ?>">
@@ -181,13 +181,13 @@ function softone_render_sync_product_menu_page() {
         <form method="POST">
             <?php wp_nonce_field('softone_sync_product_menu_action'); ?>
             <input type="hidden" name="softone_run_sync" value="1">
-            <?php submit_button('Sync Now'); ?>
+            <?php submit_button(__('Sync Now', 'softone-woocommerce-integration')); ?>
         </form>
 
         <hr>
 
-        <p><strong>Last sync:</strong> <?php echo esc_html(get_option('softone_last_product_menu_sync', 'Never')); ?></p>
-        <p><strong>Note:</strong> The sync runs automatically when product categories are added, edited, or deleted.</p>
+        <p><strong><?php esc_html_e('Last sync:', 'softone-woocommerce-integration'); ?></strong> <?php echo esc_html(get_option('softone_last_product_menu_sync', 'Never')); ?></p>
+        <p><strong><?php esc_html_e('Note:', 'softone-woocommerce-integration'); ?></strong> <?php esc_html_e('The sync runs automatically when product categories are added, edited, or deleted.', 'softone-woocommerce-integration'); ?></p>
     </div>
     <?php
 }

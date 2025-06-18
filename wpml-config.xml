@@ -1,0 +1,7 @@
+<wpml-config>
+    <admin-texts>
+        <key name="softone_api_username" />
+        <key name="softone_api_password" />
+        <key name="softone_client_id" />
+    </admin-texts>
+</wpml-config>

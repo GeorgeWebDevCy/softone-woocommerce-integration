@@ -8,7 +8,7 @@ function softone_settings_page() {
     $client_id = get_option('softone_client_id');
     ?>
     <div class="wrap">
-        <h1>Softone API Settings</h1>
+        <h1><?php esc_html_e('Softone API Settings', 'softone-woocommerce-integration'); ?></h1>
         <form method="post" action="options.php">
             <?php
             settings_fields('softone_settings_group');
@@ -23,11 +23,11 @@ function softone_settings_page() {
 add_action('admin_init', 'softone_admin_settings');
 function softone_admin_settings() {
     // Add settings section
-    add_settings_section('softone_settings_section', 'API Credentials', null, 'softone-settings');
+    add_settings_section('softone_settings_section', __('API Credentials', 'softone-woocommerce-integration'), null, 'softone-settings');
 
     // Add settings fields
-    add_settings_field('softone_api_username', 'API Username', 'softone_api_username_callback', 'softone-settings', 'softone_settings_section');
-    add_settings_field('softone_api_password', 'API Password', 'softone_api_password_callback', 'softone-settings', 'softone_settings_section');
+    add_settings_field('softone_api_username', __('API Username', 'softone-woocommerce-integration'), 'softone_api_username_callback', 'softone-settings', 'softone_settings_section');
+    add_settings_field('softone_api_password', __('API Password', 'softone-woocommerce-integration'), 'softone_api_password_callback', 'softone-settings', 'softone_settings_section');
 
     register_setting('softone_settings_group', 'softone_api_username');
     register_setting('softone_settings_group', 'softone_api_password');

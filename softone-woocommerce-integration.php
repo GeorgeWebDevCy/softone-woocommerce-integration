@@ -3,7 +3,7 @@
  * Plugin Name: Softone WooCommerce Integration
  * Plugin URI: https://wordpress.org/plugins/softone-woocommerce-integration/
  * Description: Integrates WooCommerce with Softone API for customer, product, and order synchronization.
- * Version: 2.2.8
+ * Version: 2.2.9
  * Author: George Nicolaou
  * Author URI: https://profiles.wordpress.org/georgenicolaou/
  * Text Domain: softone-woocommerce-integration
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 function softone_check_woocommerce() {
     if (!class_exists('WooCommerce')) {
         deactivate_plugins(plugin_basename(__FILE__));
-        wp_die('This plugin requires WooCommerce to be installed and active.');
+        wp_die(__('This plugin requires WooCommerce to be installed and active.', 'softone-woocommerce-integration'));
     }
 }
 register_activation_hook(__FILE__, 'softone_check_woocommerce');
@@ -64,6 +64,11 @@ function softone_woocommerce_integration_init() {
 }
 add_action('plugins_loaded', 'softone_woocommerce_integration_init');
 
+function softone_load_textdomain() {
+    load_plugin_textdomain('softone-woocommerce-integration', false, dirname(plugin_basename(__FILE__)) . '/languages');
+}
+add_action('plugins_loaded', 'softone_load_textdomain');
+
 // Schedule cron jobs
 function softone_schedule_cron_jobs() {
     if (!wp_next_scheduled('softone_cron_sync_customers')) {
@@ -87,12 +92,12 @@ register_deactivation_hook(__FILE__, 'softone_clear_scheduled_cron_jobs');
 
 // Admin menu setup
 function softone_admin_menu() {
-    add_menu_page('Softone Integration', 'Softone', 'manage_options', 'softone-settings', 'softone_settings_page');
-    add_submenu_page('softone-settings', 'Customer Sync', 'Customers', 'manage_options', 'softone-customers', 'softone_customers_page');
-    add_submenu_page('softone-settings', 'Product Sync', 'Products', 'manage_options', 'softone-products', 'softone_products_page');
-    add_submenu_page('softone-settings', 'Order Sync', 'Orders', 'manage_options', 'softone-orders', 'softone_orders_page');
-    add_submenu_page('softone-settings', 'Live Logging', 'Logs', 'manage_options', 'softone-logs', 'softone_logs_page');
-    add_submenu_page('softone-settings', 'Menu Sync', 'Menu Sync', 'manage_options', 'softone-sync-product-menu', 'softone_render_sync_product_menu_page');
+    add_menu_page(__('Softone Integration', 'softone-woocommerce-integration'), __('Softone', 'softone-woocommerce-integration'), 'manage_options', 'softone-settings', 'softone_settings_page');
+    add_submenu_page('softone-settings', __('Customer Sync', 'softone-woocommerce-integration'), __('Customers', 'softone-woocommerce-integration'), 'manage_options', 'softone-customers', 'softone_customers_page');
+    add_submenu_page('softone-settings', __('Product Sync', 'softone-woocommerce-integration'), __('Products', 'softone-woocommerce-integration'), 'manage_options', 'softone-products', 'softone_products_page');
+    add_submenu_page('softone-settings', __('Order Sync', 'softone-woocommerce-integration'), __('Orders', 'softone-woocommerce-integration'), 'manage_options', 'softone-orders', 'softone_orders_page');
+    add_submenu_page('softone-settings', __('Live Logging', 'softone-woocommerce-integration'), __('Logs', 'softone-woocommerce-integration'), 'manage_options', 'softone-logs', 'softone_logs_page');
+    add_submenu_page('softone-settings', __('Menu Sync', 'softone-woocommerce-integration'), __('Menu Sync', 'softone-woocommerce-integration'), 'manage_options', 'softone-sync-product-menu', 'softone_render_sync_product_menu_page');
 }
 
 // Register settings
@@ -144,11 +149,11 @@ add_filter('cron_schedules', 'softone_custom_cron_schedules');
 function softone_custom_cron_schedules($schedules) {
     $schedules['two_minutes'] = [
         'interval' => 120,
-        'display' => __('Every Two Minutes')
+        'display' => __('Every Two Minutes', 'softone-woocommerce-integration')
     ];
     $schedules['two_hours'] = [
         'interval' => 7200,
-        'display' => __('Every Two Hours')
+        'display' => __('Every Two Hours', 'softone-woocommerce-integration')
     ];
     return $schedules;
 }
@@ -199,11 +204,11 @@ function softone_sync_customers() {
                 }
             }
             update_option('softone_synced_customers', array_map('sanitize_text_field', $customers['rows']));
-            softone_log('sync_customers', 'Customers synchronized successfully.');
-            return ['success' => true, 'message' => 'Customers synchronized successfully.', 'customers' => $customers['rows']];
+            softone_log('sync_customers', __('Customers synchronized successfully.', 'softone-woocommerce-integration'));
+            return ['success' => true, 'message' => __('Customers synchronized successfully.', 'softone-woocommerce-integration'), 'customers' => $customers['rows']];
         } else {
-            softone_log('sync_customers', 'Failed to synchronize customers.');
-            return ['success' => false, 'message' => 'Failed to synchronize customers.'];
+            softone_log('sync_customers', __('Failed to synchronize customers.', 'softone-woocommerce-integration'));
+            return ['success' => false, 'message' => __('Failed to synchronize customers.', 'softone-woocommerce-integration')];
         }
     }
 }
@@ -300,14 +305,14 @@ function softone_sync_products() {
                 }
             }
             update_option('softone_synced_products', array_map('sanitize_text_field', $products['rows']));
-            softone_log('sync_products', 'Products synchronized successfully.');
+            softone_log('sync_products', __('Products synchronized successfully.', 'softone-woocommerce-integration'));
             if (function_exists('softone_sync_woocommerce_product_categories_menu')) {
                 softone_sync_woocommerce_product_categories_menu('Main Menu', 'Products');
             }
-            return ['success' => true, 'message' => 'Products synchronized successfully.', 'products' => $products['rows']];
+            return ['success' => true, 'message' => __('Products synchronized successfully.', 'softone-woocommerce-integration'), 'products' => $products['rows']];
         } else {
-            softone_log('sync_products', 'Failed to synchronize products.');
-            return ['success' => false, 'message' => 'Failed to synchronize products.'];
+            softone_log('sync_products', __('Failed to synchronize products.', 'softone-woocommerce-integration'));
+            return ['success' => false, 'message' => __('Failed to synchronize products.', 'softone-woocommerce-integration')];
         }
     }
 }
@@ -319,8 +324,8 @@ function softone_sync_orders() {
         foreach ($orders as $order) {
             $api->create_order($order);
         }
-        softone_log('sync_orders', 'Orders synchronized successfully.');
-        return 'Orders synchronized successfully.';
+        softone_log('sync_orders', __('Orders synchronized successfully.', 'softone-woocommerce-integration'));
+        return __('Orders synchronized successfully.', 'softone-woocommerce-integration');
     }
 }
 
@@ -344,7 +349,7 @@ add_action('template_redirect', function () {
         // SECURITY
         $expected_key = 'r8Kx12A9ZtX';
         if (!isset($_GET['key']) || $_GET['key'] !== $expected_key) {
-            wp_die('Invalid access key');
+            wp_die(__('Invalid access key', 'softone-woocommerce-integration'));
         }
 
         $offset = intval(get_option('softone_cron_offset', 0));

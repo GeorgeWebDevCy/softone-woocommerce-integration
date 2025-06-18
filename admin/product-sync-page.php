@@ -5,8 +5,8 @@
 function softone_products_page() {
     ?>
     <div class="wrap">
-        <h1>Product Sync</h1>
-        <button id="sync-products-btn" class="button button-primary">Start Sync</button>
+        <h1><?php esc_html_e('Product Sync', 'softone-woocommerce-integration'); ?></h1>
+        <button id="sync-products-btn" class="button button-primary"><?php esc_html_e('Start Sync', 'softone-woocommerce-integration'); ?></button>
 
         <div id="sync-progress" style="margin-top: 20px; width: 100%; background: #eee; height: 20px; border-radius: 4px; overflow: hidden;">
             <div id="sync-bar" style="height: 100%; background: #0073aa; width: 0%; transition: width 0.3s;"></div>
