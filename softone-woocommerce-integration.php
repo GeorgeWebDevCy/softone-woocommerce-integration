@@ -3,7 +3,7 @@
  * Plugin Name: Softone WooCommerce Integration
  * Plugin URI: https://wordpress.org/plugins/softone-woocommerce-integration/
  * Description: Integrates WooCommerce with Softone API for customer, product, and order synchronization.
- * Version: 2.2.7
+ * Version: 2.2.8
  * Author: George Nicolaou
  * Author URI: https://profiles.wordpress.org/georgenicolaou/
  * Text Domain: softone-woocommerce-integration
@@ -70,7 +70,7 @@ function softone_schedule_cron_jobs() {
         wp_schedule_event(time(), 'hourly', 'softone_cron_sync_customers');
     }
     if (!wp_next_scheduled('softone_cron_sync_products')) {
-        wp_schedule_event(time(), 'two_hours', 'softone_cron_sync_products');
+        wp_schedule_event(time(), 'two_minutes', 'softone_cron_sync_products');
     }
     if (!wp_next_scheduled('softone_cron_sync_orders')) {
         wp_schedule_event(time(), 'hourly', 'softone_cron_sync_orders');
@@ -142,6 +142,10 @@ register_deactivation_hook(__FILE__, 'softone_cleanup');
 // Custom cron schedules
 add_filter('cron_schedules', 'softone_custom_cron_schedules');
 function softone_custom_cron_schedules($schedules) {
+    $schedules['two_minutes'] = [
+        'interval' => 120,
+        'display' => __('Every Two Minutes')
+    ];
     $schedules['two_hours'] = [
         'interval' => 7200,
         'display' => __('Every Two Hours')
@@ -297,6 +301,9 @@ function softone_sync_products() {
             }
             update_option('softone_synced_products', array_map('sanitize_text_field', $products['rows']));
             softone_log('sync_products', 'Products synchronized successfully.');
+            if (function_exists('softone_sync_woocommerce_product_categories_menu')) {
+                softone_sync_woocommerce_product_categories_menu('Main Menu', 'Products');
+            }
             return ['success' => true, 'message' => 'Products synchronized successfully.', 'products' => $products['rows']];
         } else {
             softone_log('sync_products', 'Failed to synchronize products.');
