@@ -79,8 +79,12 @@ function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Men
         $all_term_ids = [];
 
         foreach ($product_cats as $term) {
-            // Skip default "Uncategorized" category
+            // Skip and remove the default "Uncategorized" category
             if ($term->slug === 'uncategorized') {
+                if (!empty($existing_menu_items[$term->parent][$term->term_id])) {
+                    wp_delete_post($existing_menu_items[$term->parent][$term->term_id], true);
+                    unset($existing_menu_items[$term->parent][$term->term_id]);
+                }
                 continue;
             }
 
@@ -111,12 +115,22 @@ function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Men
                 $existing_id = $existing_menu_items[$parent_menu_id][$term_id] ?? 0;
 
                 if ($parent_menu_id == $product_root_id) {
-                    $args['menu-item-classes'] = 'mega-menu mega-menu-parent mega-menu-parent-' . $top_level_index;
+                    $menu_classes = ['mega-menu', 'mega-menu-parent', 'mega-menu-parent-' . $top_level_index];
+                    $args['menu-item-classes'] = implode(' ', $menu_classes);
                 }
 
                 $menu_item_id = wp_update_nav_menu_item($menu_id, $existing_id, $args);
 
                 if (is_wp_error($menu_item_id)) continue;
+
+                if ($parent_menu_id == $product_root_id) {
+                    $existing_classes = get_post_meta($menu_item_id, '_menu_item_classes', true);
+                    if (!is_array($existing_classes)) {
+                        $existing_classes = is_string($existing_classes) ? explode(' ', $existing_classes) : [];
+                    }
+                    $existing_classes = array_unique(array_filter(array_map('trim', array_merge($existing_classes, $menu_classes))));
+                    update_post_meta($menu_item_id, '_menu_item_classes', $existing_classes);
+                }
 
                 $existing_menu_items[$parent_menu_id][$term_id] = $menu_item_id;
                 $new_menu_item_ids[] = $menu_item_id;
