@@ -41,9 +41,6 @@ function softone_ensure_menu_structure($menu_name = 'Main Menu', $parent_title =
     if (!in_array('mega-menu', $classes, true)) {
         $classes[] = 'mega-menu';
     }
-    if (!in_array('mega-menu-parent', $classes, true)) {
-        $classes[] = 'mega-menu-parent';
-    }
     update_post_meta($product_root_id, '_menu_item_classes', $classes);
 
     return [$menu_id, $product_root_id];
@@ -113,7 +110,6 @@ function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Men
 
                 $existing_id = $existing_menu_items[$parent_menu_id][$term_id] ?? 0;
 
-                // Add mega menu classes for top level categories when using Divi
                 if ($parent_menu_id == $product_root_id) {
                     $args['menu-item-classes'] = 'mega-menu mega-menu-parent mega-menu-parent-' . $top_level_index;
                 }
