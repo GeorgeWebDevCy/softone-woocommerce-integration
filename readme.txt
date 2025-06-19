@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.21
+Stable tag: 2.2.22
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -65,6 +65,9 @@ nested submenus for each level.
 
 == Changelog ==
 
+= 2.2.22 =
+* Add live log viewer with automatic updates in the admin area.
+
 = 2.2.21 =
 * Add debug logging when registering admin menu pages.
 
@@ -87,6 +90,9 @@ nested submenus for each level.
 * Initial release.
 
 == Upgrade Notice ==
+
+= 2.2.22 =
+* View logs live from the WordPress admin.
 
 = 2.2.21 =
 * Adds debugging logs for admin menu registration.
