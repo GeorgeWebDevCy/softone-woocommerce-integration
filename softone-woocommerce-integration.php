@@ -63,9 +63,6 @@ function softone_woocommerce_integration_init() {
     // Schedule cron jobs
     softone_schedule_cron_jobs();
 
-    if (function_exists('softone_ensure_menu_structure')) {
-        softone_ensure_menu_structure('Main Menu', 'Products');
-    }
 }
 add_action('plugins_loaded', 'softone_woocommerce_integration_init');
 
@@ -94,6 +91,13 @@ function softone_register_brand_taxonomy() {
     }
 }
 add_action('init', 'softone_register_brand_taxonomy');
+
+// Ensure the Products menu structure is created after rewrite rules are loaded
+add_action('init', function () {
+    if (function_exists('softone_ensure_menu_structure')) {
+        softone_ensure_menu_structure('Main Menu', 'Products');
+    }
+}, 20);
 
 // Schedule cron jobs
 function softone_schedule_cron_jobs() {
