@@ -95,9 +95,7 @@ function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Men
 
         $new_menu_item_ids = [];
 
-        $top_level_index = 1;
-
-        $add_recursive = function ($parent_term_id, $parent_menu_id) use (&$add_recursive, $term_children, $term_map, &$existing_menu_items, $menu_id, &$new_menu_item_ids, $product_root_id, &$top_level_index) {
+        $add_recursive = function ($parent_term_id, $parent_menu_id) use (&$add_recursive, $term_children, $term_map, &$existing_menu_items, $menu_id, &$new_menu_item_ids, $product_root_id) {
             if (!isset($term_children[$parent_term_id])) return;
 
             foreach ($term_children[$parent_term_id] as $term_id) {
@@ -114,31 +112,14 @@ function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Men
 
                 $existing_id = $existing_menu_items[$parent_menu_id][$term_id] ?? 0;
 
-                if ($parent_menu_id == $product_root_id) {
-                    $menu_classes = ['mega-menu', 'mega-menu-parent', 'mega-menu-parent-' . $top_level_index];
-                    $args['menu-item-classes'] = implode(' ', $menu_classes);
-                }
-
                 $menu_item_id = wp_update_nav_menu_item($menu_id, $existing_id, $args);
 
                 if (is_wp_error($menu_item_id)) continue;
-
-                if ($parent_menu_id == $product_root_id) {
-                    $existing_classes = get_post_meta($menu_item_id, '_menu_item_classes', true);
-                    if (!is_array($existing_classes)) {
-                        $existing_classes = is_string($existing_classes) ? explode(' ', $existing_classes) : [];
-                    }
-                    $existing_classes = array_unique(array_filter(array_map('trim', array_merge($existing_classes, $menu_classes))));
-                    update_post_meta($menu_item_id, '_menu_item_classes', $existing_classes);
-                }
 
                 $existing_menu_items[$parent_menu_id][$term_id] = $menu_item_id;
                 $new_menu_item_ids[] = $menu_item_id;
 
                 $add_recursive($term_id, $menu_item_id);
-                if ($parent_menu_id == $product_root_id) {
-                    $top_level_index++;
-                }
             }
         };
 
