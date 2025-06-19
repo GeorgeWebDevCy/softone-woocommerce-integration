@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.24
+Stable tag: 2.2.25
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -65,6 +65,10 @@ nested submenus for each level.
 
 == Changelog ==
 
+= 2.2.25 =
+* Skip the "Uncategorized" product category when building the menu.
+* Apply Divi mega-menu classes to top level categories.
+
 = 2.2.22 =
 * Add live log viewer with automatic updates in the admin area.
 
@@ -90,6 +94,9 @@ nested submenus for each level.
 * Initial release.
 
 == Upgrade Notice ==
+
+= 2.2.25 =
+* Menu sync skips "Uncategorized" and applies Divi mega-menu classes.
 
 = 2.2.22 =
 * View logs live from the WordPress admin.
