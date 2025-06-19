@@ -41,6 +41,9 @@ function softone_ensure_menu_structure($menu_name = 'Main Menu', $parent_title =
     if (!in_array('mega-menu', $classes, true)) {
         $classes[] = 'mega-menu';
     }
+    if (!in_array('mega-menu-parent', $classes, true)) {
+        $classes[] = 'mega-menu-parent';
+    }
     update_post_meta($product_root_id, '_menu_item_classes', $classes);
 
     return [$menu_id, $product_root_id];
@@ -91,16 +94,12 @@ function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Men
 
         $new_menu_item_ids = [];
 
-        $add_recursive = function ($parent_term_id, $parent_menu_id) use (&$add_recursive, $term_children, $term_map, &$existing_menu_items, $menu_id, &$new_menu_item_ids, $product_root_id) {
+        $top_level_index = 1;
+
+        $add_recursive = function ($parent_term_id, $parent_menu_id) use (&$add_recursive, $term_children, $term_map, &$existing_menu_items, $menu_id, &$new_menu_item_ids, $product_root_id, &$top_level_index) {
             if (!isset($term_children[$parent_term_id])) return;
 
             foreach ($term_children[$parent_term_id] as $term_id) {
-                if (isset($existing_menu_items[$parent_menu_id][$term_id])) {
-                    $new_menu_item_ids[] = $existing_menu_items[$parent_menu_id][$term_id];
-                    $add_recursive($term_id, $existing_menu_items[$parent_menu_id][$term_id]);
-                    continue;
-                }
-
                 $term = $term_map[$term_id];
 
                 $args = [
@@ -112,12 +111,14 @@ function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Men
                     'menu-item-parent-id'  => $parent_menu_id,
                 ];
 
-                // Add mega menu class for top level categories when using Divi
+                $existing_id = $existing_menu_items[$parent_menu_id][$term_id] ?? 0;
+
+                // Add mega menu classes for top level categories when using Divi
                 if ($parent_menu_id == $product_root_id) {
-                    $args['menu-item-classes'] = 'mega-menu';
+                    $args['menu-item-classes'] = 'mega-menu mega-menu-parent mega-menu-parent-' . $top_level_index;
                 }
 
-                $menu_item_id = wp_update_nav_menu_item($menu_id, 0, $args);
+                $menu_item_id = wp_update_nav_menu_item($menu_id, $existing_id, $args);
 
                 if (is_wp_error($menu_item_id)) continue;
 
@@ -125,6 +126,9 @@ function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Men
                 $new_menu_item_ids[] = $menu_item_id;
 
                 $add_recursive($term_id, $menu_item_id);
+                if ($parent_menu_id == $product_root_id) {
+                    $top_level_index++;
+                }
             }
         };
 
