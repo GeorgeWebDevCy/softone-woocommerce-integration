@@ -3,7 +3,7 @@
  * Plugin Name: Softone WooCommerce Integration
  * Plugin URI: https://wordpress.org/plugins/softone-woocommerce-integration/
  * Description: Integrates WooCommerce with Softone API for customer, product, and order synchronization.
- * Version: 2.2.20
+ * Version: 2.2.21
  * Author: George Nicolaou
  * Author URI: https://profiles.wordpress.org/georgenicolaou/
  * Text Domain: softone-woocommerce-integration
@@ -126,12 +126,66 @@ register_deactivation_hook(__FILE__, 'softone_clear_scheduled_cron_jobs');
 
 // Admin menu setup
 function softone_admin_menu() {
-    add_menu_page(__('Softone Integration', 'softone-woocommerce-integration'), __('Softone', 'softone-woocommerce-integration'), 'manage_options', 'softone-settings', 'softone_settings_page');
-    add_submenu_page('softone-settings', __('Customer Sync', 'softone-woocommerce-integration'), __('Customers', 'softone-woocommerce-integration'), 'manage_options', 'softone-customers', 'softone_customers_page');
-    add_submenu_page('softone-settings', __('Product Sync', 'softone-woocommerce-integration'), __('Products', 'softone-woocommerce-integration'), 'manage_options', 'softone-products', 'softone_products_page');
-    add_submenu_page('softone-settings', __('Order Sync', 'softone-woocommerce-integration'), __('Orders', 'softone-woocommerce-integration'), 'manage_options', 'softone-orders', 'softone_orders_page');
-    add_submenu_page('softone-settings', __('Live Logging', 'softone-woocommerce-integration'), __('Logs', 'softone-woocommerce-integration'), 'manage_options', 'softone-logs', 'softone_logs_page');
-    add_submenu_page('softone-settings', __('Menu Sync', 'softone-woocommerce-integration'), __('Menu Sync', 'softone-woocommerce-integration'), 'manage_options', 'softone-sync-product-menu', 'softone_render_sync_product_menu_page');
+    softone_debug_log('admin_menu', 'Registering admin menu.');
+
+    $main_hook = add_menu_page(
+        __('Softone Integration', 'softone-woocommerce-integration'),
+        __('Softone', 'softone-woocommerce-integration'),
+        'manage_options',
+        'softone-settings',
+        'softone_settings_page'
+    );
+    softone_debug_log('admin_menu', 'Main menu hook: ' . $main_hook);
+
+    $customer_hook = add_submenu_page(
+        'softone-settings',
+        __('Customer Sync', 'softone-woocommerce-integration'),
+        __('Customers', 'softone-woocommerce-integration'),
+        'manage_options',
+        'softone-customers',
+        'softone_customers_page'
+    );
+    softone_debug_log('admin_menu', 'Customer submenu hook: ' . $customer_hook);
+
+    $product_hook = add_submenu_page(
+        'softone-settings',
+        __('Product Sync', 'softone-woocommerce-integration'),
+        __('Products', 'softone-woocommerce-integration'),
+        'manage_options',
+        'softone-products',
+        'softone_products_page'
+    );
+    softone_debug_log('admin_menu', 'Product submenu hook: ' . $product_hook);
+
+    $order_hook = add_submenu_page(
+        'softone-settings',
+        __('Order Sync', 'softone-woocommerce-integration'),
+        __('Orders', 'softone-woocommerce-integration'),
+        'manage_options',
+        'softone-orders',
+        'softone_orders_page'
+    );
+    softone_debug_log('admin_menu', 'Order submenu hook: ' . $order_hook);
+
+    $log_hook = add_submenu_page(
+        'softone-settings',
+        __('Live Logging', 'softone-woocommerce-integration'),
+        __('Logs', 'softone-woocommerce-integration'),
+        'manage_options',
+        'softone-logs',
+        'softone_logs_page'
+    );
+    softone_debug_log('admin_menu', 'Logs submenu hook: ' . $log_hook);
+
+    $menu_hook = add_submenu_page(
+        'softone-settings',
+        __('Menu Sync', 'softone-woocommerce-integration'),
+        __('Menu Sync', 'softone-woocommerce-integration'),
+        'manage_options',
+        'softone-sync-product-menu',
+        'softone_render_sync_product_menu_page'
+    );
+    softone_debug_log('admin_menu', 'Menu sync submenu hook: ' . $menu_hook);
 }
 
 // Register settings
