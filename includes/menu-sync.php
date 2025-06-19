@@ -41,6 +41,7 @@ function softone_ensure_menu_structure($menu_name = 'Main Menu', $parent_title =
     if (!in_array('mega-menu', $classes, true)) {
         $classes[] = 'mega-menu';
     }
+    // Divi uses the "mega-menu" class to enable mega menu functionality
     update_post_meta($product_root_id, '_menu_item_classes', $classes);
 
     return [$menu_id, $product_root_id];
@@ -95,12 +96,6 @@ function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Men
             if (!isset($term_children[$parent_term_id])) return;
 
             foreach ($term_children[$parent_term_id] as $term_id) {
-                if (isset($existing_menu_items[$parent_menu_id][$term_id])) {
-                    $new_menu_item_ids[] = $existing_menu_items[$parent_menu_id][$term_id];
-                    $add_recursive($term_id, $existing_menu_items[$parent_menu_id][$term_id]);
-                    continue;
-                }
-
                 $term = $term_map[$term_id];
 
                 $args = [
@@ -112,12 +107,14 @@ function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Men
                     'menu-item-parent-id'  => $parent_menu_id,
                 ];
 
+                $existing_id = $existing_menu_items[$parent_menu_id][$term_id] ?? 0;
+
                 // Add mega menu class for top level categories when using Divi
                 if ($parent_menu_id == $product_root_id) {
                     $args['menu-item-classes'] = 'mega-menu';
                 }
 
-                $menu_item_id = wp_update_nav_menu_item($menu_id, 0, $args);
+                $menu_item_id = wp_update_nav_menu_item($menu_id, $existing_id, $args);
 
                 if (is_wp_error($menu_item_id)) continue;
 
