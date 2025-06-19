@@ -16,8 +16,8 @@ customer, product and order data between the two systems.
   WordPress menu so the store navigation always reflects the latest structure.
 - **Brand taxonomy** – The plugin creates a `product_brand` taxonomy and assigns
   Softone brand information to your WooCommerce products.
-- **Logging** – All API interactions are recorded. A log viewer and a button to
-  clear logs are available in the WordPress admin area.
+- **Logging** – All API interactions are recorded. View logs live from the
+  WordPress admin and clear them with one click.
 - **Custom cron schedules** – Adds 2‑minute and 2‑hour schedules that other
   tasks can use.
 

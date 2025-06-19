@@ -16,28 +16,32 @@ function softone_logs_page() {
             <input type="hidden" name="clear_logs" value="1">
             <?php submit_button(__('Clear Logs', 'softone-woocommerce-integration')); ?>
         </form>
-        <table class="widefat">
-            <thead>
-                <tr>
-                    <th><?php esc_html_e('Timestamp', 'softone-woocommerce-integration'); ?></th>
-                    <th><?php esc_html_e('Action', 'softone-woocommerce-integration'); ?></th>
-                    <th><?php esc_html_e('Message', 'softone-woocommerce-integration'); ?></th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php
-                $logs = get_option('softone_api_logs', []);
-                if (!empty($logs)) {
-                    foreach ($logs as $log) {
-                        echo '<tr><td>' . esc_html($log['timestamp']) . '</td><td>' . esc_html($log['action']) . '</td><td>' . esc_html($log['message']) . '</td></tr>';
-                    }
-                } else {
-                    echo '<tr><td colspan="3">' . esc_html__('No logs available.', 'softone-woocommerce-integration') . '</td></tr>';
-                }
-                ?>
-            </tbody>
-        </table>
+        <pre id="softone-log-output" style="background:#111;color:#0f0;padding:10px;height:400px;overflow:auto;font-size:13px;"></pre>
     </div>
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const logEl = document.getElementById('softone-log-output');
+        function fetchLogs() {
+            fetch(ajaxurl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    action: 'softone_get_logs',
+                    _ajax_nonce: softone_logs.nonce
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (Array.isArray(data)) {
+                    logEl.textContent = data.map(row => `[${row.timestamp}] ${row.action}: ${row.message}`).join('\n');
+                    logEl.scrollTop = logEl.scrollHeight;
+                }
+            });
+        }
+        fetchLogs();
+        setInterval(fetchLogs, 5000);
+    });
+    </script>
     <?php
 }
 ?>
