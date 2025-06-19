@@ -14,8 +14,8 @@ customer, product and order data between the two systems.
   displays progress in real time.
 - **Menu synchronisation** – Product categories are mirrored in the main
   WordPress menu so the store navigation always reflects the latest structure.
-  The default *Uncategorized* category is removed and top level entries are
-  flagged with Divi's `mega-menu` classes.
+  The default *Uncategorized* category is removed and the **Products** menu
+  entry is flagged with Divi's `mega-menu` class.
 - **Brand taxonomy** – The plugin creates a `product_brand` taxonomy and assigns
   Softone brand information to your WooCommerce products.
 - **Logging** – All API interactions are recorded. View logs live from the
