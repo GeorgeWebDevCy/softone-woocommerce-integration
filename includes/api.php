@@ -3,7 +3,7 @@
  * Handles interactions with the Softone API and WooCommerce product sync.
  */
 class Softone_API {
-    private $endpoint = 'http://ptkids.oncloud.gr/s1services';
+    private $endpoint = 'https://ptkids.oncloud.gr/s1services';
     private $username;
     private $password;
     private $client_id;
