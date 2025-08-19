@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.26
+Stable tag: 2.2.27
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -65,6 +65,9 @@ nested submenus for each level.
 
 == Changelog ==
 
+= 2.2.27 =
+* Switch API endpoint to HTTPS.
+
 = 2.2.26 =
 * Remove custom mega-menu classes from top level categories to rely on Divi's native styling.
 
@@ -97,6 +100,9 @@ nested submenus for each level.
 * Initial release.
 
 == Upgrade Notice ==
+
+= 2.2.27 =
+* Switches API endpoint to HTTPS for secure communication.
 
 = 2.2.26 =
 * Removes unused mega-menu classes for better compatibility with Divi.
