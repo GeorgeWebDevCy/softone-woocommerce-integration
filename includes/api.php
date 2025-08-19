@@ -123,8 +123,11 @@ class Softone_API {
             if (!empty($item['SUBMECATEGORY NAME'])) $cat_path[] = $item['SUBMECATEGORY NAME'];
             $product->set_category_ids($this->create_category_tree($cat_path));
             $brand_name = '';
-            foreach (['BRAND NAME','BRAND','BRANDNAME','MTRBRAND NAME','MTRBRANDS NAME'] as $bk) {
-                if (!empty($item[$bk])) { $brand_name = $item[$bk]; break; }
+            foreach (['BRAND NAME','BRANDNAME','MTRBRAND NAME','MTRBRANDS NAME'] as $bk) {
+                if (!empty($item[$bk])) {
+                    $brand_name = $item[$bk];
+                    break;
+                }
             }
             $brand_term_id = 0;
             if ($brand_name && taxonomy_exists('product_brand')) {
