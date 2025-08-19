@@ -111,12 +111,17 @@ class Softone_API {
             $product = $existing_id ? wc_get_product($existing_id) : new WC_Product_Simple();
             $product->set_name($name);
             $product->set_regular_price($price);
+            $product->set_price($price);
             $product->set_sku($sku);
             $product->set_stock_quantity($qty);
             $product->set_manage_stock(true);
-            if (!empty($item['DESCRIPTION'])) {
-                $desc = mb_convert_encoding($item['DESCRIPTION'], 'UTF-8', 'UTF-8');
+            if (!empty($item['CCCSOCYLODES'])) {
+                $desc = mb_convert_encoding($item['CCCSOCYLODES'], 'UTF-8', 'UTF-8');
                 $product->set_description(wp_kses_post($desc));
+            }
+            if (!empty($item['REMARKS'])) {
+                $short = mb_convert_encoding($item['REMARKS'], 'UTF-8', 'UTF-8');
+                $product->set_short_description(wp_kses_post($short));
             }
             $cat_path = [];
             if (!empty($item['COMMECATEGORY NAME'])) $cat_path[] = $item['COMMECATEGORY NAME'];
@@ -136,6 +141,28 @@ class Softone_API {
                 if (!$term) { $term = wp_insert_term($brand_name, 'product_brand'); }
                 if (!is_wp_error($term)) { $brand_term_id = is_array($term) ? $term['term_id'] : $term; }
             }
+
+            $attributes = [];
+            if (!empty($item['COLOUR NAME'])) {
+                $colour_attr = new WC_Product_Attribute();
+                $colour_attr->set_name('Colour');
+                $colour_attr->set_options([sanitize_text_field(mb_convert_encoding(trim($item['COLOUR NAME']), 'UTF-8', 'UTF-8'))]);
+                $colour_attr->set_visible(true);
+                $colour_attr->set_variation(false);
+                $attributes[] = $colour_attr;
+            }
+            if (!empty($item['SIZE NAME'])) {
+                $size_attr = new WC_Product_Attribute();
+                $size_attr->set_name('Size');
+                $size_attr->set_options([sanitize_text_field(mb_convert_encoding(trim($item['SIZE NAME']), 'UTF-8', 'UTF-8'))]);
+                $size_attr->set_visible(true);
+                $size_attr->set_variation(false);
+                $attributes[] = $size_attr;
+            }
+            if (!empty($attributes)) {
+                $product->set_attributes($attributes);
+            }
+
             $id = $product->save();
             if ($brand_term_id) { wp_set_object_terms($id, [$brand_term_id], 'product_brand'); }
             return ($existing_id ? "Updated" : "Added") . ": $sku (ID $id)";

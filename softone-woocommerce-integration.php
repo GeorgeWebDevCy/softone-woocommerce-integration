@@ -3,7 +3,7 @@
  * Plugin Name: Softone WooCommerce Integration
  * Plugin URI: https://wordpress.org/plugins/softone-woocommerce-integration/
  * Description: Integrates WooCommerce with Softone API for customer, product, and order synchronization.
- * Version: 2.2.28
+ * Version: 2.2.29
  * Author: George Nicolaou
  * Author URI: https://profiles.wordpress.org/georgenicolaou/
  * Text Domain: softone-woocommerce-integration
@@ -309,116 +309,7 @@ function softone_sync_products() {
         $products = $api->get_products($minutes);
         if ($products) {
             foreach ($products as $product) {
-                // Check if product exists by SKU
-                $existing_product_id = wc_get_product_id_by_sku($product['SKU']);
-                if ($existing_product_id) {
-                    // Update existing product
-                    $product_obj = new WC_Product($existing_product_id);
-                    $product_obj->set_name(sanitize_text_field($product['DESC']));
-                    $product_obj->set_price(floatval($product['RETAILPRICE']));
-                    $product_obj->set_regular_price(floatval($product['RETAILPRICE']));
-                    $product_obj->set_stock_quantity(intval($product['Stock QTY']));
-                    $product_obj->set_manage_stock(true);
-
-                    // Update categories and subcategories
-                    $category_ids = array();
-                    if (!empty($product['COMMECATEGORY NAME'])) {
-                        $category_id = get_term_by('name', sanitize_text_field($product['COMMECATEGORY NAME']), 'product_cat');
-                        if ($category_id) {
-                            $category_ids[] = $category_id->term_id;
-                        } else {
-                            // Create new category if it does not exist
-                            $new_category = wp_insert_term(sanitize_text_field($product['COMMECATEGORY NAME']), 'product_cat');
-                            if (!is_wp_error($new_category)) {
-                                $category_ids[] = $new_category['term_id'];
-                            }
-                        }
-                    }
-                    if (!empty($product['SUBMECATEGORY NAME'])) {
-                        $subcategory_id = get_term_by('name', sanitize_text_field($product['SUBMECATEGORY NAME']), 'product_cat');
-                        if ($subcategory_id) {
-                            $category_ids[] = $subcategory_id->term_id;
-                        } else {
-                            // Create new subcategory if it does not exist
-                            $new_subcategory = wp_insert_term(sanitize_text_field($product['SUBMECATEGORY NAME']), 'product_cat');
-                            if (!is_wp_error($new_subcategory)) {
-                                $category_ids[] = $new_subcategory['term_id'];
-                            }
-                        }
-                    }
-                    if (!empty($category_ids)) {
-                        $product_obj->set_category_ids($category_ids);
-                    }
-
-                    $brand_name = '';
-                    foreach (['BRAND NAME','BRAND','BRANDNAME','MTRBRAND NAME','MTRBRANDS NAME'] as $bk) {
-                        if (!empty($product[$bk])) { $brand_name = $product[$bk]; break; }
-                    }
-                    $brand_term_id = 0;
-                    if ($brand_name) {
-                        $brand_name = sanitize_text_field($brand_name);
-                        $term = term_exists($brand_name, 'product_brand');
-                        if (!$term) { $term = wp_insert_term($brand_name, 'product_brand'); }
-                        if (!is_wp_error($term)) { $brand_term_id = is_array($term) ? $term['term_id'] : $term; }
-                    }
-
-                    $product_obj->save();
-                    if ($brand_term_id) { wp_set_object_terms($existing_product_id, [$brand_term_id], 'product_brand'); }
-                } else {
-                    // Create new product
-                    $new_product = new WC_Product();
-                    $new_product->set_name(sanitize_text_field($product['DESC']));
-                    $new_product->set_sku(sanitize_text_field($product['SKU']));
-                    $new_product->set_price(floatval($product['RETAILPRICE']));
-                    $new_product->set_regular_price(floatval($product['RETAILPRICE']));
-                    $new_product->set_stock_quantity(intval($product['Stock QTY']));
-                    $new_product->set_manage_stock(true);
-
-                    // Set categories and subcategories
-                    $category_ids = array();
-                    if (!empty($product['COMMECATEGORY NAME'])) {
-                        $category_id = get_term_by('name', sanitize_text_field($product['COMMECATEGORY NAME']), 'product_cat');
-                        if ($category_id) {
-                            $category_ids[] = $category_id->term_id;
-                        } else {
-                            // Create new category if it does not exist
-                            $new_category = wp_insert_term(sanitize_text_field($product['COMMECATEGORY NAME']), 'product_cat');
-                            if (!is_wp_error($new_category)) {
-                                $category_ids[] = $new_category['term_id'];
-                            }
-                        }
-                    }
-                    if (!empty($product['SUBMECATEGORY NAME'])) {
-                        $subcategory_id = get_term_by('name', sanitize_text_field($product['SUBMECATEGORY NAME']), 'product_cat');
-                        if ($subcategory_id) {
-                            $category_ids[] = $subcategory_id->term_id;
-                        } else {
-                            // Create new subcategory if it does not exist
-                            $new_subcategory = wp_insert_term(sanitize_text_field($product['SUBMECATEGORY NAME']), 'product_cat');
-                            if (!is_wp_error($new_subcategory)) {
-                                $category_ids[] = $new_subcategory['term_id'];
-                            }
-                        }
-                    }
-                    if (!empty($category_ids)) {
-                        $new_product->set_category_ids($category_ids);
-                    }
-
-                    $brand_name = '';
-                    foreach (['BRAND NAME','BRAND','BRANDNAME','MTRBRAND NAME','MTRBRANDS NAME'] as $bk) {
-                        if (!empty($product[$bk])) { $brand_name = $product[$bk]; break; }
-                    }
-                    $brand_term_id = 0;
-                    if ($brand_name) {
-                        $brand_name = sanitize_text_field($brand_name);
-                        $term = term_exists($brand_name, 'product_brand');
-                        if (!$term) { $term = wp_insert_term($brand_name, 'product_brand'); }
-                        if (!is_wp_error($term)) { $brand_term_id = is_array($term) ? $term['term_id'] : $term; }
-                    }
-
-                    $new_product->save();
-                    if ($brand_term_id) { wp_set_object_terms($new_product->get_id(), [$brand_term_id], 'product_brand'); }
-                }
+                $api->sync_product_to_woocommerce($product);
             }
             update_option('softone_synced_products', array_map('sanitize_text_field', $products));
             update_option('softone_last_product_sync', current_time('mysql'));
