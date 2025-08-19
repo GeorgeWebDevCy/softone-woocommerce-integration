@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.28
+Stable tag: 2.2.29
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -65,6 +65,10 @@ nested submenus for each level.
 
 == Changelog ==
 
+= 2.2.29 =
+* Map colour and size attributes and use RETAILPRICE for pricing.
+* Use CCCSOCYLODES as the product description and REMARKS as the short description.
+
 = 2.2.28 =
 * Use brand name instead of brand code when assigning product brands.
 
@@ -103,6 +107,9 @@ nested submenus for each level.
 * Initial release.
 
 == Upgrade Notice ==
+
+= 2.2.29 =
+* Adds colour/size attributes and sets product descriptions from Softone fields.
 
 = 2.2.28 =
 * Uses brand name rather than brand code for product brands.
