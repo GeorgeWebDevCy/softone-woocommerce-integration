@@ -100,11 +100,22 @@ class Softone_API {
         return $term_ids;
     }
 
+    private function get_product_id_by_mtrl($mtrl) {
+        $products = get_posts([
+            'post_type'      => 'product',
+            'meta_key'       => 'attribute_mtrl',
+            'meta_value'     => $mtrl,
+            'fields'         => 'ids',
+            'posts_per_page' => 1,
+        ]);
+        return !empty($products) ? (int) $products[0] : 0;
+    }
+
     public function sync_product_to_woocommerce($item) {
         softone_log('sync_product', print_r($item, true));
         try {
-            $sku = sanitize_text_field(mb_convert_encoding(trim($item['CODE']), 'UTF-8', 'UTF-8'));
-            $barcode = !empty($item['BARCODE']) ? sanitize_text_field(mb_convert_encoding(trim($item['BARCODE']), 'UTF-8', 'UTF-8')) : '';
+            $sku = sanitize_text_field(mb_convert_encoding(trim($item['SKU']), 'UTF-8', 'UTF-8'));
+            $barcode = !empty($item['CODE']) ? sanitize_text_field(mb_convert_encoding(trim($item['CODE']), 'UTF-8', 'UTF-8')) : '';
             $name = sanitize_text_field(mb_convert_encoding(trim($item['DESC']), 'UTF-8', 'UTF-8'));
             $price = isset($item['RETAILPRICE']) ? floatval($item['RETAILPRICE']) : 0;
             $qty = isset($item['Stock QTY']) ? intval($item['Stock QTY']) : 0;
@@ -159,6 +170,16 @@ class Softone_API {
             }
 
             $attributes = [];
+            if (!empty($item['MTRL'])) {
+                $mtrl_value = sanitize_text_field(mb_convert_encoding(trim($item['MTRL']), 'UTF-8', 'UTF-8'));
+                $mtrl_attr = new WC_Product_Attribute();
+                $mtrl_attr->set_name('MTRL');
+                $mtrl_attr->set_options([$mtrl_value]);
+                $mtrl_attr->set_visible(false);
+                $mtrl_attr->set_variation(false);
+                $attributes[] = $mtrl_attr;
+                $product->update_meta_data('attribute_mtrl', $mtrl_value);
+            }
             if (!empty($item['COLOUR NAME'])) {
                 $colour_attr = new WC_Product_Attribute();
                 $colour_attr->set_name('Colour');
@@ -179,11 +200,19 @@ class Softone_API {
                 $product->set_attributes($attributes);
             }
 
+            if (!empty($item['Related_Item_MTRL'])) {
+                $related_mtrl = sanitize_text_field(mb_convert_encoding(trim($item['Related_Item_MTRL']), 'UTF-8', 'UTF-8'));
+                $related_id = $this->get_product_id_by_mtrl($related_mtrl);
+                if ($related_id) {
+                    $product->set_upsell_ids([$related_id]);
+                }
+            }
+
             $id = $product->save();
             if ($brand_term_id) { wp_set_object_terms($id, [$brand_term_id], 'product_brand'); }
             return ($existing_id ? "Updated" : "Added") . ": $sku (ID $id)";
         } catch (Throwable $e) {
-            return "❌ Failed to sync SKU {$item['CODE']}: " . $e->getMessage();
+            return "❌ Failed to sync SKU {$item['SKU']}: " . $e->getMessage();
         }
     }
 }
@@ -219,7 +248,7 @@ add_action('wp_ajax_softone_sync_products', function () {
             $log[] = "✅ [$offset+$i] $result";
         } catch (Throwable $e) {
             $failed++;
-            $log[] = "❌ [$offset+$i] Failed SKU: " . ($item['CODE'] ?? '[UNKNOWN]') . ' – Error: ' . $e->getMessage();
+            $log[] = "❌ [$offset+$i] Failed SKU: " . ($item['SKU'] ?? '[UNKNOWN]') . ' – Error: ' . $e->getMessage();
         }
     }
     $progress = min(100, round((($offset + $limit) / $total) * 100));
