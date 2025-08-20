@@ -143,19 +143,26 @@ function softone_request_tester_page() {
         </script>
         <?php if (null !== $response) : ?>
             <h2><?php esc_html_e('Response', 'softone-woocommerce-integration'); ?></h2>
-            <pre style="background:#111;color:#0f0;padding:10px;overflow:auto;max-height:500px;">
-<?php
-if (is_wp_error($response)) {
-    echo esc_html($response->get_error_message());
-} else {
-    echo esc_html('Status: ' . $response['response']['code'] . ' ' . $response['response']['message'] . "\n\n");
-    foreach ($response['headers'] as $key => $value) {
-        echo esc_html($key . ': ' . $value . "\n");
-    }
-    echo esc_html("\n" . $response['body']);
-}
-?>
-            </pre>
+            <?php
+            $pre_style = 'background:#f5f5f5;color:#333;padding:10px;overflow:auto;max-height:500px;';
+            if (is_wp_error($response)) {
+                echo '<pre style="' . esc_attr($pre_style) . '">' . esc_html($response->get_error_message()) . '</pre>';
+            } else {
+                $output  = __('Status', 'softone-woocommerce-integration') . ': ' . $response['response']['code'] . ' ' . $response['response']['message'] . "\n\n";
+                $output .= __('Headers', 'softone-woocommerce-integration') . ":\n";
+                foreach ($response['headers'] as $key => $value) {
+                    $output .= $key . ': ' . $value . "\n";
+                }
+                $output .= "\n" . __('Body', 'softone-woocommerce-integration') . ":\n";
+                $decoded_body = json_decode($response['body'], true);
+                if (null !== $decoded_body) {
+                    $output .= wp_json_encode($decoded_body, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+                } else {
+                    $output .= $response['body'];
+                }
+                echo '<pre style="' . esc_attr($pre_style) . '">' . esc_html($output) . '</pre>';
+            }
+            ?>
         <?php endif; ?>
     </div>
     <?php
