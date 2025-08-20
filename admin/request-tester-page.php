@@ -6,6 +6,48 @@ function softone_request_tester_page() {
     $response = null;
     $error = '';
 
+    $presets = array(
+        'get_products' => array(
+            'label'   => __('Get Products', 'softone-woocommerce-integration'),
+            'url'     => 'https://ptkids.oncloud.gr/s1services',
+            'method'  => 'POST',
+            'headers' => array('Content-Type' => 'application/json'),
+            'body'    => array(
+                'service'  => 'SqlData',
+                'clientid' => get_option('softone_api_session'),
+                'appId'    => 1000,
+                'SqlName'  => 'getItems',
+                'pMins'    => 99999,
+            ),
+        ),
+        'get_orders' => array(
+            'label'   => __('Get Orders', 'softone-woocommerce-integration'),
+            'url'     => 'https://ptkids.oncloud.gr/s1services',
+            'method'  => 'POST',
+            'headers' => array('Content-Type' => 'application/json'),
+            'body'    => array(
+                'service'  => 'SqlData',
+                'clientid' => get_option('softone_api_session'),
+                'appId'    => 1000,
+                'SqlName'  => 'getOrders',
+                'pMins'    => 99999,
+            ),
+        ),
+        'get_customers' => array(
+            'label'   => __('Get Customers', 'softone-woocommerce-integration'),
+            'url'     => 'https://ptkids.oncloud.gr/s1services',
+            'method'  => 'POST',
+            'headers' => array('Content-Type' => 'application/json'),
+            'body'    => array(
+                'service'  => 'SqlData',
+                'clientid' => get_option('softone_api_session'),
+                'appId'    => 1000,
+                'SqlName'  => 'getCustomers',
+                'pMins'    => 99999,
+            ),
+        ),
+    );
+
     if (isset($_POST['softone_request_tester_nonce']) && wp_verify_nonce($_POST['softone_request_tester_nonce'], 'softone_request_tester')) {
         $url    = isset($_POST['softone_request_tester_url']) ? esc_url_raw(wp_unslash($_POST['softone_request_tester_url'])) : '';
         $method = isset($_POST['softone_request_tester_method']) ? strtoupper(sanitize_text_field(wp_unslash($_POST['softone_request_tester_method']))) : 'GET';
@@ -42,6 +84,17 @@ function softone_request_tester_page() {
             <?php wp_nonce_field('softone_request_tester', 'softone_request_tester_nonce'); ?>
             <table class="form-table" role="presentation">
                 <tr>
+                    <th scope="row"><label for="softone_request_tester_preset"><?php esc_html_e('Preset', 'softone-woocommerce-integration'); ?></label></th>
+                    <td>
+                        <select id="softone_request_tester_preset">
+                            <option value=""><?php esc_html_e('Custom', 'softone-woocommerce-integration'); ?></option>
+                            <?php foreach ($presets as $key => $preset) : ?>
+                                <option value="<?php echo esc_attr($key); ?>"><?php echo esc_html($preset['label']); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </td>
+                </tr>
+                <tr>
                     <th scope="row"><label for="softone_request_tester_url"><?php esc_html_e('Request URL', 'softone-woocommerce-integration'); ?></label></th>
                     <td><input name="softone_request_tester_url" type="text" id="softone_request_tester_url" value="<?php echo isset($_POST['softone_request_tester_url']) ? esc_attr(wp_unslash($_POST['softone_request_tester_url'])) : ''; ?>" class="regular-text" /></td>
                 </tr>
@@ -70,6 +123,24 @@ function softone_request_tester_page() {
             </table>
             <?php submit_button(__('Send Request', 'softone-woocommerce-integration')); ?>
         </form>
+        <script>
+        (function () {
+            const presets = <?php echo wp_json_encode($presets); ?>;
+            const presetSelect = document.getElementById('softone_request_tester_preset');
+            const urlField = document.getElementById('softone_request_tester_url');
+            const methodField = document.getElementById('softone_request_tester_method');
+            const headersField = document.getElementById('softone_request_tester_headers');
+            const bodyField = document.getElementById('softone_request_tester_body');
+            presetSelect.addEventListener('change', function(){
+                const p = presets[this.value];
+                if (!p) { return; }
+                urlField.value = p.url || '';
+                methodField.value = p.method || 'GET';
+                headersField.value = p.headers ? JSON.stringify(p.headers, null, 2) : '';
+                bodyField.value = p.body ? JSON.stringify(p.body, null, 2) : '';
+            });
+        })();
+        </script>
         <?php if (null !== $response) : ?>
             <h2><?php esc_html_e('Response', 'softone-woocommerce-integration'); ?></h2>
             <pre style="background:#111;color:#0f0;padding:10px;overflow:auto;max-height:500px;">
