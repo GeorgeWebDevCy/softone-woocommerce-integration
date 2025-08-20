@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.33
+Stable tag: 2.2.34
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -65,6 +65,9 @@ nested submenus for each level.
 
 == Changelog ==
 
+= 2.2.34 =
+* Assign products to the category named in SEASON CODE_1 if provided.
+
 = 2.2.33 =
 * Ensure API Request Tester displays the full Softone response.
 
@@ -116,6 +119,9 @@ nested submenus for each level.
 * Initial release.
 
 == Upgrade Notice ==
+
+= 2.2.34 =
+* Assigns products to category from SEASON CODE_1 when available.
 
 = 2.2.33 =
 * Shows the complete Softone response in the API Request Tester.
