@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.35
+Stable tag: 2.2.36
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -65,6 +65,11 @@ nested submenus for each level.
 
 == Changelog ==
 
+= 2.2.36 =
+* Map Softone SKU to WooCommerce SKU and Softone CODE to the barcode field.
+* Store Softone MTRL as a hidden product attribute and add upsells via Related_Item_MTRL.
+* Use COMMECATEGORY NAME for categories and SUBMECATEGORY NAME for subcategories.
+
 = 2.2.35 =
 * Map Softone CODE to WooCommerce SKU and BARCODE to GTIN field.
 
@@ -122,6 +127,9 @@ nested submenus for each level.
 * Initial release.
 
 == Upgrade Notice ==
+
+= 2.2.36 =
+* Switches to Softone SKU for product SKUs, maps CODE to barcode, and links upsells via MTRL.
 
 = 2.2.35 =
 * Uses Softone CODE as SKU and BARCODE for WooCommerce GTIN field.
