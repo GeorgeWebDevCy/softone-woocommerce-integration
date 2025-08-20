@@ -103,7 +103,8 @@ class Softone_API {
     public function sync_product_to_woocommerce($item) {
         softone_log('sync_product', print_r($item, true));
         try {
-            $sku = sanitize_text_field(mb_convert_encoding(trim($item['SKU']), 'UTF-8', 'UTF-8'));
+            $sku = sanitize_text_field(mb_convert_encoding(trim($item['CODE']), 'UTF-8', 'UTF-8'));
+            $barcode = !empty($item['BARCODE']) ? sanitize_text_field(mb_convert_encoding(trim($item['BARCODE']), 'UTF-8', 'UTF-8')) : '';
             $name = sanitize_text_field(mb_convert_encoding(trim($item['DESC']), 'UTF-8', 'UTF-8'));
             $price = isset($item['RETAILPRICE']) ? floatval($item['RETAILPRICE']) : 0;
             $qty = isset($item['Stock QTY']) ? intval($item['Stock QTY']) : 0;
@@ -113,6 +114,9 @@ class Softone_API {
             $product->set_regular_price($price);
             $product->set_price($price);
             $product->set_sku($sku);
+            if ($barcode && method_exists($product, 'set_global_unique_id')) {
+                $product->set_global_unique_id($barcode);
+            }
             $product->set_stock_quantity($qty);
             $product->set_manage_stock(true);
             if (!empty($item['CCCSOCYLODES'])) {
@@ -179,7 +183,7 @@ class Softone_API {
             if ($brand_term_id) { wp_set_object_terms($id, [$brand_term_id], 'product_brand'); }
             return ($existing_id ? "Updated" : "Added") . ": $sku (ID $id)";
         } catch (Throwable $e) {
-            return "❌ Failed to sync SKU {$item['SKU']}: " . $e->getMessage();
+            return "❌ Failed to sync SKU {$item['CODE']}: " . $e->getMessage();
         }
     }
 }
@@ -215,7 +219,7 @@ add_action('wp_ajax_softone_sync_products', function () {
             $log[] = "✅ [$offset+$i] $result";
         } catch (Throwable $e) {
             $failed++;
-            $log[] = "❌ [$offset+$i] Failed SKU: " . ($item['SKU'] ?? '[UNKNOWN]') . ' – Error: ' . $e->getMessage();
+            $log[] = "❌ [$offset+$i] Failed SKU: " . ($item['CODE'] ?? '[UNKNOWN]') . ' – Error: ' . $e->getMessage();
         }
     }
     $progress = min(100, round((($offset + $limit) / $total) * 100));
