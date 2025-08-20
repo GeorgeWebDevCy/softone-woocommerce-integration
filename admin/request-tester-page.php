@@ -154,11 +154,14 @@ function softone_request_tester_page() {
                     $output .= $key . ': ' . $value . "\n";
                 }
                 $output .= "\n" . __('Body', 'softone-woocommerce-integration') . ":\n";
-                $decoded_body = json_decode($response['body'], true);
+                $body = wp_remote_retrieve_body($response);
+                $body = mb_convert_encoding($body, 'UTF-8', 'ISO-8859-7,UTF-8');
+                $body = iconv('UTF-8', 'UTF-8//IGNORE', $body);
+                $decoded_body = json_decode($body, true);
                 if (null !== $decoded_body) {
-                    $output .= wp_json_encode($decoded_body, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+                    $output .= wp_json_encode($decoded_body, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
                 } else {
-                    $output .= $response['body'];
+                    $output .= $body;
                 }
                 echo '<pre style="' . esc_attr($pre_style) . '">' . esc_html($output) . '</pre>';
             }
