@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.30
+Stable tag: 2.2.31
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -65,6 +65,9 @@ nested submenus for each level.
 
 == Changelog ==
 
+= 2.2.31 =
+* Add preset dropdown to API Request Tester.
+
 = 2.2.29 =
 * Map colour and size attributes and use RETAILPRICE for pricing.
 * Use CCCSOCYLODES as the product description and REMARKS as the short description.
@@ -107,6 +110,9 @@ nested submenus for each level.
 * Initial release.
 
 == Upgrade Notice ==
+
+= 2.2.31 =
+* Adds preset dropdown to API Request Tester.
 
 = 2.2.29 =
 * Adds colour/size attributes and sets product descriptions from Softone fields.
