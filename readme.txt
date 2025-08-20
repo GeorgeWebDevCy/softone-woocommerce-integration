@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.34
+Stable tag: 2.2.35
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -65,6 +65,9 @@ nested submenus for each level.
 
 == Changelog ==
 
+= 2.2.35 =
+* Map Softone CODE to WooCommerce SKU and BARCODE to GTIN field.
+
 = 2.2.34 =
 * Assign products to the category named in SEASON CODE_1 if provided.
 
@@ -119,6 +122,9 @@ nested submenus for each level.
 * Initial release.
 
 == Upgrade Notice ==
+
+= 2.2.35 =
+* Uses Softone CODE as SKU and BARCODE for WooCommerce GTIN field.
 
 = 2.2.34 =
 * Assigns products to category from SEASON CODE_1 when available.
