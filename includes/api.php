@@ -126,7 +126,19 @@ class Softone_API {
             $cat_path = [];
             if (!empty($item['COMMECATEGORY NAME'])) $cat_path[] = $item['COMMECATEGORY NAME'];
             if (!empty($item['SUBMECATEGORY NAME'])) $cat_path[] = $item['SUBMECATEGORY NAME'];
-            $product->set_category_ids($this->create_category_tree($cat_path));
+            $cat_ids = $this->create_category_tree($cat_path);
+            if (!empty($item['SEASON CODE_1'])) {
+                $extra_name = sanitize_text_field(mb_convert_encoding(trim($item['SEASON CODE_1']), 'UTF-8', 'UTF-8'));
+                $extra_term = term_exists($extra_name, 'product_cat');
+                if (!$extra_term) {
+                    $extra_term = wp_insert_term($extra_name, 'product_cat');
+                }
+                if (!is_wp_error($extra_term)) {
+                    $extra_id = is_array($extra_term) ? $extra_term['term_id'] : $extra_term;
+                    $cat_ids[] = $extra_id;
+                }
+            }
+            $product->set_category_ids($cat_ids);
             $brand_name = '';
             foreach (['BRAND NAME','BRANDNAME','MTRBRAND NAME','MTRBRANDS NAME'] as $bk) {
                 if (!empty($item[$bk])) {
