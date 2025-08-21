@@ -126,14 +126,25 @@ class Softone_API {
                 ]]
             ]
         ];
+        softone_log('create_customer_from_order_request', $payload);
+
         $response = wp_remote_post($this->endpoint, [
             'body' => wp_json_encode($payload),
             'headers' => ['Content-Type' => 'application/json']
         ]);
+
+        if (is_wp_error($response)) {
+            softone_log('create_customer_from_order_error', $response->get_error_message());
+            return 0;
+        }
+
         $body = wp_remote_retrieve_body($response);
         $body = mb_convert_encoding($body, 'UTF-8', 'UTF-8');
         $body = preg_replace('/[^\x00-\x7F\xC2-\xF4][\x80-\xBF]*/', '', $body);
         $data = json_decode($body, true);
+
+        softone_log('create_customer_from_order_response', $data);
+
         return !empty($data['id']) ? intval($data['id']) : 0;
     }
 
@@ -165,14 +176,27 @@ class Softone_API {
                 'ITELINES' => $items
             ]
         ];
+
+        softone_log('send_salesdoc_request', $payload);
+
         $response = wp_remote_post($this->endpoint, [
             'body' => wp_json_encode($payload),
             'headers' => ['Content-Type' => 'application/json']
         ]);
+
+        if (is_wp_error($response)) {
+            softone_log('send_salesdoc_error', $response->get_error_message());
+            return ['error' => $response->get_error_message()];
+        }
+
         $body = wp_remote_retrieve_body($response);
         $body = mb_convert_encoding($body, 'UTF-8', 'UTF-8');
         $body = preg_replace('/[^\x00-\x7F\xC2-\xF4][\x80-\xBF]*/', '', $body);
-        return json_decode($body, true);
+        $result = json_decode($body, true);
+
+        softone_log('send_salesdoc_response', $result);
+
+        return $result;
     }
 
     public function create_order($order) {
