@@ -155,7 +155,8 @@ class Softone_API {
             }
             $product->set_category_ids($cat_ids);
             $brand_name = '';
-            foreach (['BRAND NAME','BRANDNAME','MTRBRAND NAME','MTRBRANDS NAME'] as $bk) {
+            // Use human-readable brand name fields and ignore brand codes.
+            foreach (['BRAND NAME','BRANDS NAME','MTRBRAND NAME','MTRBRANDS NAME'] as $bk) {
                 if (!empty($item[$bk])) {
                     $brand_name = $item[$bk];
                     break;

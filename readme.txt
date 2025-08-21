@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.37
+Stable tag: 2.2.38
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -64,6 +64,9 @@ Sync tool mirrors this hierarchy under the **Products** menu item, creating
 nested submenus for each level.
 
 == Changelog ==
+
+= 2.2.38 =
+* Always use brand name instead of brand code for product brands.
 
 = 2.2.37 =
 * Ensure "Special Offers" category is placed last in the mega menu.
@@ -130,6 +133,9 @@ nested submenus for each level.
 * Initial release.
 
 == Upgrade Notice ==
+
+= 2.2.38 =
+* Uses brand name rather than brand code for product brands.
 
 = 2.2.37 =
 * Adds "Special Offers" to the end of the mega menu.
