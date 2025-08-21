@@ -3,7 +3,7 @@
  * Plugin Name: Softone WooCommerce Integration
  * Plugin URI: https://wordpress.org/plugins/softone-woocommerce-integration/
  * Description: Integrates WooCommerce with Softone API for customer, product, and order synchronization.
- * Version: 2.2.42
+ * Version: 2.2.43
  * Author: George Nicolaou
  * Author URI: https://profiles.wordpress.org/georgenicolaou/
  * Text Domain: softone-woocommerce-integration
@@ -34,6 +34,8 @@ require_once SOFTONE_PLUGIN_PATH . 'admin/customer-sync-page.php';
 require_once SOFTONE_PLUGIN_PATH . 'admin/product-sync-page.php';
 require_once SOFTONE_PLUGIN_PATH . 'admin/order-sync-page.php';
 require_once SOFTONE_PLUGIN_PATH . 'admin/logs-page.php';
+require_once SOFTONE_PLUGIN_PATH . 'admin/customer-logs-page.php';
+require_once SOFTONE_PLUGIN_PATH . 'admin/order-logs-page.php';
 require_once SOFTONE_PLUGIN_PATH . 'admin/request-tester-page.php';
 require_once SOFTONE_PLUGIN_PATH . 'admin/api-fields-page.php';
 require 'plugin-update-checker/plugin-update-checker.php';
@@ -178,6 +180,26 @@ function softone_admin_menu() {
         'softone_logs_page'
     );
     softone_debug_log('admin_menu', 'Logs submenu hook: ' . $log_hook);
+
+    $customer_logs_hook = add_submenu_page(
+        'softone-settings',
+        __('Customer Logs', 'softone-woocommerce-integration'),
+        __('Customer Logs', 'softone-woocommerce-integration'),
+        'manage_options',
+        'softone-customer-logs',
+        'softone_customer_logs_page'
+    );
+    softone_debug_log('admin_menu', 'Customer logs submenu hook: ' . $customer_logs_hook);
+
+    $order_logs_hook = add_submenu_page(
+        'softone-settings',
+        __('Order Logs', 'softone-woocommerce-integration'),
+        __('Order Logs', 'softone-woocommerce-integration'),
+        'manage_options',
+        'softone-order-logs',
+        'softone_order_logs_page'
+    );
+    softone_debug_log('admin_menu', 'Order logs submenu hook: ' . $order_logs_hook);
 
     $tester_hook = add_submenu_page(
         'softone-settings',
