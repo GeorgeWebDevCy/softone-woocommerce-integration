@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.38
+Stable tag: 2.2.39
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -64,6 +64,11 @@ Sync tool mirrors this hierarchy under the **Products** menu item, creating
 nested submenus for each level.
 
 == Changelog ==
+
+= 2.2.39 =
+* Include sub-subcategory, season and related item fields when syncing products.
+* Improve logging to support multiline and structured messages.
+* Allow JSON bodies in the API Request Tester.
 
 = 2.2.38 =
 * Always use brand name instead of brand code for product brands.
@@ -133,6 +138,9 @@ nested submenus for each level.
 * Initial release.
 
 == Upgrade Notice ==
+
+= 2.2.39 =
+* Adds support for new Softone product fields and improves logging and request testing.
 
 = 2.2.38 =
 * Uses brand name rather than brand code for product brands.

@@ -52,7 +52,12 @@ function softone_request_tester_page() {
         $url    = isset($_POST['softone_request_tester_url']) ? esc_url_raw(wp_unslash($_POST['softone_request_tester_url'])) : '';
         $method = isset($_POST['softone_request_tester_method']) ? strtoupper(sanitize_text_field(wp_unslash($_POST['softone_request_tester_method']))) : 'GET';
         $headers_input = isset($_POST['softone_request_tester_headers']) ? wp_unslash($_POST['softone_request_tester_headers']) : '';
-        $body   = isset($_POST['softone_request_tester_body']) ? wp_unslash($_POST['softone_request_tester_body']) : '';
+        $body_raw = isset($_POST['softone_request_tester_body']) ? wp_unslash($_POST['softone_request_tester_body']) : '';
+        $body = $body_raw;
+        $decoded_body = json_decode($body_raw, true);
+        if (null !== $decoded_body && json_last_error() === JSON_ERROR_NONE) {
+            $body = wp_json_encode($decoded_body);
+        }
 
         $headers = array();
         if (!empty($headers_input)) {
