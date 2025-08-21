@@ -3,7 +3,7 @@
  * Plugin Name: Softone WooCommerce Integration
  * Plugin URI: https://wordpress.org/plugins/softone-woocommerce-integration/
  * Description: Integrates WooCommerce with Softone API for customer, product, and order synchronization.
- * Version: 2.2.39
+ * Version: 2.2.40
  * Author: George Nicolaou
  * Author URI: https://profiles.wordpress.org/georgenicolaou/
  * Text Domain: softone-woocommerce-integration
@@ -35,6 +35,7 @@ require_once SOFTONE_PLUGIN_PATH . 'admin/product-sync-page.php';
 require_once SOFTONE_PLUGIN_PATH . 'admin/order-sync-page.php';
 require_once SOFTONE_PLUGIN_PATH . 'admin/logs-page.php';
 require_once SOFTONE_PLUGIN_PATH . 'admin/request-tester-page.php';
+require_once SOFTONE_PLUGIN_PATH . 'admin/api-fields-page.php';
 require 'plugin-update-checker/plugin-update-checker.php';
 
 use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
@@ -187,6 +188,16 @@ function softone_admin_menu() {
         'softone_request_tester_page'
     );
     softone_debug_log('admin_menu', 'Request tester submenu hook: ' . $tester_hook);
+
+    $fields_hook = add_submenu_page(
+        'softone-settings',
+        __('API Fields', 'softone-woocommerce-integration'),
+        __('API Fields', 'softone-woocommerce-integration'),
+        'manage_options',
+        'softone-api-fields',
+        'softone_api_fields_page'
+    );
+    softone_debug_log('admin_menu', 'API fields submenu hook: ' . $fields_hook);
 
     $menu_hook = add_submenu_page(
         'softone-settings',
