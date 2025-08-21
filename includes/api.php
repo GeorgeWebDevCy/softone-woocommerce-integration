@@ -71,7 +71,8 @@ class Softone_API {
                 'clientid' => $this->session,
                 'appId' => 1000,
                 'SqlName' => 'getItems',
-                'pMins' => $minutes
+                'pMins' => $minutes,
+                'exportAllFields' => 1
             ]),
             'headers' => ['Content-Type' => 'application/json']
         ]);
@@ -115,7 +116,12 @@ class Softone_API {
         softone_log('sync_product', print_r($item, true));
         try {
             $sku = sanitize_text_field(mb_convert_encoding(trim($item['SKU']), 'UTF-8', 'UTF-8'));
-            $barcode = !empty($item['CODE']) ? sanitize_text_field(mb_convert_encoding(trim($item['CODE']), 'UTF-8', 'UTF-8')) : '';
+            $barcode = '';
+            if (!empty($item['BARCODE'])) {
+                $barcode = sanitize_text_field(mb_convert_encoding(trim($item['BARCODE']), 'UTF-8', 'UTF-8'));
+            } elseif (!empty($item['CODE'])) {
+                $barcode = sanitize_text_field(mb_convert_encoding(trim($item['CODE']), 'UTF-8', 'UTF-8'));
+            }
             $name = sanitize_text_field(mb_convert_encoding(trim($item['DESC']), 'UTF-8', 'UTF-8'));
             $price = isset($item['RETAILPRICE']) ? floatval($item['RETAILPRICE']) : 0;
             $qty = isset($item['Stock QTY']) ? intval($item['Stock QTY']) : 0;
@@ -141,9 +147,15 @@ class Softone_API {
             $cat_path = [];
             if (!empty($item['COMMECATEGORY NAME'])) $cat_path[] = $item['COMMECATEGORY NAME'];
             if (!empty($item['SUBMECATEGORY NAME'])) $cat_path[] = $item['SUBMECATEGORY NAME'];
+            if (!empty($item['UTBL03 NAME'])) $cat_path[] = $item['UTBL03 NAME'];
             $cat_ids = $this->create_category_tree($cat_path);
-            if (!empty($item['SEASON CODE_1'])) {
-                $extra_name = sanitize_text_field(mb_convert_encoding(trim($item['SEASON CODE_1']), 'UTF-8', 'UTF-8'));
+
+            $season_name = '';
+            foreach (['MTRSEASON NAME', 'SEASON NAME', 'SEASON CODE_1'] as $sk) {
+                if (!empty($item[$sk])) { $season_name = $item[$sk]; break; }
+            }
+            if ($season_name) {
+                $extra_name = sanitize_text_field(mb_convert_encoding(trim($season_name), 'UTF-8', 'UTF-8'));
                 $extra_term = term_exists($extra_name, 'product_cat');
                 if (!$extra_term) {
                     $extra_term = wp_insert_term($extra_name, 'product_cat');
@@ -201,8 +213,14 @@ class Softone_API {
                 $product->set_attributes($attributes);
             }
 
+            $related_field = '';
             if (!empty($item['Related_Item_MTRL'])) {
-                $related_mtrl = sanitize_text_field(mb_convert_encoding(trim($item['Related_Item_MTRL']), 'UTF-8', 'UTF-8'));
+                $related_field = $item['Related_Item_MTRL'];
+            } elseif (!empty($item['APVCODE'])) {
+                $related_field = $item['APVCODE'];
+            }
+            if ($related_field) {
+                $related_mtrl = sanitize_text_field(mb_convert_encoding(trim($related_field), 'UTF-8', 'UTF-8'));
                 $related_id = $this->get_product_id_by_mtrl($related_mtrl);
                 if ($related_id) {
                     $product->set_upsell_ids([$related_id]);
