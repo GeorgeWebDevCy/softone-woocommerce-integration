@@ -84,6 +84,115 @@ class Softone_API {
         return isset($data['rows']) && is_array($data['rows']) ? $data['rows'] : [];
     }
 
+    public function get_customer_by_email($email) {
+        $response = wp_remote_post($this->endpoint, [
+            'body' => wp_json_encode([
+                'service' => 'SqlData',
+                'clientid' => $this->session,
+                'appId' => 1000,
+                'SqlName' => 'findCustomerByEmail',
+                'EMAIL' => sanitize_email($email)
+            ]),
+            'headers' => ['Content-Type' => 'application/json']
+        ]);
+        $body = wp_remote_retrieve_body($response);
+        $body = mb_convert_encoding($body, 'UTF-8', 'UTF-8');
+        $body = preg_replace('/[^\x00-\x7F\xC2-\xF4][\x80-\xBF]*/', '', $body);
+        $data = json_decode($body, true);
+        if (!empty($data['rows'][0]['TRDR'])) {
+            return intval($data['rows'][0]['TRDR']);
+        }
+        return 0;
+    }
+
+    private function create_customer_from_order(WC_Order $order) {
+        $code = 'WEB' . ($order->get_customer_id() ?: $order->get_id());
+        $payload = [
+            'service' => 'setData',
+            'clientID' => $this->session,
+            'appID' => 1000,
+            'object' => 'CUSTOMER',
+            'data' => [
+                'CUSTOMER' => [[
+                    'CODE' => $code,
+                    'NAME' => $order->get_formatted_billing_full_name(),
+                    'COUNTRY' => $order->get_billing_country(),
+                    'PHONE01' => $order->get_billing_phone(),
+                    'EMAIL' => $order->get_billing_email(),
+                    'ADDRESS' => $order->get_billing_address_1(),
+                    'CITY' => $order->get_billing_city(),
+                    'ZIP' => $order->get_billing_postcode(),
+                    'TRDCATEGORY' => 1
+                ]]
+            ]
+        ];
+        $response = wp_remote_post($this->endpoint, [
+            'body' => wp_json_encode($payload),
+            'headers' => ['Content-Type' => 'application/json']
+        ]);
+        $body = wp_remote_retrieve_body($response);
+        $body = mb_convert_encoding($body, 'UTF-8', 'UTF-8');
+        $body = preg_replace('/[^\x00-\x7F\xC2-\xF4][\x80-\xBF]*/', '', $body);
+        $data = json_decode($body, true);
+        return !empty($data['id']) ? intval($data['id']) : 0;
+    }
+
+    private function send_salesdoc(WC_Order $order, $trdr) {
+        $items = [];
+        foreach ($order->get_items() as $item) {
+            $product = $item->get_product();
+            $mtrl = $product ? $product->get_meta('attribute_mtrl', true) : '';
+            $items[] = [
+                'MTRL' => $mtrl,
+                'QTY1' => $item->get_quantity(),
+                'COMMENTS1' => ''
+            ];
+        }
+        $payload = [
+            'service' => 'setData',
+            'clientID' => $this->session,
+            'appID' => 1000,
+            'object' => 'SALDOC',
+            'data' => [
+                'SALDOC' => [[
+                    'SERIES' => 3000,
+                    'TRDR' => $trdr,
+                    'VARCHAR01' => $order->get_id(),
+                    'TRNDATE' => gmdate('Y-m-d H:i:s', strtotime($order->get_date_created())),
+                    'COMMENTS' => $order->get_customer_note()
+                ]],
+                'MTRDOC' => [[ 'WHOUSE' => 101 ]],
+                'ITELINES' => $items
+            ]
+        ];
+        $response = wp_remote_post($this->endpoint, [
+            'body' => wp_json_encode($payload),
+            'headers' => ['Content-Type' => 'application/json']
+        ]);
+        $body = wp_remote_retrieve_body($response);
+        $body = mb_convert_encoding($body, 'UTF-8', 'UTF-8');
+        $body = preg_replace('/[^\x00-\x7F\xC2-\xF4][\x80-\xBF]*/', '', $body);
+        return json_decode($body, true);
+    }
+
+    public function create_order($order) {
+        if (!$order instanceof WC_Order) {
+            return;
+        }
+        $email = $order->get_billing_email();
+        if (!$email) {
+            return;
+        }
+        $trdr = $this->get_customer_by_email($email);
+        if (!$trdr) {
+            $trdr = $this->create_customer_from_order($order);
+        }
+        if ($trdr) {
+            $result = $this->send_salesdoc($order, $trdr);
+            softone_log('create_order', wp_json_encode($result));
+        }
+    }
+
     public function create_category_tree($names = []) {
         $parent_id = 0;
         $term_ids = [];
