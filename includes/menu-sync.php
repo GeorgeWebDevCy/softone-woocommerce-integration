@@ -77,6 +77,7 @@ function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Men
         $term_map = [];
         $term_children = [];
         $all_term_ids = [];
+        $special_offers_id = null;
 
         foreach ($product_cats as $term) {
             // Skip and remove the default "Uncategorized" category
@@ -88,9 +89,18 @@ function softone_sync_woocommerce_product_categories_menu($menu_name = 'Main Men
                 continue;
             }
 
+            if ($term->slug === 'special-offers') {
+                $special_offers_id = $term->term_id;
+            }
+
             $term_map[$term->term_id] = $term;
             $term_children[$term->parent][] = $term->term_id;
             $all_term_ids[] = $term->term_id;
+        }
+
+        if ($special_offers_id && isset($term_children[0])) {
+            $term_children[0] = array_values(array_diff($term_children[0], [$special_offers_id]));
+            $term_children[0][] = $special_offers_id;
         }
 
         $new_menu_item_ids = [];

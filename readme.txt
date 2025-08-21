@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.36
+Stable tag: 2.2.37
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -64,6 +64,9 @@ Sync tool mirrors this hierarchy under the **Products** menu item, creating
 nested submenus for each level.
 
 == Changelog ==
+
+= 2.2.37 =
+* Ensure "Special Offers" category is placed last in the mega menu.
 
 = 2.2.36 =
 * Map Softone SKU to WooCommerce SKU and Softone CODE to the barcode field.
@@ -127,6 +130,9 @@ nested submenus for each level.
 * Initial release.
 
 == Upgrade Notice ==
+
+= 2.2.37 =
+* Adds "Special Offers" to the end of the mega menu.
 
 = 2.2.36 =
 * Switches to Softone SKU for product SKUs, maps CODE to barcode, and links upsells via MTRL.
