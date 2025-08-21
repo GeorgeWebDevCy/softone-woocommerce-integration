@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.41
+Stable tag: 2.2.42
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -64,6 +64,9 @@ Sync tool mirrors this hierarchy under the **Products** menu item, creating
 nested submenus for each level.
 
 == Changelog ==
+
+= 2.2.42 =
+* Add detailed logging for customer creation and sales document submission.
 
 = 2.2.41 =
 * Create or reuse Softone customer and submit order to Softone when a WooCommerce order is placed.
