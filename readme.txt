@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.43
+Stable tag: 2.2.44
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -65,6 +65,9 @@ nested submenus for each level.
 
 == Changelog ==
 
+= 2.2.44 =
+* Map CCCSOCYSHDES to the WooCommerce short description instead of REMARKS.
+
 = 2.2.43 =
 * Add admin pages to view order and customer logs.
 
@@ -110,7 +113,7 @@ nested submenus for each level.
 
 = 2.2.29 =
 * Map colour and size attributes and use RETAILPRICE for pricing.
-* Use CCCSOCYLODES as the product description and REMARKS as the short description.
+* Use CCCSOCYLODES as the product description and CCCSOCYSHDES as the short description.
 
 = 2.2.28 =
 * Use brand name instead of brand code when assigning product brands.
