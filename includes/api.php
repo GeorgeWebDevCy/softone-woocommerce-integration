@@ -273,8 +273,8 @@ class Softone_API {
                 $desc = mb_convert_encoding($item['CCCSOCYLODES'], 'UTF-8', 'UTF-8');
                 $product->set_description(wp_kses_post($desc));
             }
-            if (!empty($item['REMARKS'])) {
-                $short = mb_convert_encoding($item['REMARKS'], 'UTF-8', 'UTF-8');
+            if (!empty($item['CCCSOCYSHDES'])) {
+                $short = mb_convert_encoding($item['CCCSOCYSHDES'], 'UTF-8', 'UTF-8');
                 $product->set_short_description(wp_kses_post($short));
             }
             $cat_path = [];
