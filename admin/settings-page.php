@@ -3,9 +3,6 @@
  * Displays the settings page for the Softone WooCommerce Integration.
  */
 function softone_settings_page() {
-    $username = get_option('softone_api_username');
-    $password = get_option('softone_api_password');
-    $client_id = get_option('softone_client_id');
     ?>
     <div class="wrap">
         <h1><?php esc_html_e('Softone API Settings', 'softone-woocommerce-integration'); ?></h1>
@@ -34,7 +31,7 @@ function softone_admin_settings() {
     add_settings_field('softone_missing_product_action', __('Missing Products Action', 'softone-woocommerce-integration'), 'softone_missing_product_action_callback', 'softone-settings', 'softone_product_settings_section');
 
     register_setting('softone_settings_group', 'softone_api_username');
-    register_setting('softone_settings_group', 'softone_api_password');
+    register_setting('softone_settings_group', 'softone_api_password', 'softone_sanitize_api_password');
     register_setting('softone_settings_group', 'softone_missing_product_action');
 }
 
@@ -45,7 +42,7 @@ function softone_api_username_callback() {
 }
 
 function softone_api_password_callback() {
-    $password = get_option('softone_api_password');
+    $password = softone_decrypt(get_option('softone_api_password'));
     echo '<input type="password" id="softone_api_password" name="softone_api_password" value="' . esc_attr($password) . '" />';
 }
 

@@ -11,7 +11,8 @@ class Softone_API {
 
     public function __construct() {
         $this->username = get_option('softone_api_username');
-        $this->password = get_option('softone_api_password');
+        $encrypted      = get_option('softone_api_password');
+        $this->password = $encrypted ? softone_decrypt($encrypted) : '';
         $this->client_id = get_option('softone_client_id');
         $this->session = get_option('softone_api_session');
         $expires = get_option('softone_api_session_expires');

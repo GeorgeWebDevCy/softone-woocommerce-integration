@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.52
+Stable tag: 2.2.53
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -31,7 +31,7 @@ ERP system and keeps both platforms in sync.
 
 1. Upload the plugin files to the `/wp-content/plugins/softone-woocommerce-integration` directory, or install the plugin through the WordPress plugins screen directly.
 2. Activate the plugin through the 'Plugins' screen in WordPress.
-3. Use the Settings->Softone screen to configure the plugin.
+3. After activation, go to **Settings → Softone** and enter your real API username, password and client ID.
 
 == Frequently Asked Questions ==
 
@@ -64,6 +64,10 @@ Sync tool mirrors this hierarchy under the **Products** menu item, creating
 nested submenus for each level.
 
 == Changelog ==
+
+= 2.2.53 =
+* Encrypt stored API password using WordPress AUTH_KEY and remove default credentials on activation.
+* Administrators must enter their real API username, password and client ID after activating the plugin.
 
 = 2.2.52 =
 * Compare Softone and WooCommerce products by hidden MTRL attribute and log differences.
