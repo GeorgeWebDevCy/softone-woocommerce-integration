@@ -453,6 +453,9 @@ function softone_sync_orders() {
 add_action('wp_ajax_softone_get_logs', 'softone_get_logs');
 function softone_get_logs() {
     check_ajax_referer('softone_get_logs_nonce');
+    if (!current_user_can('manage_options')) {
+        return wp_send_json_error('Unauthorized');
+    }
     $logs = get_option('softone_api_logs', []);
     if (!is_array($logs)) {
         $logs = [];

@@ -67,6 +67,7 @@ nested submenus for each level.
 
 = 2.2.53 =
 * Add capability and URL validation to the Request Tester tool.
+* Restrict product sync and log retrieval actions to administrators.
 
 = 2.2.52 =
 * Compare Softone and WooCommerce products by hidden MTRL attribute and log differences.

@@ -376,6 +376,10 @@ class Softone_API {
 
 add_action('wp_ajax_softone_sync_products', function () {
     check_ajax_referer('softone_sync_products_nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+        wp_die();
+    }
     $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
     $limit = 20;
     $api = new Softone_API();
