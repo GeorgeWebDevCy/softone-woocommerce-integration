@@ -25,6 +25,29 @@ register_activation_hook(__FILE__, 'softone_check_woocommerce');
 // Define plugin path
 define('SOFTONE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 
+// Helper functions for encrypting and decrypting the API password
+function softone_encrypt($data) {
+    if ($data === '') {
+        return '';
+    }
+    $key = hash('sha256', AUTH_KEY);
+    $iv  = substr($key, 0, 16);
+    return base64_encode(openssl_encrypt($data, 'AES-256-CBC', $key, 0, $iv));
+}
+
+function softone_decrypt($data) {
+    if ($data === '' || $data === false) {
+        return '';
+    }
+    $key = hash('sha256', AUTH_KEY);
+    $iv  = substr($key, 0, 16);
+    return openssl_decrypt(base64_decode($data), 'AES-256-CBC', $key, 0, $iv);
+}
+
+function softone_sanitize_api_password($password) {
+    return $password ? softone_encrypt($password) : '';
+}
+
 // Include necessary files
 require_once SOFTONE_PLUGIN_PATH . 'includes/api.php';
 require_once SOFTONE_PLUGIN_PATH . 'includes/logging.php';
@@ -235,21 +258,12 @@ function softone_admin_menu() {
 // Register settings
 function softone_register_settings() {
     register_setting('softone_settings_group', 'softone_api_username', 'sanitize_text_field');
-    register_setting('softone_settings_group', 'softone_api_password', 'sanitize_text_field');
+    register_setting('softone_settings_group', 'softone_api_password', 'softone_sanitize_api_password');
 }
 
 // Activation hook to set default options
 function softone_activate() {
     // Set default values for the options if they don't exist
-    if (get_option('softone_api_username') === false) {
-        update_option('softone_api_username', 'default_username');
-    }
-    if (get_option('softone_api_password') === false) {
-        update_option('softone_api_password', 'default_password');
-    }
-    if (get_option('softone_client_id') === false) {
-        update_option('softone_client_id', 'default_client_id');
-    }
     if (get_option('softone_synced_customers') === false) {
         update_option('softone_synced_customers', []);
     }

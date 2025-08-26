@@ -31,7 +31,7 @@ ERP system and keeps both platforms in sync.
 
 1. Upload the plugin files to the `/wp-content/plugins/softone-woocommerce-integration` directory, or install the plugin through the WordPress plugins screen directly.
 2. Activate the plugin through the 'Plugins' screen in WordPress.
-3. Use the Settings->Softone screen to configure the plugin.
+3. After activation, go to **Settings → Softone** and enter your real API username, password and client ID.
 
 == Frequently Asked Questions ==
 
@@ -66,6 +66,8 @@ nested submenus for each level.
 == Changelog ==
 
 = 2.2.53 =
+* Encrypt stored API password using WordPress AUTH_KEY and remove default credentials on activation.
+* Administrators must enter their real API username, password and client ID after activating the plugin.
 * Add capability and URL validation to the Request Tester tool.
 * Restrict product sync and log retrieval actions to administrators.
 
