@@ -3,6 +3,9 @@
  * Displays the AJAX product sync page for the Softone WooCommerce Integration.
  */
 function softone_products_page() {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_die( __( 'You do not have sufficient permissions to access this page.', 'softone-woocommerce-integration' ) );
+    }
     ?>
     <div class="wrap">
         <h1><?php esc_html_e('Product Sync', 'softone-woocommerce-integration'); ?></h1>

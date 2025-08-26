@@ -3,6 +3,9 @@
  * Displays the log page for the Softone WooCommerce Integration.
  */
 function softone_logs_page() {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_die( __( 'You do not have sufficient permissions to access this page.', 'softone-woocommerce-integration' ) );
+    }
     // Handle clear logs request
     if (isset($_POST['clear_logs']) && check_admin_referer('softone_clear_logs_action', 'softone_clear_logs_nonce')) {
         update_option('softone_api_logs', []);
