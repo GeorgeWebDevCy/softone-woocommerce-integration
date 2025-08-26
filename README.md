@@ -31,8 +31,8 @@ customer, product and order data between the two systems.
    install it through the WordPress plugin screen.
 2. Activate **Softone WooCommerce Integration**. WooCommerce must already be
    active.
-3. Go to **Softone → Settings** in the WordPress dashboard and enter your API
-   credentials.
+3. After activation, go to **Softone → Settings** in the WordPress dashboard
+   and enter your real API username, password and client ID.
 
 Once configured, the plugin will automatically keep customers, products and
 orders in sync with Softone.

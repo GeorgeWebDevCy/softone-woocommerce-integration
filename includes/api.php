@@ -11,7 +11,8 @@ class Softone_API {
 
     public function __construct() {
         $this->username = get_option('softone_api_username');
-        $this->password = get_option('softone_api_password');
+        $encrypted      = get_option('softone_api_password');
+        $this->password = $encrypted ? softone_decrypt($encrypted) : '';
         $this->client_id = get_option('softone_client_id');
         $this->session = get_option('softone_api_session');
         $expires = get_option('softone_api_session_expires');
@@ -376,6 +377,10 @@ class Softone_API {
 
 add_action('wp_ajax_softone_sync_products', function () {
     check_ajax_referer('softone_sync_products_nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+        wp_die();
+    }
     $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
     $limit = 20;
     $api = new Softone_API();

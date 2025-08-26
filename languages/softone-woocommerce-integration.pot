@@ -6,3 +6,15 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: admin/request-tester-page.php:7
+msgid "You do not have permission to access this page."
+msgstr ""
+
+#: admin/request-tester-page.php:80
+msgid "Invalid URL provided."
+msgstr ""
+
+#: admin/request-tester-page.php:84
+msgid "The provided host is not allowed."
+msgstr ""
+
