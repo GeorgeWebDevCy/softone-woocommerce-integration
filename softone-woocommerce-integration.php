@@ -3,7 +3,7 @@
  * Plugin Name: Softone WooCommerce Integration
  * Plugin URI: https://wordpress.org/plugins/softone-woocommerce-integration/
  * Description: Integrates WooCommerce with Softone API for customer, product, and order synchronization.
- * Version: 2.2.45
+ * Version: 2.2.46
  * Author: George Nicolaou
  * Author URI: https://profiles.wordpress.org/georgenicolaou/
  * Text Domain: softone-woocommerce-integration
@@ -254,7 +254,7 @@ function softone_activate() {
         update_option('softone_synced_customers', []);
     }
     if (get_option('softone_synced_products') === false) {
-        update_option('softone_synced_products', []);
+        update_option('softone_synced_products', 0);
     }
     if (get_option('softone_api_logs') === false) {
         update_option('softone_api_logs', []);
@@ -354,21 +354,24 @@ function softone_sync_products() {
         if ($products) {
             // Avoid object cache growth during large sync operations
             wp_suspend_cache_addition(true);
-            foreach ($products as $product) {
+            $count = 0;
+            foreach ($products as $index => $product) {
                 $api->sync_product_to_woocommerce($product);
                 // Free memory consumed by each product iteration
-                unset($product);
+                unset($products[$index], $product);
                 gc_collect_cycles();
+                $count++;
             }
             wp_suspend_cache_addition(false);
-            update_option('softone_synced_products', array_map('sanitize_text_field', $products));
+            wp_cache_flush();
+            update_option('softone_synced_products', $count);
             update_option('softone_last_product_sync', current_time('mysql'));
             unset($products);
             softone_log('sync_products', __('Products synchronized successfully.', 'softone-woocommerce-integration'));
             if (function_exists('softone_sync_woocommerce_product_categories_menu')) {
                 softone_sync_woocommerce_product_categories_menu('Main Menu', 'Products');
             }
-            return ['success' => true, 'message' => __('Products synchronized successfully.', 'softone-woocommerce-integration'), 'products' => $products];
+            return ['success' => true, 'message' => __('Products synchronized successfully.', 'softone-woocommerce-integration'), 'count' => $count];
         } else {
             softone_log('sync_products', __('Failed to synchronize products.', 'softone-woocommerce-integration'));
             return ['success' => false, 'message' => __('Failed to synchronize products.', 'softone-woocommerce-integration')];
