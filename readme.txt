@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.51
+Stable tag: 2.2.52
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -64,6 +64,9 @@ Sync tool mirrors this hierarchy under the **Products** menu item, creating
 nested submenus for each level.
 
 == Changelog ==
+
+= 2.2.52 =
+* Compare Softone and WooCommerce products by hidden MTRL attribute and log differences.
 
 = 2.2.51 =
 * Add SKU synchronization logic.
