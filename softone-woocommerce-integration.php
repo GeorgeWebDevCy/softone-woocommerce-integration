@@ -3,7 +3,7 @@
  * Plugin Name: Softone WooCommerce Integration
  * Plugin URI: https://wordpress.org/plugins/softone-woocommerce-integration/
  * Description: Integrates WooCommerce with Softone API for customer, product, and order synchronization.
- * Version: 2.2.44
+ * Version: 2.2.45
  * Author: George Nicolaou
  * Author URI: https://profiles.wordpress.org/georgenicolaou/
  * Text Domain: softone-woocommerce-integration
@@ -352,11 +352,18 @@ function softone_sync_products() {
         $minutes = $last_sync ? max(1, ceil((time() - strtotime($last_sync)) / 60)) : 99999;
         $products = $api->get_products($minutes);
         if ($products) {
+            // Avoid object cache growth during large sync operations
+            wp_suspend_cache_addition(true);
             foreach ($products as $product) {
                 $api->sync_product_to_woocommerce($product);
+                // Free memory consumed by each product iteration
+                unset($product);
+                gc_collect_cycles();
             }
+            wp_suspend_cache_addition(false);
             update_option('softone_synced_products', array_map('sanitize_text_field', $products));
             update_option('softone_last_product_sync', current_time('mysql'));
+            unset($products);
             softone_log('sync_products', __('Products synchronized successfully.', 'softone-woocommerce-integration'));
             if (function_exists('softone_sync_woocommerce_product_categories_menu')) {
                 softone_sync_woocommerce_product_categories_menu('Main Menu', 'Products');
@@ -372,10 +379,30 @@ function softone_sync_products() {
 function softone_sync_orders() {
     if (class_exists('WooCommerce')) {
         $api = new Softone_API();
-        $orders = wc_get_orders(['limit' => -1]);
-        foreach ($orders as $order) {
-            $api->create_order($order);
-        }
+        $page = 1;
+        $per_page = 20; // Process orders in small batches to reduce memory usage
+        wp_suspend_cache_addition(true);
+        do {
+            $order_ids = wc_get_orders([
+                'limit'  => $per_page,
+                'paged'  => $page,
+                'return' => 'ids',
+            ]);
+            if (empty($order_ids)) {
+                break;
+            }
+            foreach ($order_ids as $order_id) {
+                $order = wc_get_order($order_id);
+                $api->create_order($order);
+                unset($order);
+                gc_collect_cycles();
+            }
+            // Clear object cache to free memory between batches
+            wp_cache_flush();
+            $page++;
+            unset($order_ids);
+        } while (true);
+        wp_suspend_cache_addition(false);
         softone_log('sync_orders', __('Orders synchronized successfully.', 'softone-woocommerce-integration'));
         return __('Orders synchronized successfully.', 'softone-woocommerce-integration');
     }
@@ -384,7 +411,13 @@ function softone_sync_orders() {
 add_action('wp_ajax_softone_get_logs', 'softone_get_logs');
 function softone_get_logs() {
     check_ajax_referer('softone_get_logs_nonce');
-    wp_send_json(get_option('softone_api_logs', []));
+    $logs = get_option('softone_api_logs', []);
+    if (!is_array($logs)) {
+        $logs = [];
+    }
+    // Return only the most recent 100 log entries to prevent memory issues
+    $logs = array_slice($logs, -100);
+    wp_send_json($logs);
 }
 
 add_action('admin_enqueue_scripts', function () {
