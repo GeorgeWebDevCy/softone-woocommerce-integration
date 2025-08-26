@@ -3,6 +3,9 @@
  * Displays customer-related log entries for the Softone WooCommerce Integration.
  */
 function softone_customer_logs_page() {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_die( __( 'You do not have sufficient permissions to access this page.', 'softone-woocommerce-integration' ) );
+    }
     $logs = get_option('softone_api_logs', []);
     $filtered = array_filter($logs, function ($log) {
         return isset($log['action']) && false !== strpos($log['action'], 'customer');
