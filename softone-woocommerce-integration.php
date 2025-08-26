@@ -3,7 +3,7 @@
  * Plugin Name: Softone WooCommerce Integration
  * Plugin URI: https://wordpress.org/plugins/softone-woocommerce-integration/
  * Description: Integrates WooCommerce with Softone API for customer, product, and order synchronization.
- * Version: 2.2.51
+ * Version: 2.2.52
  * Author: George Nicolaou
  * Author URI: https://profiles.wordpress.org/georgenicolaou/
  * Text Domain: softone-woocommerce-integration
@@ -355,10 +355,10 @@ function softone_sync_products() {
             // Avoid object cache growth during large sync operations
             wp_suspend_cache_addition(true);
             $count = 0;
-            $softone_skus = [];
+            $softone_mtrls = [];
             foreach ($products as $index => $product) {
-                if (!empty($product['SKU'])) {
-                    $softone_skus[] = sanitize_text_field(mb_convert_encoding(trim($product['SKU']), 'UTF-8', 'UTF-8'));
+                if (!empty($product['MTRL'])) {
+                    $softone_mtrls[] = sanitize_text_field(mb_convert_encoding(trim($product['MTRL']), 'UTF-8', 'UTF-8'));
                 }
                 $api->sync_product_to_woocommerce($product);
                 // Free memory consumed by each product iteration
@@ -380,25 +380,28 @@ function softone_sync_products() {
                 'fields'         => 'ids',
                 'no_found_rows'  => true,
             ]);
-            $woo_skus = [];
+            $woo_mtrls = [];
             foreach ($woo_ids as $pid) {
-                $sku = get_post_meta($pid, '_sku', true);
-                if ($sku) {
-                    $woo_skus[$sku] = $pid;
+                $mtrl = get_post_meta($pid, 'attribute_mtrl', true);
+                if ($mtrl) {
+                    $woo_mtrls[$mtrl] = $pid;
                 }
             }
-            if (!empty($softone_skus)) {
-                $missing_skus = array_diff(array_keys($woo_skus), $softone_skus);
+            if (!empty($softone_mtrls)) {
+                $missing_mtrls = array_diff(array_keys($woo_mtrls), $softone_mtrls);
+                softone_log('cleanup_products', 'Softone MTRLs: ' . implode(', ', $softone_mtrls));
+                softone_log('cleanup_products', 'WooCommerce MTRLs: ' . implode(', ', array_keys($woo_mtrls)));
+                softone_log('cleanup_products', 'Missing MTRLs: ' . implode(', ', $missing_mtrls));
                 $cleanup_action = get_option('softone_missing_product_action', 'draft');
-                foreach ($missing_skus as $sku) {
-                    $pid = $woo_skus[$sku];
+                foreach ($missing_mtrls as $mtrl) {
+                    $pid = $woo_mtrls[$mtrl];
                     if ('delete' === $cleanup_action) {
                         wp_delete_post($pid, true);
-                        softone_log('cleanup_products', sprintf('Deleted product with SKU %s', $sku));
+                        softone_log('cleanup_products', sprintf('Deleted product with MTRL %s', $mtrl));
                     } else {
                         wp_update_post(['ID' => $pid, 'post_status' => 'draft']);
                         wc_update_product_stock_status($pid, 'outofstock');
-                        softone_log('cleanup_products', sprintf('Marked product %s as draft/out-of-stock', $sku));
+                        softone_log('cleanup_products', sprintf('Marked product %s as draft/out-of-stock', $mtrl));
                     }
                 }
             }
