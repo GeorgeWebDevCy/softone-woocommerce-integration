@@ -68,6 +68,8 @@ nested submenus for each level.
 = 2.2.53 =
 * Encrypt stored API password using WordPress AUTH_KEY and remove default credentials on activation.
 * Administrators must enter their real API username, password and client ID after activating the plugin.
+* Add capability and URL validation to the Request Tester tool.
+* Restrict product sync and log retrieval actions to administrators.
 
 = 2.2.52 =
 * Compare Softone and WooCommerce products by hidden MTRL attribute and log differences.
