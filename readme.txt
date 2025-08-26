@@ -66,6 +66,7 @@ nested submenus for each level.
 == Changelog ==
 
 = 2.2.53 =
+* Add capability and URL validation to the Request Tester tool.
 * Restrict product sync and log retrieval actions to administrators.
 
 = 2.2.52 =
