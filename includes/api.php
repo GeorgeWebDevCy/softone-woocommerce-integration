@@ -302,9 +302,12 @@ class Softone_API {
             }
             $product->set_category_ids($cat_ids);
             $brand_name = '';
-            // Use human-readable brand name fields and ignore brand codes.
-            foreach (['BRAND NAME','BRANDS NAME','MTRBRAND NAME','MTRBRANDS NAME'] as $bk) {
-                if (!empty($item[$bk])) {
+            // Use human-readable brand name fields and ignore brand codes or numeric values.
+            foreach (
+                ['BRAND NAME','BRANDS NAME','MTRBRAND NAME','MTRBRANDS NAME','BRAND','BRANDS','MTRBRAND','MTRBRANDS']
+                as $bk
+            ) {
+                if (!empty($item[$bk]) && !ctype_digit(trim($item[$bk]))) {
                     $brand_name = $item[$bk];
                     break;
                 }
