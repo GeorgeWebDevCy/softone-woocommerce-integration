@@ -3,8 +3,13 @@
  * Provides an interface to send arbitrary HTTP requests and display the response.
  */
 function softone_request_tester_page() {
+    if (!current_user_can('manage_options')) {
+        wp_die(__('You do not have permission to access this page.', 'softone-woocommerce-integration'));
+    }
+
     $response = null;
     $error = '';
+    $allowed_hosts = apply_filters('softone_request_tester_allowed_hosts', array('ptkids.oncloud.gr'));
 
     $presets = array(
         'get_products' => array(
@@ -70,13 +75,23 @@ function softone_request_tester_page() {
         }
 
         if (empty($error) && !empty($url)) {
-            $args = array(
-                'method'  => $method,
-                'headers' => $headers,
-                'body'    => $body,
-                'timeout' => 20,
-            );
-            $response = wp_remote_request($url, $args);
+            $validated_url = wp_http_validate_url($url);
+            if (false === $validated_url) {
+                $error = __('Invalid URL provided.', 'softone-woocommerce-integration');
+            } else {
+                $host = wp_parse_url($validated_url, PHP_URL_HOST);
+                if (!in_array($host, $allowed_hosts, true)) {
+                    $error = __('The provided host is not allowed.', 'softone-woocommerce-integration');
+                } else {
+                    $args = array(
+                        'method'  => $method,
+                        'headers' => $headers,
+                        'body'    => $body,
+                        'timeout' => 20,
+                    );
+                    $response = wp_remote_request($validated_url, $args);
+                }
+            }
         }
     }
     ?>
