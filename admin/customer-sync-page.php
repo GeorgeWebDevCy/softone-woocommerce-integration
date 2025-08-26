@@ -4,6 +4,7 @@
  */
 function softone_customers_page() {
     if (isset($_POST['sync_customers'])) {
+        check_admin_referer('softone_sync_customers', 'softone_sync_customers_nonce');
         $result = softone_sync_customers();
         if (is_array($result) && isset($result['success']) && $result['success']) {
             echo '<div class="notice notice-success"><p>' . esc_html($result['message']) . '</p></div>';
@@ -15,6 +16,7 @@ function softone_customers_page() {
     <div class="wrap">
         <h1><?php esc_html_e('Customer Sync', 'softone-woocommerce-integration'); ?></h1>
         <form method="post">
+            <?php wp_nonce_field('softone_sync_customers', 'softone_sync_customers_nonce'); ?>
             <input type="hidden" name="sync_customers" value="1" />
             <?php submit_button(__('Sync Customers', 'softone-woocommerce-integration')); ?>
         </form>
