@@ -15,6 +15,10 @@ function softone_log($action, $message) {
         'action'   => sanitize_text_field($action),
         'message'  => sanitize_textarea_field($message),
     ];
+    // Retain only the most recent 100 entries to avoid large options consuming memory
+    if (count($logs) > 100) {
+        $logs = array_slice($logs, -100);
+    }
     update_option('softone_api_logs', $logs);
 }
 
