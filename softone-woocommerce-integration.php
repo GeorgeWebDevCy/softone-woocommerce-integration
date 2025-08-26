@@ -355,7 +355,11 @@ function softone_sync_products() {
             // Avoid object cache growth during large sync operations
             wp_suspend_cache_addition(true);
             $count = 0;
+            $softone_skus = [];
             foreach ($products as $index => $product) {
+                if (!empty($product['SKU'])) {
+                    $softone_skus[] = sanitize_text_field(mb_convert_encoding(trim($product['SKU']), 'UTF-8', 'UTF-8'));
+                }
                 $api->sync_product_to_woocommerce($product);
                 // Free memory consumed by each product iteration
                 unset($products[$index], $product);
@@ -367,6 +371,38 @@ function softone_sync_products() {
             update_option('softone_synced_products', $count);
             update_option('softone_last_product_sync', current_time('mysql'));
             unset($products);
+
+            // Find WooCommerce products not returned from Softone
+            $woo_ids = get_posts([
+                'post_type'      => 'product',
+                'post_status'    => 'any',
+                'posts_per_page' => -1,
+                'fields'         => 'ids',
+                'no_found_rows'  => true,
+            ]);
+            $woo_skus = [];
+            foreach ($woo_ids as $pid) {
+                $sku = get_post_meta($pid, '_sku', true);
+                if ($sku) {
+                    $woo_skus[$sku] = $pid;
+                }
+            }
+            if (!empty($softone_skus)) {
+                $missing_skus = array_diff(array_keys($woo_skus), $softone_skus);
+                $cleanup_action = get_option('softone_missing_product_action', 'draft');
+                foreach ($missing_skus as $sku) {
+                    $pid = $woo_skus[$sku];
+                    if ('delete' === $cleanup_action) {
+                        wp_delete_post($pid, true);
+                        softone_log('cleanup_products', sprintf('Deleted product with SKU %s', $sku));
+                    } else {
+                        wp_update_post(['ID' => $pid, 'post_status' => 'draft']);
+                        wc_update_product_stock_status($pid, 'outofstock');
+                        softone_log('cleanup_products', sprintf('Marked product %s as draft/out-of-stock', $sku));
+                    }
+                }
+            }
+
             softone_log('sync_products', __('Products synchronized successfully.', 'softone-woocommerce-integration'));
             if (function_exists('softone_sync_woocommerce_product_categories_menu')) {
                 softone_sync_woocommerce_product_categories_menu('Main Menu', 'Products');
