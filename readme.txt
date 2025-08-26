@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.44
+Stable tag: 2.2.45
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -64,6 +64,10 @@ Sync tool mirrors this hierarchy under the **Products** menu item, creating
 nested submenus for each level.
 
 == Changelog ==
+
+= 2.2.45 =
+* Process WooCommerce orders in memory‑friendly batches during sync.
+* Limit API log responses to the most recent 100 entries.
 
 = 2.2.44 =
 * Map CCCSOCYSHDES to the WooCommerce short description instead of REMARKS.
@@ -153,6 +157,9 @@ nested submenus for each level.
 * Initial release.
 
 == Upgrade Notice ==
+
+= 2.2.45 =
+* Reduces memory usage during order sync and log viewing on large stores.
 
 = 2.2.39 =
 * Adds support for new Softone product fields and improves logging and request testing.

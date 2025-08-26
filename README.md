@@ -22,6 +22,8 @@ customer, product and order data between the two systems.
   WordPress admin and clear them with one click.
 - **Custom cron schedules** – Adds 2‑minute and 2‑hour schedules that other
   tasks can use.
+- **Memory optimised sync** – Order synchronisation runs in small batches and
+  the log viewer returns only recent entries to keep memory usage low.
 
 ## Installation
 
