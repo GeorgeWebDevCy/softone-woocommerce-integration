@@ -269,13 +269,13 @@ class Softone_API {
             }
             $product->set_stock_quantity($qty);
             $product->set_manage_stock(true);
-            if (!empty($item['CCCSOCYLODES'])) {
-                $desc = mb_convert_encoding(trim($item['CCCSOCYLODES']), 'UTF-8', 'UTF-8');
+            if (!empty($item['Long Description']) || !empty($item['CCCSOCYLODES'])) {
+                $desc = mb_convert_encoding(trim($item['Long Description'] ?? $item['CCCSOCYLODES']), 'UTF-8', 'UTF-8');
                 // Softone long description -> WooCommerce product content
                 $product->set_description(wp_kses_post($desc));
             }
-            if (!empty($item['CCCSOCYSHDES'])) {
-                $short = mb_convert_encoding(trim($item['CCCSOCYSHDES']), 'UTF-8', 'UTF-8');
+            if (!empty($item['Short Description']) || !empty($item['CCCSOCYSHDES'])) {
+                $short = mb_convert_encoding(trim($item['Short Description'] ?? $item['CCCSOCYSHDES']), 'UTF-8', 'UTF-8');
                 // Softone short description -> WooCommerce short description
                 $product->set_short_description(wp_kses_post($short));
             }
