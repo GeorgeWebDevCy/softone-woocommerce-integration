@@ -246,6 +246,91 @@ class Softone_API {
         return !empty($products) ? (int) $products[0] : 0;
     }
 
+    private function find_product_images_by_sku($sku) {
+        $sku = trim((string) $sku);
+        if ($sku === '') {
+            return [];
+        }
+
+        $query_args = [
+            'post_type'      => 'attachment',
+            'post_status'    => 'inherit',
+            'post_mime_type' => 'image',
+            'posts_per_page' => -1,
+            'orderby'        => 'date',
+            'order'          => 'ASC',
+            'fields'         => 'ids',
+            'meta_query'     => [
+                [
+                    'key'     => '_wp_attached_file',
+                    'value'   => $sku,
+                    'compare' => 'LIKE',
+                ],
+            ],
+        ];
+
+        $attachments = get_posts($query_args);
+
+        if (empty($attachments)) {
+            unset($query_args['meta_query']);
+            $query_args['s'] = $sku;
+            $attachments = get_posts($query_args);
+        }
+
+        if (empty($attachments)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_map('intval', $attachments)));
+    }
+
+    private function maybe_assign_product_images($product, $sku) {
+        if (!$product instanceof WC_Product) {
+            return;
+        }
+
+        $sku = trim((string) $sku);
+        if ($sku === '') {
+            return;
+        }
+
+        $featured_id = (int) $product->get_image_id();
+        $gallery_ids = array_map('intval', array_values((array) $product->get_gallery_image_ids()));
+
+        if ($featured_id && !empty($gallery_ids)) {
+            return;
+        }
+
+        $attachment_ids = $this->find_product_images_by_sku($sku);
+
+        if (empty($attachment_ids)) {
+            return;
+        }
+
+        if (!$featured_id) {
+            $featured_id = array_shift($attachment_ids);
+            if ($featured_id) {
+                $product->set_image_id($featured_id);
+            }
+        } else {
+            $attachment_ids = array_values(array_diff($attachment_ids, [$featured_id]));
+        }
+
+        $original_gallery_ids = $gallery_ids;
+        $gallery_ids = array_values(array_diff($gallery_ids, [$featured_id]));
+
+        if (!empty($attachment_ids)) {
+            $new_candidates = array_values(array_diff($attachment_ids, $gallery_ids));
+            if (!empty($new_candidates)) {
+                $gallery_ids = array_values(array_unique(array_merge($gallery_ids, $new_candidates)));
+            }
+        }
+
+        if ($gallery_ids !== $original_gallery_ids) {
+            $product->set_gallery_image_ids($gallery_ids);
+        }
+    }
+
     public function sync_product_to_woocommerce($item) {
         softone_log('sync_product', print_r($item, true));
         try {
@@ -365,6 +450,8 @@ class Softone_API {
                     $product->set_upsell_ids([$related_id]);
                 }
             }
+
+            $this->maybe_assign_product_images($product, $sku);
 
             $id = $product->save();
             if ($brand_term_id) { wp_set_object_terms($id, [$brand_term_id], 'product_brand'); }
