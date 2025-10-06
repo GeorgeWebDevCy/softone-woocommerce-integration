@@ -82,7 +82,18 @@ class Softone_API {
         $body = iconv('UTF-8', 'UTF-8//IGNORE', $body);
         if ($body === false) return [];
         $data = json_decode($body, true);
-        return isset($data['rows']) && is_array($data['rows']) ? $data['rows'] : [];
+        if (!isset($data['rows']) || !is_array($data['rows'])) {
+            return [];
+        }
+
+        $rows = array_filter(
+            $data['rows'],
+            static function ($item) {
+                return isset($item['BOOL01']) && intval($item['BOOL01']) === 1;
+            }
+        );
+
+        return array_values($rows);
     }
 
     public function get_customer_by_email($email) {
