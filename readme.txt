@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.54
+Stable tag: 2.2.55
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -64,6 +64,9 @@ Sync tool mirrors this hierarchy under the **Products** menu item, creating
 nested submenus for each level.
 
 == Changelog ==
+
+= 2.2.55 =
+* Always use the Softone brand name fields when assigning product brands and ignore numeric brand IDs.
 
 = 2.2.54 =
 * Assign featured and gallery images from the media library based on SKU when syncing products.
