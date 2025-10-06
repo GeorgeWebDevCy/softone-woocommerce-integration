@@ -3,7 +3,7 @@
  * Plugin Name: Softone WooCommerce Integration
  * Plugin URI: https://wordpress.org/plugins/softone-woocommerce-integration/
  * Description: Integrates WooCommerce with Softone API for customer, product, and order synchronization.
- * Version: 2.2.57
+ * Version: 2.2.58
  * Author: George Nicolaou
  * Author URI: https://profiles.wordpress.org/georgenicolaou/
  * Text Domain: softone-woocommerce-integration
@@ -123,6 +123,7 @@ add_action('init', 'softone_register_brand_taxonomy');
 add_action('init', function () {
     if (function_exists('softone_ensure_menu_structure')) {
         softone_ensure_menu_structure('Main Menu', 'Products');
+        softone_ensure_menu_structure('Main Menu', 'Brands', false);
     }
 }, 20);
 
