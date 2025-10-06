@@ -388,22 +388,58 @@ class Softone_API {
             }
             $product->set_category_ids($cat_ids);
             $brand_name = '';
-            // Use human-readable brand name fields and ignore brand codes or numeric values.
-            foreach (
-                ['BRAND NAME','BRANDS NAME','MTRBRAND NAME','MTRBRANDS NAME','BRAND','BRANDS','MTRBRAND','MTRBRANDS']
-                as $bk
-            ) {
-                if (!empty($item[$bk]) && !ctype_digit(trim($item[$bk]))) {
-                    $brand_name = $item[$bk];
-                    break;
+            $normalized_item = [];
+            foreach ($item as $key => $value) {
+                if (is_string($key)) {
+                    $normalized_item[strtoupper($key)] = $value;
+                }
+            }
+            $brand_name_fields = [
+                'BRAND NAME',
+                'BRANDS NAME',
+                'MTRBRAND NAME',
+                'MTRBRANDS NAME',
+                'BRANDNAME',
+                'BRANDSNAME',
+                'MTRBRANDNAME',
+                'MTRBRANDSNAME',
+            ];
+            $brand_code_fields = [
+                'BRAND',
+                'BRANDS',
+                'MTRBRAND',
+                'MTRBRANDS',
+                'BRAND ID',
+                'MTRBRAND ID',
+            ];
+            foreach ($brand_name_fields as $field) {
+                if (!empty($normalized_item[$field])) {
+                    $candidate = trim($normalized_item[$field]);
+                    if ($candidate !== '' && !ctype_digit($candidate)) {
+                        $brand_name = $candidate;
+                        break;
+                    }
+                }
+            }
+            if ($brand_name === '') {
+                foreach ($brand_code_fields as $field) {
+                    if (!empty($normalized_item[$field])) {
+                        $candidate = trim($normalized_item[$field]);
+                        if ($candidate !== '' && !ctype_digit($candidate)) {
+                            $brand_name = $candidate;
+                            break;
+                        }
+                    }
                 }
             }
             $brand_term_id = 0;
             if ($brand_name && taxonomy_exists('product_brand')) {
                 $brand_name = sanitize_text_field(mb_convert_encoding(trim($brand_name), 'UTF-8', 'UTF-8'));
-                $term = term_exists($brand_name, 'product_brand');
-                if (!$term) { $term = wp_insert_term($brand_name, 'product_brand'); }
-                if (!is_wp_error($term)) { $brand_term_id = is_array($term) ? $term['term_id'] : $term; }
+                if ($brand_name !== '' && !ctype_digit($brand_name)) {
+                    $term = term_exists($brand_name, 'product_brand');
+                    if (!$term) { $term = wp_insert_term($brand_name, 'product_brand'); }
+                    if (!is_wp_error($term)) { $brand_term_id = is_array($term) ? $term['term_id'] : $term; }
+                }
             }
 
             $attributes = [];
