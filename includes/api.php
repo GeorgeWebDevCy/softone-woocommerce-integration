@@ -117,6 +117,19 @@ class Softone_API {
         return 0;
     }
 
+    private function is_valid_brand_name($value) {
+        if (!is_string($value)) {
+            return false;
+        }
+
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return false;
+        }
+
+        return preg_match('/\p{L}/u', $trimmed) === 1;
+    }
+
     private function create_customer_from_order(WC_Order $order) {
         $code = 'WEB' . ($order->get_customer_id() ?: $order->get_id());
         $payload = [
@@ -425,9 +438,9 @@ class Softone_API {
             ];
             foreach ($brand_name_fields as $field) {
                 if (!empty($normalized_item[$field])) {
-                    $candidate = trim($normalized_item[$field]);
-                    if ($candidate !== '' && !ctype_digit($candidate)) {
-                        $brand_name = $candidate;
+                    $candidate = $normalized_item[$field];
+                    if ($this->is_valid_brand_name($candidate)) {
+                        $brand_name = trim($candidate);
                         break;
                     }
                 }
@@ -435,9 +448,9 @@ class Softone_API {
             if ($brand_name === '') {
                 foreach ($brand_code_fields as $field) {
                     if (!empty($normalized_item[$field])) {
-                        $candidate = trim($normalized_item[$field]);
-                        if ($candidate !== '' && !ctype_digit($candidate)) {
-                            $brand_name = $candidate;
+                        $candidate = $normalized_item[$field];
+                        if ($this->is_valid_brand_name($candidate)) {
+                            $brand_name = trim($candidate);
                             break;
                         }
                     }
@@ -446,7 +459,7 @@ class Softone_API {
             $brand_term_id = 0;
             if ($brand_name && taxonomy_exists('product_brand')) {
                 $brand_name = sanitize_text_field(mb_convert_encoding(trim($brand_name), 'UTF-8', 'UTF-8'));
-                if ($brand_name !== '' && !ctype_digit($brand_name)) {
+                if ($this->is_valid_brand_name($brand_name)) {
                     $term = term_exists($brand_name, 'product_brand');
                     if (!$term) { $term = wp_insert_term($brand_name, 'product_brand'); }
                     if (!is_wp_error($term)) { $brand_term_id = is_array($term) ? $term['term_id'] : $term; }
@@ -516,7 +529,7 @@ add_action('wp_ajax_softone_sync_products', function () {
         wp_die();
     }
     $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
-    $limit = 20;
+    $limit = 10;
     $api = new Softone_API();
     $all_items = $api->get_products();
     $total = count($all_items);
@@ -547,7 +560,7 @@ add_action('wp_ajax_softone_sync_products', function () {
             $log[] = "❌ [$offset+$i] Failed SKU: " . ($item['SKU'] ?? '[UNKNOWN]') . ' – Error: ' . $e->getMessage();
         }
     }
-    $progress = min(100, round((($offset + $limit) / $total) * 100));
+    $progress = $total > 0 ? min(100, round((($offset + $limit) / $total) * 100)) : 100;
     $next_offset = $offset + $limit;
     wp_send_json([
         'message' => implode("\n", $log),
