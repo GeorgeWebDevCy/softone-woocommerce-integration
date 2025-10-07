@@ -86,14 +86,7 @@ class Softone_API {
             return [];
         }
 
-        $rows = array_filter(
-            $data['rows'],
-            static function ($item) {
-                return isset($item['BOOL01']) && intval($item['BOOL01']) === 1;
-            }
-        );
-
-        return array_values($rows);
+        return array_values($data['rows']);
     }
 
     public function get_customer_by_email($email) {

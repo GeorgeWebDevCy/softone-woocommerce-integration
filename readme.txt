@@ -4,7 +4,7 @@ Contributors: georgenicolaou
 Tags: woocommerce, integration, softone, api, synchronization
 Requires at least: 5.0
 Tested up to: 6.0
-Stable tag: 2.2.59
+Stable tag: 2.2.60
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -65,6 +65,9 @@ nested submenus for each level.
 
 == Changelog ==
 
+= 2.2.60 =
+* Retrieve all Softone products returned by the API without filtering on BOOL01.
+
 = 2.2.59 =
 * Add top-level product categories to the Main Menu alongside the Products mega menu.
 
@@ -77,7 +80,7 @@ nested submenus for each level.
 * Halve batch sizes for product and order synchronisation to lower memory usage per request.
 
 = 2.2.56 =
-* Retrieve only Softone products flagged for the web (BOOL01 = 1).
+* Retrieve all Softone products returned by the API without filtering on BOOL01.
 
 = 2.2.55 =
 * Always use the Softone brand name fields when assigning product brands and ignore numeric brand IDs.
