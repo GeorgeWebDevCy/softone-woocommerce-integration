@@ -143,36 +143,6 @@ function softone_sync_taxonomy_menu($taxonomy, $menu_name, $parent_title, $args 
 
         $add_recursive(0, $root_menu_id);
 
-        if (!empty($term_children[0])) {
-            foreach ($term_children[0] as $term_id) {
-                if (!isset($term_map[$term_id])) {
-                    continue;
-                }
-
-                $term = $term_map[$term_id];
-
-                $top_level_args = [
-                    'menu-item-title'      => $term->name,
-                    'menu-item-object'     => $taxonomy,
-                    'menu-item-object-id'  => $term->term_id,
-                    'menu-item-type'       => 'taxonomy',
-                    'menu-item-status'     => 'publish',
-                    'menu-item-parent-id'  => 0,
-                ];
-
-                $existing_id = $existing_menu_items[0][$term_id] ?? 0;
-
-                $menu_item_id = wp_update_nav_menu_item($menu_id, $existing_id, $top_level_args);
-
-                if (is_wp_error($menu_item_id)) {
-                    continue;
-                }
-
-                $existing_menu_items[0][$term_id] = $menu_item_id;
-                $new_menu_item_ids[] = $menu_item_id;
-            }
-        }
-
         foreach ($existing_menu_items as $parent_id => $items) {
             foreach ($items as $term_id => $item_id) {
                 if (!in_array($item_id, $new_menu_item_ids, true)) {
