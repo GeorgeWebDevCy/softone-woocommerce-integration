@@ -21,7 +21,7 @@
             },
             "time": "2025-05-20T12:29:01+00:00",
             "type": "library",
-            "installation-source": "dist",
+            "installation-source": "source",
             "autoload": {
                 "files": [
                     "load-v5p6.php"
