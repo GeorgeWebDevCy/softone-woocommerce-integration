@@ -208,11 +208,19 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 'password' => $this->password,
             );
 
-            foreach ( $this->get_handshake_fields() as $key => $value ) {
-                if ( '' !== $value && ! array_key_exists( $key, $payload ) ) {
-                    $payload[ $key ] = $value;
-                }
-            }
+            /**
+             * Filter the login payload before dispatching the request.
+             *
+             * Historically the plugin forwarded the handshake fields (company, branch,
+             * module, refid) during the login request. SoftOne rejects those extra
+             * parameters for the PT Kids environment, so the default behaviour is to
+             * omit them. Sites that rely on the old behaviour can re-introduce the
+             * fields via this filter.
+             *
+             * @param array                   $payload Login payload.
+             * @param Softone_API_Client|null $client  API client instance.
+             */
+            $payload = apply_filters( 'softone_wc_integration_login_payload', $payload, $this );
 
             $response = $this->call_service( 'login', $payload, false );
 
