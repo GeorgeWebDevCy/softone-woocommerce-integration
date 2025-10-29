@@ -67,10 +67,10 @@ class Softone_Woocommerce_Integration {
 	 * @since    1.0.0
 	 */
 	public function __construct() {
-		if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
-			$this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
+                if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
+                        $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
                 } else {
-                        $this->version = '1.0.1';
+                        $this->version = '1.1.0';
                 }
 		$this->plugin_name = 'softone-woocommerce-integration';
 
@@ -99,11 +99,16 @@ class Softone_Woocommerce_Integration {
 	 */
 	private function load_dependencies() {
 
-		/**
-		 * The class responsible for orchestrating the actions and filters of the
-		 * core plugin.
-		 */
-		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-woocommerce-integration-loader.php';
+                /**
+                 * The class responsible for orchestrating the actions and filters of the
+                 * core plugin.
+                 */
+                require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-woocommerce-integration-loader.php';
+
+                /**
+                 * Service class for performing SoftOne API requests.
+                 */
+                require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-api-client.php';
 
 		/**
 		 * The class responsible for defining internationalization functionality
