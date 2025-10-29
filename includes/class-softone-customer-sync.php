@@ -427,16 +427,19 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
             }
 
             $record = array(
-                'CODE'    => $this->generate_customer_code( $customer ),
-                'NAME'    => $name,
-                'EMAIL'   => $customer->get_email(),
-                'PHONE01' => $primary_phone,
-                'PHONE02' => $secondary,
-                'ADDRESS' => $address_1,
-                'ADDRESS2'=> $address_2,
-                'CITY'    => $city,
-                'ZIP'     => $postcode,
-                'COUNTRY' => $softone_country,
+                'CODE'        => $this->generate_customer_code( $customer ),
+                'NAME'        => $name,
+                'EMAIL'       => $customer->get_email(),
+                'PHONE01'     => $primary_phone,
+                'PHONE02'     => $secondary,
+                'ADDRESS'     => $address_1,
+                'ADDRESS2'    => $address_2,
+                'CITY'        => $city,
+                'ZIP'         => $postcode,
+                'COUNTRY'     => $softone_country,
+                'AREAS'       => $this->api_client->get_areas(),
+                'SOCURRENCY'  => $this->api_client->get_socurrency(),
+                'TRDCATEGORY' => $this->api_client->get_trdcategory(),
             );
 
             if ( null !== $trdr ) {

@@ -191,6 +191,9 @@ class Softone_Woocommerce_Integration_Admin {
                 $this->add_text_field( 'refid', __( 'Ref ID', 'softone-woocommerce-integration' ) );
                 $this->add_text_field( 'default_saldoc_series', __( 'Default SALDOC Series', 'softone-woocommerce-integration' ) );
                 $this->add_text_field( 'warehouse', __( 'Default Warehouse', 'softone-woocommerce-integration' ) );
+                $this->add_text_field( 'areas', __( 'Default AREAS', 'softone-woocommerce-integration' ) );
+                $this->add_text_field( 'socurrency', __( 'Default SOCURRENCY', 'softone-woocommerce-integration' ) );
+                $this->add_text_field( 'trdcategory', __( 'Default TRDCATEGORY', 'softone-woocommerce-integration' ) );
                 add_settings_field(
                         'softone_wc_integration_country_mappings',
                         __( 'Country Mappings', 'softone-woocommerce-integration' ),
@@ -233,6 +236,9 @@ class Softone_Woocommerce_Integration_Admin {
                 $sanitized['refid']                 = isset( $settings['refid'] ) ? $this->sanitize_text_value( $settings['refid'] ) : '';
                 $sanitized['default_saldoc_series'] = isset( $settings['default_saldoc_series'] ) ? $this->sanitize_text_value( $settings['default_saldoc_series'] ) : '';
                 $sanitized['warehouse']             = isset( $settings['warehouse'] ) ? $this->sanitize_text_value( $settings['warehouse'] ) : '';
+                $sanitized['areas']                 = isset( $settings['areas'] ) ? $this->sanitize_text_value( $settings['areas'] ) : '';
+                $sanitized['socurrency']            = isset( $settings['socurrency'] ) ? $this->sanitize_text_value( $settings['socurrency'] ) : '';
+                $sanitized['trdcategory']           = isset( $settings['trdcategory'] ) ? $this->sanitize_text_value( $settings['trdcategory'] ) : '';
                 $sanitized['country_mappings']      = isset( $settings['country_mappings'] ) ? $this->sanitize_country_mappings( $settings['country_mappings'] ) : array();
 
                 return $sanitized;
@@ -334,6 +340,9 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
                         'refid'                 => __( 'Ref ID', 'softone-woocommerce-integration' ),
                         'default_saldoc_series' => __( 'Default SALDOC Series', 'softone-woocommerce-integration' ),
                         'warehouse'             => __( 'Default Warehouse', 'softone-woocommerce-integration' ),
+                        'areas'                 => __( 'Default AREAS', 'softone-woocommerce-integration' ),
+                        'socurrency'            => __( 'Default SOCURRENCY', 'softone-woocommerce-integration' ),
+                        'trdcategory'           => __( 'Default TRDCATEGORY', 'softone-woocommerce-integration' ),
                 );
 
                 $settings_summary = array();
@@ -1309,6 +1318,9 @@ public function handle_test_connection() {
                         'refid'                 => 'softone_wc_integration_get_refid',
                         'default_saldoc_series' => 'softone_wc_integration_get_default_saldoc_series',
                         'warehouse'             => 'softone_wc_integration_get_warehouse',
+                        'areas'                 => 'softone_wc_integration_get_areas',
+                        'socurrency'            => 'softone_wc_integration_get_socurrency',
+                        'trdcategory'           => 'softone_wc_integration_get_trdcategory',
                 );
 
                 if ( isset( $lookup[ $key ] ) && is_callable( $lookup[ $key ] ) ) {

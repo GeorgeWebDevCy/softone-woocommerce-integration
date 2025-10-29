@@ -96,6 +96,16 @@ SoftOne installations typically expect a numeric country identifier instead of W
 
 Developers can further adjust the mapping in code by filtering the array exposed via the `softone_wc_integration_country_mappings` hook or by overriding individual results with the `softone_wc_integration_country_id` filter.
 
+== Customer Default Configuration ==
+
+Use the following settings located under **Softone Integration → Settings** to control the default values applied to new SoftOne customer records:
+
+* **Default AREAS** — populates the `AREAS` field when creating or updating customers.
+* **Default SOCURRENCY** — applied to the `SOCURRENCY` field to control the customer's currency.
+* **Default TRDCATEGORY** — sets the `TRDCATEGORY` field for the trading category code.
+
+Leave any field blank to skip sending the corresponding value. Developers can read the configured defaults programmatically via the `Softone_API_Client` accessors (`get_areas()`, `get_socurrency()`, and `get_trdcategory()`).
+
 == Manual QA ==
 
 Use the following smoke test to verify country mapping behaviour:
@@ -105,6 +115,11 @@ Use the following smoke test to verify country mapping behaviour:
 1. Confirm that the SoftOne payload written to the debug log or sent to the API contains `COUNTRY => 101` instead of the ISO code. If the mapping is missing, the plugin now logs an error mentioning the ISO code and skips the payload so the missing configuration can be corrected.
 
 Repeat the steps for each supported country to ensure the expected numeric IDs are emitted.
+
+Additional optional checks:
+
+1. Populate the **Default AREAS**, **Default SOCURRENCY**, and **Default TRDCATEGORY** fields with representative values and save the settings.
+1. Create a WooCommerce customer (or place a guest order) and confirm that the SoftOne payload now contains the configured defaults (for example `AREAS => 22`). Remove the values or adjust them to match the production environment once verified.
 
 == Arbitrary section ==
 
