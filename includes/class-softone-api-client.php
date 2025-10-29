@@ -597,10 +597,22 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 }
             }
 
-            $encoding = false;
+            $encoding            = false;
+            $candidate_encodings = array( 'UTF-8', 'ISO-8859-1', 'ISO-8859-7', 'ISO-8859-15', 'Windows-1253', 'Windows-1252', 'ASCII' );
+
+            if ( function_exists( 'mb_list_encodings' ) ) {
+                $available_encodings = array_map( 'strtoupper', mb_list_encodings() );
+                $candidate_encodings = array_values( array_filter( $candidate_encodings, function( $candidate ) use ( $available_encodings ) {
+                    return in_array( strtoupper( $candidate ), $available_encodings, true );
+                } ) );
+            }
 
             if ( function_exists( 'mb_detect_encoding' ) && function_exists( 'mb_convert_encoding' ) ) {
-                $encoding = mb_detect_encoding( $payload, array( 'UTF-8', 'ISO-8859-1', 'ISO-8859-7', 'ISO-8859-15', 'Windows-1253', 'Windows-1252', 'ASCII' ), true );
+                try {
+                    $encoding = mb_detect_encoding( $payload, $candidate_encodings, true );
+                } catch ( ValueError $exception ) {
+                    $encoding = false;
+                }
 
                 if ( $encoding && 'UTF-8' !== strtoupper( $encoding ) ) {
                     $converted = @mb_convert_encoding( $payload, 'UTF-8', $encoding );
