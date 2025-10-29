@@ -22,6 +22,50 @@
                 var $payloadField = $( '#softone_payload' );
                 var $description = $( '#softone_api_preset_description' );
                 var defaultDescription = config.defaultDescription || ( $description.data( 'default-description' ) || '' );
+                var highlightClass = 'softone-api-field--highlight';
+
+                var highlightTargets = {
+                        service_type: $serviceTypeField,
+                        sql_name: $sqlNameField,
+                        object: $objectField,
+                        custom_service: $customServiceField,
+                        requires_client_id: $requiresClientField,
+                        payload: $payloadField
+                };
+
+                var getWrapper = function( $element ) {
+                        if ( ! $element || ! $element.length ) {
+                                return $();
+                        }
+
+                        return $element.closest( '.softone-api-field' );
+                };
+
+                var clearHighlights = function() {
+                        $( '.' + highlightClass ).removeClass( highlightClass );
+                };
+
+                var markPresetFields = function( key ) {
+                        clearHighlights();
+
+                        if ( ! key || ! presets[ key ] || ! presets[ key ].form ) {
+                                return;
+                        }
+
+                        $.each( presets[ key ].form, function( fieldKey, value ) {
+                                var $target = highlightTargets[ fieldKey ];
+
+                                if ( 'undefined' === typeof value || ! $target || ! $target.length ) {
+                                        return;
+                                }
+
+                                var $wrapper = getWrapper( $target );
+
+                                if ( $wrapper.length ) {
+                                        $wrapper.addClass( highlightClass );
+                                }
+                        } );
+                };
 
                 var updateDescription = function( key ) {
                         if ( ! $description.length ) {
@@ -37,6 +81,7 @@
 
                 var applyPreset = function( key ) {
                         updateDescription( key );
+                        markPresetFields( key );
 
                         if ( ! key || ! presets[ key ] ) {
                                 return;
@@ -74,5 +119,6 @@
                 } );
 
                 updateDescription( $presetField.val() );
+                markPresetFields( $presetField.val() );
         } );
 })( jQuery );
