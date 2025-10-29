@@ -1,1 +1,0 @@
-# softone-woocommerce-integration
