@@ -90,6 +90,22 @@ The plugin now bundles [yahnis-elsts/plugin-update-checker](https://github.com/Y
 1. Adjust the repository URL, branch or release asset usage using the `softone_woocommerce_integration_update_url`, `softone_woocommerce_integration_update_branch` and `softone_woocommerce_integration_use_release_assets` filters if needed.
 1. WordPress will automatically discover updates exposed by the configured repository and prompt you to update from the Plugins screen.
 
+== Country Mapping Configuration ==
+
+SoftOne installations typically expect a numeric country identifier instead of WooCommerce ISO codes. Use the **Country Mappings** textarea located under **Softone Integration → Settings** to provide the mapping. Enter one mapping per line using the format `GR:123`, where the part before the colon is the ISO 3166-1 alpha-2 code and the part after the colon is the numeric SoftOne identifier. The plugin automatically normalises the input and ignores empty lines.
+
+Developers can further adjust the mapping in code by filtering the array exposed via the `softone_wc_integration_country_mappings` hook or by overriding individual results with the `softone_wc_integration_country_id` filter.
+
+== Manual QA ==
+
+Use the following smoke test to verify country mapping behaviour:
+
+1. Navigate to **Softone Integration → Settings** and populate the **Country Mappings** textarea with a sample mapping such as `GR:101`. Save the settings.
+1. Create a WooCommerce customer (or place a guest order) using Greece as the billing country.
+1. Confirm that the SoftOne payload written to the debug log or sent to the API contains `COUNTRY => 101` instead of the ISO code. If the mapping is missing, the plugin now logs an error mentioning the ISO code and skips the payload so the missing configuration can be corrected.
+
+Repeat the steps for each supported country to ensure the expected numeric IDs are emitted.
+
 == Arbitrary section ==
 
 You may provide arbitrary sections, in the same format as the ones above.  This may be of use for extremely complicated

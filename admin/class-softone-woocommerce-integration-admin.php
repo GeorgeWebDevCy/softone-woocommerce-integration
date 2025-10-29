@@ -188,11 +188,21 @@ class Softone_Woocommerce_Integration_Admin {
 		$this->add_text_field( 'company', __( 'Company', 'softone-woocommerce-integration' ) );
 		$this->add_text_field( 'branch', __( 'Branch', 'softone-woocommerce-integration' ) );
 		$this->add_text_field( 'module', __( 'Module', 'softone-woocommerce-integration' ) );
-		$this->add_text_field( 'refid', __( 'Ref ID', 'softone-woocommerce-integration' ) );
-		$this->add_text_field( 'default_saldoc_series', __( 'Default SALDOC Series', 'softone-woocommerce-integration' ) );
-		$this->add_text_field( 'warehouse', __( 'Default Warehouse', 'softone-woocommerce-integration' ) );
+                $this->add_text_field( 'refid', __( 'Ref ID', 'softone-woocommerce-integration' ) );
+                $this->add_text_field( 'default_saldoc_series', __( 'Default SALDOC Series', 'softone-woocommerce-integration' ) );
+                $this->add_text_field( 'warehouse', __( 'Default Warehouse', 'softone-woocommerce-integration' ) );
+                add_settings_field(
+                        'softone_wc_integration_country_mappings',
+                        __( 'Country Mappings', 'softone-woocommerce-integration' ),
+                        array( $this, 'render_country_mapping_field' ),
+                        'softone_wc_integration',
+                        'softone_wc_integration_api',
+                        array(
+                                'key' => 'country_mappings',
+                        )
+                );
 
-	}
+        }
 
 	/**
 	 * Sanitize plugin settings.
@@ -220,13 +230,14 @@ class Softone_Woocommerce_Integration_Admin {
 		$sanitized['company']               = isset( $settings['company'] ) ? $this->sanitize_text_value( $settings['company'] ) : '';
 		$sanitized['branch']                = isset( $settings['branch'] ) ? $this->sanitize_text_value( $settings['branch'] ) : '';
 		$sanitized['module']                = isset( $settings['module'] ) ? $this->sanitize_text_value( $settings['module'] ) : '';
-		$sanitized['refid']                 = isset( $settings['refid'] ) ? $this->sanitize_text_value( $settings['refid'] ) : '';
-		$sanitized['default_saldoc_series'] = isset( $settings['default_saldoc_series'] ) ? $this->sanitize_text_value( $settings['default_saldoc_series'] ) : '';
-		$sanitized['warehouse']             = isset( $settings['warehouse'] ) ? $this->sanitize_text_value( $settings['warehouse'] ) : '';
+                $sanitized['refid']                 = isset( $settings['refid'] ) ? $this->sanitize_text_value( $settings['refid'] ) : '';
+                $sanitized['default_saldoc_series'] = isset( $settings['default_saldoc_series'] ) ? $this->sanitize_text_value( $settings['default_saldoc_series'] ) : '';
+                $sanitized['warehouse']             = isset( $settings['warehouse'] ) ? $this->sanitize_text_value( $settings['warehouse'] ) : '';
+                $sanitized['country_mappings']      = isset( $settings['country_mappings'] ) ? $this->sanitize_country_mappings( $settings['country_mappings'] ) : array();
 
-		return $sanitized;
+                return $sanitized;
 
-	}
+        }
 
 	/**
 	 * Render section introduction text.
@@ -1208,11 +1219,11 @@ public function handle_test_connection() {
 	 * @param string $label Field label.
 	 * @param string $type  Input type.
 	 */
-	private function add_text_field( $key, $label, $type = 'text' ) {
+        private function add_text_field( $key, $label, $type = 'text' ) {
 
-		add_settings_field(
-			'softone_wc_integration_' . $key,
-			$label,
+                add_settings_field(
+                        'softone_wc_integration_' . $key,
+                        $label,
 			array( $this, 'render_text_field' ),
 			'softone_wc_integration',
 			'softone_wc_integration_api',
@@ -1220,16 +1231,65 @@ public function handle_test_connection() {
 				'key'  => $key,
 				'type' => $type,
 			)
-		);
+                );
 
-	}
+        }
 
-	/**
-	 * Render a generic text field.
-	 *
-	 * @param array $args Field arguments.
-	 */
-	public function render_text_field( $args ) {
+        /**
+         * Render the country mapping textarea field.
+         *
+         * @param array $args Field arguments.
+         */
+        public function render_country_mapping_field( $args ) {
+
+                $key = isset( $args['key'] ) ? $args['key'] : '';
+
+                if ( '' === $key ) {
+                        return;
+                }
+
+                $mappings = array();
+
+                if ( function_exists( 'softone_wc_integration_get_setting' ) ) {
+                        $mappings = softone_wc_integration_get_setting( $key, array() );
+                }
+
+                if ( ! is_array( $mappings ) ) {
+                        $mappings = array();
+                }
+
+                ksort( $mappings );
+
+                $lines = array();
+
+                foreach ( $mappings as $iso => $identifier ) {
+                        if ( ! is_scalar( $iso ) || ! is_scalar( $identifier ) ) {
+                                continue;
+                        }
+
+                        $lines[] = strtoupper( (string) $iso ) . ':' . (string) $identifier;
+                }
+
+                $value = implode( "\n", $lines );
+
+                printf(
+                        '<textarea id="%1$s" name="%2$s" rows="6" class="large-text code">%3$s</textarea>',
+                        esc_attr( 'softone_wc_integration_' . $key ),
+                        esc_attr( Softone_API_Client::OPTION_SETTINGS_KEY . '[' . $key . ']' ),
+                        esc_textarea( $value )
+                );
+
+                echo '<p class="description">' . esc_html__( 'Enter one ISO code and SoftOne ID pair per line, for example GR:123.', 'softone-woocommerce-integration' ) . '</p>';
+                echo '<p class="description">' . esc_html__( 'Developers can also adjust the mapping via the softone_wc_integration_country_mappings filter.', 'softone-woocommerce-integration' ) . '</p>';
+
+        }
+
+        /**
+         * Render a generic text field.
+         *
+         * @param array $args Field arguments.
+         */
+        public function render_text_field( $args ) {
 
 		$key  = isset( $args['key'] ) ? $args['key'] : '';
 		$type = isset( $args['type'] ) ? $args['type'] : 'text';
@@ -1275,16 +1335,81 @@ public function handle_test_connection() {
 			$attribute_string .= sprintf( ' %1$s="%2$s"', esc_attr( $attr_key ), esc_attr( $attr_value ) );
 		}
 
-		echo '<input' . $attribute_string . ' />';
+                echo '<input' . $attribute_string . ' />';
 
-	}
+        }
 
-	/**
-	 * Sanitize a generic text value.
-	 *
-	 * @param string $value Raw input value.
-	 *
-	 * @return string
+        /**
+         * Sanitize the submitted country mapping configuration.
+         *
+         * @param mixed $value Raw submitted value.
+         *
+         * @return array<string,string>
+         */
+        private function sanitize_country_mappings( $value ) {
+
+                if ( is_array( $value ) && array_values( $value ) !== $value ) {
+                        $raw_pairs = $value;
+                } else {
+                        if ( is_array( $value ) ) {
+                                $value = implode( "\n", $value );
+                        }
+
+                        $value = wp_unslash( (string) $value );
+
+                        $lines    = preg_split( '/\r\n|\r|\n/', $value );
+                        $raw_pairs = array();
+
+                        foreach ( $lines as $line ) {
+                                $line = trim( $line );
+
+                                if ( '' === $line ) {
+                                        continue;
+                                }
+
+                                $parts = preg_split( '/\s*[:=]\s*/', $line, 2 );
+
+                                if ( $parts && count( $parts ) >= 2 ) {
+                                        $raw_pairs[ $parts[0] ] = $parts[1];
+                                }
+                        }
+                }
+
+                $mappings = array();
+
+                foreach ( $raw_pairs as $code => $identifier ) {
+                        if ( ! is_scalar( $code ) || ! is_scalar( $identifier ) ) {
+                                continue;
+                        }
+
+                        $normalized_code = strtoupper( sanitize_text_field( (string) $code ) );
+
+                        if ( '' === $normalized_code ) {
+                                continue;
+                        }
+
+                        $normalized_identifier = sanitize_text_field( (string) $identifier );
+                        $normalized_identifier = preg_replace( '/[^0-9]/', '', $normalized_identifier );
+
+                        if ( '' === $normalized_identifier ) {
+                                continue;
+                        }
+
+                        $mappings[ $normalized_code ] = $normalized_identifier;
+                }
+
+                ksort( $mappings );
+
+                return $mappings;
+
+        }
+
+        /**
+         * Sanitize a generic text value.
+         *
+         * @param string $value Raw input value.
+         *
+         * @return string
 	 */
 	private function sanitize_text_value( $value ) {
 
