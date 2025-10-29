@@ -61,6 +61,54 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
         }
 
         /**
+         * Ensure a WooCommerce customer has an associated SoftOne TRDR identifier.
+         *
+         * @param int $customer_id Customer identifier.
+         *
+         * @return string
+         */
+        public function ensure_customer_trdr( $customer_id ) {
+            $customer_id = absint( $customer_id );
+
+            if ( $customer_id <= 0 ) {
+                return '';
+            }
+
+            $existing = get_user_meta( $customer_id, self::META_TRDR, true );
+            $existing = is_scalar( $existing ) ? (string) $existing : '';
+
+            if ( '' !== $existing ) {
+                return $existing;
+            }
+
+            if ( ! class_exists( 'WC_Customer' ) ) {
+                return '';
+            }
+
+            try {
+                $customer = new WC_Customer( $customer_id );
+            } catch ( Exception $exception ) {
+                $this->log( 'error', $exception->getMessage(), array( 'user_id' => $customer_id, 'exception' => $exception ) );
+                return '';
+            }
+
+            if ( ! $customer || ! $customer->get_id() ) {
+                return '';
+            }
+
+            try {
+                $this->sync_customer( $customer );
+            } catch ( Softone_API_Client_Exception $exception ) {
+                $this->log( 'error', $exception->getMessage(), array( 'user_id' => $customer_id, 'exception' => $exception ) );
+                return '';
+            }
+
+            $updated = get_user_meta( $customer_id, self::META_TRDR, true );
+
+            return is_scalar( $updated ) ? (string) $updated : '';
+        }
+
+        /**
          * Handle the WooCommerce customer creation action.
          *
          * @param int $customer_id Customer identifier.
