@@ -91,7 +91,7 @@ class Softone_Woocommerce_Integration {
                 if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
                         $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
                 } else {
-                        $this->version = '1.5.1';
+                        $this->version = '1.6.0';
                 }
                 $this->plugin_name = 'softone-woocommerce-integration';
 
@@ -211,6 +211,7 @@ class Softone_Woocommerce_Integration {
         $this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts' );
         $this->loader->add_action( 'admin_menu', $plugin_admin, 'register_menu' );
         $this->loader->add_action( 'admin_init', $plugin_admin, 'register_settings' );
+        $this->loader->add_action( 'admin_post_softone_wc_integration_api_tester', $plugin_admin, 'handle_api_tester_request' );
         $this->loader->add_action( 'admin_post_softone_wc_integration_test_connection', $plugin_admin, 'handle_test_connection' );
         $this->loader->add_action( 'admin_post_' . Softone_Item_Sync::ADMIN_ACTION, $plugin_admin, 'handle_item_import' );
 
