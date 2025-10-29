@@ -88,12 +88,12 @@ class Softone_Woocommerce_Integration {
          * @since    1.0.0
          */
         public function __construct() {
-                if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
-                        $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
-                } else {
-                        $this->version = '1.7.0';
-                }
-                $this->plugin_name = 'softone-woocommerce-integration';
+		if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
+			$this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
+		} else {
+			$this->version = '1.7.1';
+		}
+		$this->plugin_name = 'softone-woocommerce-integration';
 
                 $this->load_dependencies();
                 $this->set_locale();
