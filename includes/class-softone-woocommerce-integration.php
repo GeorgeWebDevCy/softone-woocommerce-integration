@@ -65,6 +65,13 @@ class Softone_Woocommerce_Integration {
         protected $item_sync;
 
         /**
+         * Customer synchronisation service instance.
+         *
+         * @var Softone_Customer_Sync
+         */
+        protected $customer_sync;
+
+        /**
          * Define the core functionality of the plugin.
          *
          * Set the plugin name and the plugin version that can be used throughout the plugin.
@@ -77,7 +84,7 @@ class Softone_Woocommerce_Integration {
                 if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
                         $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
                 } else {
-                        $this->version = '1.3.0';
+                        $this->version = '1.4.0';
                 }
                 $this->plugin_name = 'softone-woocommerce-integration';
 
@@ -123,6 +130,11 @@ class Softone_Woocommerce_Integration {
                 require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-item-sync.php';
 
                 /**
+                 * Service class for synchronising WooCommerce customers with SoftOne.
+                 */
+                require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-customer-sync.php';
+
+                /**
                  * Helper functions for accessing plugin settings.
                  */
                 require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/softone-woocommerce-integration-settings.php';
@@ -144,10 +156,12 @@ class Softone_Woocommerce_Integration {
 		 */
 		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'public/class-softone-woocommerce-integration-public.php';
 
-                $this->loader    = new Softone_Woocommerce_Integration_Loader();
-                $this->item_sync = new Softone_Item_Sync();
+                $this->loader        = new Softone_Woocommerce_Integration_Loader();
+                $this->item_sync     = new Softone_Item_Sync();
+                $this->customer_sync = new Softone_Customer_Sync();
 
                 $this->item_sync->register_hooks( $this->loader );
+                $this->customer_sync->register_hooks( $this->loader );
 
         }
 
