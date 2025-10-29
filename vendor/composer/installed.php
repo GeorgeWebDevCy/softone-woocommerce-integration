@@ -1,19 +1,19 @@
 <?php return array(
     'root' => array(
         'name' => 'georgenicolaou/softone-woocommerce-integration',
-        'pretty_version' => 'dev-main',
-        'version' => 'dev-main',
-        'reference' => 'f34e8b723a521f3b745fed5e981fa413110aa23e',
+        'pretty_version' => 'dev-work',
+        'version' => 'dev-work',
+        'reference' => '5a884e3c95689c679c95303a8cfe20556634050d',
         'type' => 'wordpress-plugin',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
-        'dev' => false,
+        'dev' => true,
     ),
     'versions' => array(
         'georgenicolaou/softone-woocommerce-integration' => array(
-            'pretty_version' => 'dev-main',
-            'version' => 'dev-main',
-            'reference' => 'f34e8b723a521f3b745fed5e981fa413110aa23e',
+            'pretty_version' => 'dev-work',
+            'version' => 'dev-work',
+            'reference' => '5a884e3c95689c679c95303a8cfe20556634050d',
             'type' => 'wordpress-plugin',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
