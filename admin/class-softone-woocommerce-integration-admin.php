@@ -47,25 +47,46 @@ class Softone_Woocommerce_Integration_Admin {
 	private $menu_slug = 'softone-woocommerce-integration-settings';
 
         /**
+         * API tester submenu slug.
+         *
+         * @var string
+         */
+	private $api_tester_slug = 'softone-woocommerce-integration-api-tester';
+
+        /**
          * Capability required to manage plugin settings.
          *
          * @var string
          */
-        private $capability = 'manage_options';
+	private $capability = 'manage_options';
+
+        /**
+         * Action name for the API tester handler.
+         *
+         * @var string
+         */
+	private $api_tester_action = 'softone_wc_integration_api_tester';
 
         /**
          * Base transient key for connection test notices.
          *
          * @var string
          */
-        private $test_notice_transient = 'softone_wc_integration_test_notice_';
+	private $test_notice_transient = 'softone_wc_integration_test_notice_';
+
+        /**
+         * Base transient key for API tester responses.
+         *
+         * @var string
+         */
+	private $api_tester_transient = 'softone_wc_integration_api_tester_';
 
         /**
          * Base transient key for import notices.
          *
          * @var string
          */
-        private $import_notice_transient = 'softone_wc_integration_import_notice_';
+	private $import_notice_transient = 'softone_wc_integration_import_notice_';
 
         /**
          * Item synchronisation service.
@@ -117,6 +138,15 @@ class Softone_Woocommerce_Integration_Admin {
                         $this->capability,
                         $this->menu_slug,
                         array( $this, 'render_settings_page' )
+                );
+
+                add_submenu_page(
+                        $this->menu_slug,
+                        __( 'API Tester', 'softone-woocommerce-integration' ),
+                        __( 'API Tester', 'softone-woocommerce-integration' ),
+                        $this->capability,
+                        $this->api_tester_slug,
+                        array( $this, 'render_api_tester_page' )
                 );
 
                 add_submenu_page(
@@ -206,9 +236,9 @@ class Softone_Woocommerce_Integration_Admin {
 	 */
 	public function render_settings_page() {
 
-		if ( ! current_user_can( $this->capability ) ) {
-			return;
-		}
+                if ( ! current_user_can( $this->capability ) ) {
+                        return;
+                }
 
 ?>
 <div class="wrap">
@@ -249,10 +279,353 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
 
         }
 
-	/**
-	 * Handle connection test requests.
-	 */
-	public function handle_test_connection() {
+        /**
+         * Render the API tester page.
+         */
+	public function render_api_tester_page() {
+
+                if ( ! current_user_can( $this->capability ) ) {
+                        return;
+                }
+
+                $result    = $this->get_api_tester_result();
+                $form_data = $this->prepare_api_tester_form_data( $result );
+
+?>
+<div class="wrap">
+<h1><?php esc_html_e( 'Softone API Tester', 'softone-woocommerce-integration' ); ?></h1>
+
+<?php if ( ! empty( $result ) && ! empty( $result['message'] ) ) : ?>
+<?php
+$status = ( isset( $result['status'] ) && 'error' === $result['status'] ) ? 'error' : 'success';
+$classes = array( 'notice', 'notice-' . $status );
+?>
+<div class="<?php echo esc_attr( implode( ' ', $classes ) ); ?>">
+<p><?php echo esc_html( $result['message'] ); ?></p>
+</div>
+
+<?php if ( isset( $result['service'] ) || isset( $result['request'] ) || isset( $result['response'] ) ) : ?>
+<div class="postbox" style="padding: 16px; margin-top: 16px;">
+<?php if ( ! empty( $result['service'] ) ) : ?>
+<h2><?php echo esc_html( sprintf( __( 'Service: %s', 'softone-woocommerce-integration' ), (string) $result['service'] ) ); ?></h2>
+<?php endif; ?>
+<?php if ( array_key_exists( 'request', $result ) ) : ?>
+<h3><?php esc_html_e( 'Request Payload', 'softone-woocommerce-integration' ); ?></h3>
+<pre><?php echo esc_html( $this->format_api_tester_output( $result['request'] ) ); ?></pre>
+<?php endif; ?>
+<?php if ( array_key_exists( 'response', $result ) ) : ?>
+<h3><?php esc_html_e( 'Response', 'softone-woocommerce-integration' ); ?></h3>
+<pre><?php echo esc_html( $this->format_api_tester_output( $result['response'] ) ); ?></pre>
+<?php endif; ?>
+</div>
+<?php endif; ?>
+<?php endif; ?>
+
+<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" style="margin-top: 1.5em;">
+<?php wp_nonce_field( $this->api_tester_action ); ?>
+<input type="hidden" name="action" value="<?php echo esc_attr( $this->api_tester_action ); ?>" />
+<table class="form-table" role="presentation">
+<tbody>
+<tr>
+<th scope="row"><label for="softone_service_type"><?php esc_html_e( 'Service', 'softone-woocommerce-integration' ); ?></label></th>
+<td>
+<select name="softone_service_type" id="softone_service_type">
+<option value="sql_data" <?php selected( $form_data['service_type'], 'sql_data' ); ?>><?php esc_html_e( 'SqlData', 'softone-woocommerce-integration' ); ?></option>
+<option value="set_data" <?php selected( $form_data['service_type'], 'set_data' ); ?>><?php esc_html_e( 'setData', 'softone-woocommerce-integration' ); ?></option>
+<option value="custom" <?php selected( $form_data['service_type'], 'custom' ); ?>><?php esc_html_e( 'Custom', 'softone-woocommerce-integration' ); ?></option>
+</select>
+<p class="description"><?php esc_html_e( 'Choose a Softone service to call.', 'softone-woocommerce-integration' ); ?></p>
+</td>
+</tr>
+<tr>
+<th scope="row"><label for="softone_sql_name"><?php esc_html_e( 'SqlData name', 'softone-woocommerce-integration' ); ?></label></th>
+<td>
+<input type="text" class="regular-text" id="softone_sql_name" name="softone_sql_name" value="<?php echo esc_attr( $form_data['sql_name'] ); ?>" />
+<p class="description"><?php esc_html_e( 'Required when calling SqlData.', 'softone-woocommerce-integration' ); ?></p>
+</td>
+</tr>
+<tr>
+<th scope="row"><label for="softone_object"><?php esc_html_e( 'setData object', 'softone-woocommerce-integration' ); ?></label></th>
+<td>
+<input type="text" class="regular-text" id="softone_object" name="softone_object" value="<?php echo esc_attr( $form_data['object'] ); ?>" />
+<p class="description"><?php esc_html_e( 'Required when calling setData.', 'softone-woocommerce-integration' ); ?></p>
+</td>
+</tr>
+<tr>
+<th scope="row"><label for="softone_custom_service"><?php esc_html_e( 'Custom service name', 'softone-woocommerce-integration' ); ?></label></th>
+<td>
+<input type="text" class="regular-text" id="softone_custom_service" name="softone_custom_service" value="<?php echo esc_attr( $form_data['custom_service'] ); ?>" />
+<p class="description"><?php esc_html_e( 'Specify the Softone service when using the Custom option.', 'softone-woocommerce-integration' ); ?></p>
+</td>
+</tr>
+<tr>
+<th scope="row"><?php esc_html_e( 'Requires client ID', 'softone-woocommerce-integration' ); ?></th>
+<td>
+<label for="softone_requires_client_id">
+<input type="checkbox" id="softone_requires_client_id" name="softone_requires_client_id" value="1" <?php checked( $form_data['requires_client_id'] ); ?> />
+<?php esc_html_e( 'Include the cached client ID for this request.', 'softone-woocommerce-integration' ); ?>
+</label>
+</td>
+</tr>
+<tr>
+<th scope="row"><label for="softone_payload"><?php esc_html_e( 'JSON payload', 'softone-woocommerce-integration' ); ?></label></th>
+<td>
+<textarea class="large-text code" rows="10" id="softone_payload" name="softone_payload"><?php echo esc_textarea( $form_data['payload'] ); ?></textarea>
+<p class="description"><?php esc_html_e( 'Provide additional parameters as JSON. The data will be merged with the base payload for the selected service.', 'softone-woocommerce-integration' ); ?></p>
+</td>
+</tr>
+</tbody>
+</table>
+<?php submit_button( __( 'Send Request', 'softone-woocommerce-integration' ) ); ?>
+</form>
+</div>
+<?php
+
+        }
+
+        /**
+         * Prepare default form values for the API tester.
+         *
+         * @param array $result Stored tester result.
+         *
+         * @return array
+         */
+	private function prepare_api_tester_form_data( $result ) {
+
+               $defaults = array(
+                       'service_type'       => 'sql_data',
+                       'sql_name'           => '',
+                       'object'             => '',
+                       'custom_service'     => '',
+                       'requires_client_id' => true,
+                       'payload'            => '',
+               );
+
+               if ( isset( $result['form'] ) && is_array( $result['form'] ) ) {
+                       $form = wp_parse_args( $result['form'], $defaults );
+               } else {
+                       $form = $defaults;
+               }
+
+               $form['service_type']       = in_array( $form['service_type'], array( 'sql_data', 'set_data', 'custom' ), true ) ? $form['service_type'] : 'sql_data';
+               $form['requires_client_id'] = ! empty( $form['requires_client_id'] );
+
+               return $form;
+
+       }
+
+        /**
+         * Format values for display in the API tester output.
+         *
+         * @param mixed $value Output value.
+         *
+         * @return string
+         */
+	private function format_api_tester_output( $value ) {
+
+               if ( is_array( $value ) || is_object( $value ) ) {
+                       $encoded = wp_json_encode( $value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+
+                       if ( false !== $encoded ) {
+                               return $encoded;
+                       }
+               }
+
+               if ( is_bool( $value ) ) {
+                       return $value ? 'true' : 'false';
+               }
+
+               if ( null === $value ) {
+                       return 'null';
+               }
+
+               return (string) $value;
+
+       }
+
+        /**
+         * Handle API tester submissions.
+         */
+	public function handle_api_tester_request() {
+
+               if ( ! current_user_can( $this->capability ) ) {
+                       wp_die( esc_html__( 'You do not have permission to perform this action.', 'softone-woocommerce-integration' ) );
+               }
+
+               check_admin_referer( $this->api_tester_action );
+
+               $service_type = isset( $_POST['softone_service_type'] ) ? sanitize_key( wp_unslash( $_POST['softone_service_type'] ) ) : 'sql_data';
+
+               if ( ! in_array( $service_type, array( 'sql_data', 'set_data', 'custom' ), true ) ) {
+                       $service_type = 'sql_data';
+               }
+
+               $form_data = array(
+                       'service_type'       => $service_type,
+                       'sql_name'           => isset( $_POST['softone_sql_name'] ) ? sanitize_text_field( wp_unslash( $_POST['softone_sql_name'] ) ) : '',
+                       'object'             => isset( $_POST['softone_object'] ) ? sanitize_text_field( wp_unslash( $_POST['softone_object'] ) ) : '',
+                       'custom_service'     => isset( $_POST['softone_custom_service'] ) ? sanitize_text_field( wp_unslash( $_POST['softone_custom_service'] ) ) : '',
+                       'requires_client_id' => isset( $_POST['softone_requires_client_id'] ) ? true : false,
+                       'payload'            => isset( $_POST['softone_payload'] ) ? wp_unslash( $_POST['softone_payload'] ) : '',
+               );
+
+               $payload_data = array();
+
+               if ( '' !== $form_data['payload'] ) {
+                       $decoded = json_decode( $form_data['payload'], true );
+
+                       if ( JSON_ERROR_NONE !== json_last_error() ) {
+                               $this->store_api_tester_result(
+                                       array(
+                                               'status'  => 'error',
+                                               'message' => sprintf( __( 'Invalid JSON payload: %s', 'softone-woocommerce-integration' ), json_last_error_msg() ),
+                                               'service' => '',
+                                               'request' => array(),
+                                               'response' => null,
+                                               'form'    => $form_data,
+                                       )
+                               );
+                               wp_safe_redirect( $this->get_api_tester_page_url() );
+                               exit;
+                       }
+
+                       if ( ! is_array( $decoded ) ) {
+                               $this->store_api_tester_result(
+                                       array(
+                                               'status'  => 'error',
+                                               'message' => __( 'JSON payload must decode to an array or object.', 'softone-woocommerce-integration' ),
+                                               'service' => '',
+                                               'request' => array(),
+                                               'response' => null,
+                                               'form'    => $form_data,
+                                       )
+                               );
+                               wp_safe_redirect( $this->get_api_tester_page_url() );
+                               exit;
+                       }
+
+                       $payload_data = $decoded;
+               }
+
+               $service_name    = '';
+               $request_payload = $payload_data;
+
+               switch ( $service_type ) {
+                       case 'set_data':
+                               $service_name = 'setData';
+
+                               if ( '' === $form_data['object'] ) {
+                                       $this->store_api_tester_result(
+                                               array(
+                                                       'status'  => 'error',
+                                                       'message' => __( 'A setData object name is required.', 'softone-woocommerce-integration' ),
+                                                       'service' => $service_name,
+                                                       'request' => array(),
+                                                       'response' => null,
+                                                       'form'    => $form_data,
+                                               )
+                                       );
+                                       wp_safe_redirect( $this->get_api_tester_page_url() );
+                                       exit;
+                               }
+
+                               $request_payload['object'] = $form_data['object'];
+                               break;
+
+                       case 'custom':
+                               $service_name = $form_data['custom_service'];
+
+                               if ( '' === $service_name ) {
+                                       $this->store_api_tester_result(
+                                               array(
+                                                       'status'  => 'error',
+                                                       'message' => __( 'A custom service name is required.', 'softone-woocommerce-integration' ),
+                                                       'service' => '',
+                                                       'request' => array(),
+                                                       'response' => null,
+                                                       'form'    => $form_data,
+                                               )
+                                       );
+                                       wp_safe_redirect( $this->get_api_tester_page_url() );
+                                       exit;
+                               }
+                               break;
+
+                       case 'sql_data':
+                       default:
+                               $service_name = 'SqlData';
+
+                               if ( '' === $form_data['sql_name'] ) {
+                                       $this->store_api_tester_result(
+                                               array(
+                                                       'status'  => 'error',
+                                                       'message' => __( 'A SqlData name is required.', 'softone-woocommerce-integration' ),
+                                                       'service' => $service_name,
+                                                       'request' => array(),
+                                                       'response' => null,
+                                                       'form'    => $form_data,
+                                               )
+                                       );
+                                       wp_safe_redirect( $this->get_api_tester_page_url() );
+                                       exit;
+                               }
+
+                               $request_payload['SqlName'] = $form_data['sql_name'];
+                               break;
+               }
+
+               $request_details = array(
+                       'payload'            => $request_payload,
+                       'requires_client_id' => $form_data['requires_client_id'],
+               );
+
+               try {
+                       $client   = new Softone_API_Client();
+                       $response = $client->call_service( $service_name, $request_payload, $form_data['requires_client_id'] );
+
+                       $this->store_api_tester_result(
+                               array(
+                                       'status'  => 'success',
+                                       'message' => sprintf( __( 'Successfully executed %s.', 'softone-woocommerce-integration' ), $service_name ),
+                                       'service' => $service_name,
+                                       'request' => $request_details,
+                                       'response' => $response,
+                                       'form'    => $form_data,
+                               )
+                       );
+               } catch ( Softone_API_Client_Exception $exception ) {
+                       $this->store_api_tester_result(
+                               array(
+                                       'status'  => 'error',
+                                       'message' => $exception->getMessage(),
+                                       'service' => $service_name,
+                                       'request' => $request_details,
+                                       'response' => null,
+                                       'form'    => $form_data,
+                               )
+                       );
+               } catch ( Exception $exception ) {
+                       $this->store_api_tester_result(
+                               array(
+                                       'status'  => 'error',
+                                       'message' => $exception->getMessage(),
+                                       'service' => $service_name,
+                                       'request' => $request_details,
+                                       'response' => null,
+                                       'form'    => $form_data,
+                               )
+                       );
+               }
+
+               wp_safe_redirect( $this->get_api_tester_page_url() );
+               exit;
+
+       }
+
+/**
+ * Handle connection test requests.
+ */
+public function handle_test_connection() {
 
 		if ( ! current_user_can( $this->capability ) ) {
 			wp_die( esc_html__( 'You do not have permission to perform this action.', 'softone-woocommerce-integration' ) );
@@ -439,12 +812,65 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
 
         }
 
-	/**
-	 * Retrieve the settings page URL.
-	 *
-	 * @return string
-	 */
-	private function get_settings_page_url() {
+        /**
+         * Store an API tester result for the current user.
+         *
+         * @param array $result Result data.
+         */
+	private function store_api_tester_result( array $result ) {
+
+                set_transient( $this->get_api_tester_transient_key(), $result, 5 * MINUTE_IN_SECONDS );
+
+        }
+
+        /**
+         * Retrieve the stored API tester result for the current user.
+         *
+         * @return array
+         */
+	private function get_api_tester_result() {
+
+                $key    = $this->get_api_tester_transient_key();
+                $result = get_transient( $key );
+
+                if ( false !== $result ) {
+                        delete_transient( $key );
+                }
+
+                return is_array( $result ) ? $result : array();
+
+        }
+
+        /**
+         * Generate the transient key for the API tester store for the current user.
+         *
+         * @return string
+         */
+	private function get_api_tester_transient_key() {
+
+                $user_id = get_current_user_id();
+
+                return $this->api_tester_transient . ( $user_id ? $user_id : 'guest' );
+
+        }
+
+        /**
+         * Retrieve the API tester page URL.
+         *
+         * @return string
+         */
+	private function get_api_tester_page_url() {
+
+                return add_query_arg( array( 'page' => $this->api_tester_slug ), admin_url( 'admin.php' ) );
+
+        }
+
+        /**
+         * Retrieve the settings page URL.
+         *
+         * @return string
+         */
+        private function get_settings_page_url() {
 
 		return add_query_arg( array( 'page' => $this->menu_slug ), admin_url( 'admin.php' ) );
 
