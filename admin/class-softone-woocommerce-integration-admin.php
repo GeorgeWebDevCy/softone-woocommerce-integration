@@ -306,105 +306,164 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
                 }
 
 
+                $settings = get_option( Softone_API_Client::OPTION_SETTINGS_KEY, array() );
+
+                if ( ! is_array( $settings ) ) {
+                        $settings = array();
+                }
+
+                $settings_fields = array(
+                        'endpoint'              => __( 'Endpoint URL', 'softone-woocommerce-integration' ),
+                        'username'              => __( 'Username', 'softone-woocommerce-integration' ),
+                        'password'              => __( 'Password', 'softone-woocommerce-integration' ),
+                        'app_id'                => __( 'App ID', 'softone-woocommerce-integration' ),
+                        'company'               => __( 'Company', 'softone-woocommerce-integration' ),
+                        'branch'                => __( 'Branch', 'softone-woocommerce-integration' ),
+                        'module'                => __( 'Module', 'softone-woocommerce-integration' ),
+                        'refid'                 => __( 'Ref ID', 'softone-woocommerce-integration' ),
+                        'default_saldoc_series' => __( 'Default SALDOC Series', 'softone-woocommerce-integration' ),
+                        'warehouse'             => __( 'Default Warehouse', 'softone-woocommerce-integration' ),
+                );
+
+                $settings_summary = array();
+                foreach ( $settings_fields as $key => $label ) {
+                        $value = isset( $settings[ $key ] ) ? (string) $settings[ $key ] : '';
+
+                        if ( '' === $value ) {
+                                $value = __( 'Not set', 'softone-woocommerce-integration' );
+                        } elseif ( 'password' === $key ) {
+                                $value = str_repeat( '•', min( 12, max( 4, strlen( $value ) ) ) );
+                        }
+
+                        $settings_summary[ $key ] = array(
+                                'label' => $label,
+                                'value' => $value,
+                        );
+                }
+
+                $request_heading_id  = 'softone-api-request-heading';
+                $response_heading_id = 'softone-api-response-heading';
+                $credentials_heading = 'softone-api-credentials-heading';
+
 ?>
-<div class="wrap">
-<h1><?php esc_html_e( 'Softone API Tester', 'softone-woocommerce-integration' ); ?></h1>
+<div class="wrap softone-api-tester">
+        <h1><?php esc_html_e( 'Softone API Tester', 'softone-woocommerce-integration' ); ?></h1>
 
-<?php if ( ! empty( $result ) && ! empty( $result['message'] ) ) : ?>
-<?php
-$status = ( isset( $result['status'] ) && 'error' === $result['status'] ) ? 'error' : 'success';
-$classes = array( 'notice', 'notice-' . $status );
-?>
-<div class="<?php echo esc_attr( implode( ' ', $classes ) ); ?>">
-<p><?php echo esc_html( $result['message'] ); ?></p>
-</div>
+        <?php if ( ! empty( $result ) && ! empty( $result['message'] ) ) : ?>
+                <?php
+                $status  = ( isset( $result['status'] ) && 'error' === $result['status'] ) ? 'error' : 'success';
+                $classes = array( 'notice', 'notice-' . $status );
+                ?>
+                <div class="<?php echo esc_attr( implode( ' ', $classes ) ); ?>">
+                        <p><?php echo esc_html( $result['message'] ); ?></p>
+                </div>
+        <?php endif; ?>
 
-<?php if ( isset( $result['service'] ) || isset( $result['request'] ) || isset( $result['response'] ) ) : ?>
-<div class="postbox" style="padding: 16px; margin-top: 16px;">
-<?php if ( ! empty( $result['service'] ) ) : ?>
-<h2><?php echo esc_html( sprintf( __( 'Service: %s', 'softone-woocommerce-integration' ), (string) $result['service'] ) ); ?></h2>
-<?php endif; ?>
-<?php if ( array_key_exists( 'request', $result ) ) : ?>
-<h3><?php esc_html_e( 'Request Payload', 'softone-woocommerce-integration' ); ?></h3>
-<pre><?php echo esc_html( $this->format_api_tester_output( $result['request'] ) ); ?></pre>
-<?php endif; ?>
-<?php if ( array_key_exists( 'response', $result ) ) : ?>
-<h3><?php esc_html_e( 'Response', 'softone-woocommerce-integration' ); ?></h3>
-<pre><?php echo esc_html( $this->format_api_tester_output( $result['response'] ) ); ?></pre>
-<?php endif; ?>
-</div>
-<?php endif; ?>
-<?php endif; ?>
+        <div class="softone-api-layout" role="region" aria-label="<?php echo esc_attr__( 'Softone API testing tools', 'softone-woocommerce-integration' ); ?>">
+                <section class="softone-api-card softone-api-card--credentials" aria-labelledby="<?php echo esc_attr( $credentials_heading ); ?>">
+                        <h2 id="<?php echo esc_attr( $credentials_heading ); ?>"><?php esc_html_e( 'Current Softone Settings', 'softone-woocommerce-integration' ); ?></h2>
+                        <p class="softone-api-card__intro"><?php esc_html_e( 'These values come from the main Softone settings and are provided for context. Update them from the Settings page if changes are required.', 'softone-woocommerce-integration' ); ?></p>
+                        <dl class="softone-api-settings-summary">
+                                <?php foreach ( $settings_summary as $key => $setting ) : ?>
+                                        <div class="softone-api-settings-summary__row">
+                                                <dt><?php echo esc_html( $setting['label'] ); ?></dt>
+                                                <dd><?php echo esc_html( $setting['value'] ); ?></dd>
+                                        </div>
+                                <?php endforeach; ?>
+                        </dl>
+                </section>
 
-<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" style="margin-top: 1.5em;">
-<?php wp_nonce_field( $this->api_tester_action ); ?>
-<input type="hidden" name="action" value="<?php echo esc_attr( $this->api_tester_action ); ?>" />
-<table class="form-table" role="presentation">
-<tbody>
-<tr>
-<th scope="row"><label for="softone_api_preset"><?php esc_html_e( 'Preset', 'softone-woocommerce-integration' ); ?></label></th>
-<td>
-<select name="softone_preset" id="softone_api_preset">
-<option value="" <?php selected( $form_data['preset'], '' ); ?>><?php esc_html_e( 'Manual selection', 'softone-woocommerce-integration' ); ?></option>
-<?php foreach ( $presets as $preset_key => $preset_config ) : ?>
-<option value="<?php echo esc_attr( $preset_key ); ?>" <?php selected( $form_data['preset'], $preset_key ); ?>><?php echo esc_html( $preset_config['label'] ); ?></option>
-<?php endforeach; ?>
-</select>
-<p class="description" id="softone_api_preset_description" data-default-description="<?php echo esc_attr( $default_preset_description ); ?>"><?php echo esc_html( $preset_description ); ?></p>
-</td>
-</tr>
-<tr>
-<th scope="row"><label for="softone_service_type"><?php esc_html_e( 'Service', 'softone-woocommerce-integration' ); ?></label></th>
-<td>
-<select name="softone_service_type" id="softone_service_type">
-<option value="sql_data" <?php selected( $form_data['service_type'], 'sql_data' ); ?>><?php esc_html_e( 'SqlData', 'softone-woocommerce-integration' ); ?></option>
-<option value="set_data" <?php selected( $form_data['service_type'], 'set_data' ); ?>><?php esc_html_e( 'setData', 'softone-woocommerce-integration' ); ?></option>
-<option value="custom" <?php selected( $form_data['service_type'], 'custom' ); ?>><?php esc_html_e( 'Custom', 'softone-woocommerce-integration' ); ?></option>
-</select>
-<p class="description"><?php esc_html_e( 'Choose a Softone service to call.', 'softone-woocommerce-integration' ); ?></p>
-</td>
-</tr>
-<tr>
-<th scope="row"><label for="softone_sql_name"><?php esc_html_e( 'SqlData name', 'softone-woocommerce-integration' ); ?></label></th>
-<td>
-<input type="text" class="regular-text" id="softone_sql_name" name="softone_sql_name" value="<?php echo esc_attr( $form_data['sql_name'] ); ?>" />
-<p class="description"><?php esc_html_e( 'Required when calling SqlData.', 'softone-woocommerce-integration' ); ?></p>
-</td>
-</tr>
-<tr>
-<th scope="row"><label for="softone_object"><?php esc_html_e( 'setData object', 'softone-woocommerce-integration' ); ?></label></th>
-<td>
-<input type="text" class="regular-text" id="softone_object" name="softone_object" value="<?php echo esc_attr( $form_data['object'] ); ?>" />
-<p class="description"><?php esc_html_e( 'Required when calling setData.', 'softone-woocommerce-integration' ); ?></p>
-</td>
-</tr>
-<tr>
-<th scope="row"><label for="softone_custom_service"><?php esc_html_e( 'Custom service name', 'softone-woocommerce-integration' ); ?></label></th>
-<td>
-<input type="text" class="regular-text" id="softone_custom_service" name="softone_custom_service" value="<?php echo esc_attr( $form_data['custom_service'] ); ?>" />
-<p class="description"><?php esc_html_e( 'Specify the Softone service when using the Custom option.', 'softone-woocommerce-integration' ); ?></p>
-</td>
-</tr>
-<tr>
-<th scope="row"><?php esc_html_e( 'Requires client ID', 'softone-woocommerce-integration' ); ?></th>
-<td>
-<label for="softone_requires_client_id">
-<input type="checkbox" id="softone_requires_client_id" name="softone_requires_client_id" value="1" <?php checked( $form_data['requires_client_id'] ); ?> />
-<?php esc_html_e( 'Include the cached client ID for this request.', 'softone-woocommerce-integration' ); ?>
-</label>
-</td>
-</tr>
-<tr>
-<th scope="row"><label for="softone_payload"><?php esc_html_e( 'JSON payload', 'softone-woocommerce-integration' ); ?></label></th>
-<td>
-<textarea class="large-text code" rows="10" id="softone_payload" name="softone_payload"><?php echo esc_textarea( $form_data['payload'] ); ?></textarea>
-<p class="description"><?php esc_html_e( 'Provide additional parameters as JSON. The data will be merged with the base payload for the selected service.', 'softone-woocommerce-integration' ); ?></p>
-</td>
-</tr>
-</tbody>
-</table>
-<?php submit_button( __( 'Send Request', 'softone-woocommerce-integration' ) ); ?>
-</form>
+                <section class="softone-api-card softone-api-card--request" aria-labelledby="<?php echo esc_attr( $request_heading_id ); ?>">
+                        <h2 id="<?php echo esc_attr( $request_heading_id ); ?>"><?php esc_html_e( 'Build Request', 'softone-woocommerce-integration' ); ?></h2>
+                        <p class="softone-api-card__intro"><?php esc_html_e( 'Configure the request payload and optionally use one of the provided presets to speed things up.', 'softone-woocommerce-integration' ); ?></p>
+                        <form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" class="softone-api-form" aria-describedby="softone_api_preset_description">
+                                <?php wp_nonce_field( $this->api_tester_action ); ?>
+                                <input type="hidden" name="action" value="<?php echo esc_attr( $this->api_tester_action ); ?>" />
+
+                                <div class="softone-api-form-grid">
+                                        <div class="softone-api-field" data-field="preset">
+                                                <label for="softone_api_preset"><?php esc_html_e( 'Preset', 'softone-woocommerce-integration' ); ?></label>
+                                                <select name="softone_preset" id="softone_api_preset">
+                                                        <option value="" <?php selected( $form_data['preset'], '' ); ?>><?php esc_html_e( 'Manual selection', 'softone-woocommerce-integration' ); ?></option>
+                                                        <?php foreach ( $presets as $preset_key => $preset_config ) : ?>
+                                                                <option value="<?php echo esc_attr( $preset_key ); ?>" <?php selected( $form_data['preset'], $preset_key ); ?>><?php echo esc_html( $preset_config['label'] ); ?></option>
+                                                        <?php endforeach; ?>
+                                                </select>
+                                                <p class="description" id="softone_api_preset_description" data-default-description="<?php echo esc_attr( $default_preset_description ); ?>"><?php echo esc_html( $preset_description ); ?></p>
+                                        </div>
+
+                                        <div class="softone-api-field" data-field="service_type">
+                                                <label for="softone_service_type"><?php esc_html_e( 'Service', 'softone-woocommerce-integration' ); ?></label>
+                                                <select name="softone_service_type" id="softone_service_type">
+                                                        <option value="sql_data" <?php selected( $form_data['service_type'], 'sql_data' ); ?>><?php esc_html_e( 'SqlData', 'softone-woocommerce-integration' ); ?></option>
+                                                        <option value="set_data" <?php selected( $form_data['service_type'], 'set_data' ); ?>><?php esc_html_e( 'setData', 'softone-woocommerce-integration' ); ?></option>
+                                                        <option value="custom" <?php selected( $form_data['service_type'], 'custom' ); ?>><?php esc_html_e( 'Custom', 'softone-woocommerce-integration' ); ?></option>
+                                                </select>
+                                                <p class="description"><?php esc_html_e( 'Choose a Softone service to call.', 'softone-woocommerce-integration' ); ?></p>
+                                        </div>
+
+                                        <div class="softone-api-field" data-field="sql_name">
+                                                <label for="softone_sql_name"><?php esc_html_e( 'SqlData name', 'softone-woocommerce-integration' ); ?></label>
+                                                <input type="text" id="softone_sql_name" name="softone_sql_name" value="<?php echo esc_attr( $form_data['sql_name'] ); ?>" />
+                                                <p class="description"><?php esc_html_e( 'Required when calling SqlData.', 'softone-woocommerce-integration' ); ?></p>
+                                        </div>
+
+                                        <div class="softone-api-field" data-field="object">
+                                                <label for="softone_object"><?php esc_html_e( 'setData object', 'softone-woocommerce-integration' ); ?></label>
+                                                <input type="text" id="softone_object" name="softone_object" value="<?php echo esc_attr( $form_data['object'] ); ?>" />
+                                                <p class="description"><?php esc_html_e( 'Required when calling setData.', 'softone-woocommerce-integration' ); ?></p>
+                                        </div>
+
+                                        <div class="softone-api-field" data-field="custom_service">
+                                                <label for="softone_custom_service"><?php esc_html_e( 'Custom service name', 'softone-woocommerce-integration' ); ?></label>
+                                                <input type="text" id="softone_custom_service" name="softone_custom_service" value="<?php echo esc_attr( $form_data['custom_service'] ); ?>" />
+                                                <p class="description"><?php esc_html_e( 'Specify the Softone service when using the Custom option.', 'softone-woocommerce-integration' ); ?></p>
+                                        </div>
+
+                                        <div class="softone-api-field softone-api-field--checkbox" data-field="requires_client_id">
+                                                <span class="softone-api-field__label"><?php esc_html_e( 'Requires client ID', 'softone-woocommerce-integration' ); ?></span>
+                                                <label for="softone_requires_client_id" class="softone-api-checkbox">
+                                                        <input type="checkbox" id="softone_requires_client_id" name="softone_requires_client_id" value="1" <?php checked( $form_data['requires_client_id'] ); ?> />
+                                                        <span><?php esc_html_e( 'Include the cached client ID for this request.', 'softone-woocommerce-integration' ); ?></span>
+                                                </label>
+                                        </div>
+
+                                        <div class="softone-api-field softone-api-field--full" data-field="payload">
+                                                <label for="softone_payload"><?php esc_html_e( 'JSON payload', 'softone-woocommerce-integration' ); ?></label>
+                                                <textarea rows="10" id="softone_payload" name="softone_payload" class="softone-api-textarea"><?php echo esc_textarea( $form_data['payload'] ); ?></textarea>
+                                                <p class="description"><?php esc_html_e( 'Provide additional parameters as JSON. The data will be merged with the base payload for the selected service.', 'softone-woocommerce-integration' ); ?></p>
+                                        </div>
+                                </div>
+
+                                <div class="softone-api-form__actions">
+                                        <?php submit_button( __( 'Send Request', 'softone-woocommerce-integration' ), 'primary', 'softone_api_send', false ); ?>
+                                </div>
+                        </form>
+                </section>
+
+                <section class="softone-api-card softone-api-card--response" aria-labelledby="<?php echo esc_attr( $response_heading_id ); ?>" aria-live="polite">
+                        <h2 id="<?php echo esc_attr( $response_heading_id ); ?>"><?php esc_html_e( 'Latest Response', 'softone-woocommerce-integration' ); ?></h2>
+                        <?php if ( ! empty( $result ) && ( isset( $result['service'] ) || isset( $result['request'] ) || isset( $result['response'] ) ) ) : ?>
+                                <div class="softone-api-response__content">
+                                        <?php if ( ! empty( $result['service'] ) ) : ?>
+                                                <h3 class="softone-api-response__subtitle"><?php echo esc_html( sprintf( __( 'Service: %s', 'softone-woocommerce-integration' ), (string) $result['service'] ) ); ?></h3>
+                                        <?php endif; ?>
+
+                                        <?php if ( array_key_exists( 'request', $result ) ) : ?>
+                                                <h4><?php esc_html_e( 'Request Payload', 'softone-woocommerce-integration' ); ?></h4>
+                                                <pre class="softone-api-response__code"><?php echo esc_html( $this->format_api_tester_output( $result['request'] ) ); ?></pre>
+                                        <?php endif; ?>
+
+                                        <?php if ( array_key_exists( 'response', $result ) ) : ?>
+                                                <h4><?php esc_html_e( 'Response', 'softone-woocommerce-integration' ); ?></h4>
+                                                <pre class="softone-api-response__code"><?php echo esc_html( $this->format_api_tester_output( $result['response'] ) ); ?></pre>
+                                        <?php endif; ?>
+                                </div>
+                        <?php else : ?>
+                                <p class="softone-api-card__intro"><?php esc_html_e( 'Run a request to see the payload and response details here.', 'softone-woocommerce-integration' ); ?></p>
+                        <?php endif; ?>
+                </section>
+        </div>
 </div>
 <?php
 

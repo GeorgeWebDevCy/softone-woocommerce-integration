@@ -2,3 +2,175 @@
  * All of the CSS for your admin-specific functionality should be
  * included in this file.
  */
+
+.softone-api-tester .notice {
+        margin-top: 16px;
+}
+
+.softone-api-layout {
+        display: grid;
+        gap: 24px;
+        margin-top: 24px;
+}
+
+.softone-api-card {
+        background: #fff;
+        border: 1px solid #dcdcde;
+        border-radius: 6px;
+        padding: 24px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.softone-api-card h2 {
+        margin-top: 0;
+}
+
+.softone-api-card__intro {
+        color: #50575e;
+        margin-bottom: 16px;
+        margin-top: 0;
+}
+
+.softone-api-settings-summary {
+        display: grid;
+        gap: 12px;
+        margin: 0;
+}
+
+.softone-api-settings-summary__row {
+        display: grid;
+        gap: 4px;
+}
+
+.softone-api-settings-summary__row dt {
+        font-weight: 600;
+        color: #1d2327;
+}
+
+.softone-api-settings-summary__row dd {
+        margin: 0;
+        color: #50575e;
+        word-break: break-all;
+}
+
+.softone-api-form {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+}
+
+.softone-api-form-grid {
+        display: grid;
+        gap: 16px;
+}
+
+.softone-api-field {
+        border: 1px solid #dcdcde;
+        border-radius: 4px;
+        padding: 16px;
+        background: #fbfbfc;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+}
+
+.softone-api-field label,
+.softone-api-field__label {
+        font-weight: 600;
+        color: #1d2327;
+}
+
+.softone-api-field select,
+.softone-api-field input[type="text"],
+.softone-api-textarea {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+}
+
+.softone-api-field .description {
+        margin: 0;
+        color: #50575e;
+}
+
+.softone-api-field--checkbox {
+        justify-content: center;
+}
+
+.softone-api-checkbox {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+}
+
+.softone-api-field--full {
+        grid-column: 1 / -1;
+}
+
+.softone-api-form__actions {
+        display: flex;
+        justify-content: flex-end;
+}
+
+.softone-api-card--response h4 {
+        margin-bottom: 8px;
+        margin-top: 24px;
+}
+
+.softone-api-card--response h4:first-of-type {
+        margin-top: 16px;
+}
+
+.softone-api-response__code {
+        background: #f6f7f7;
+        border-radius: 4px;
+        border: 1px solid #dcdcde;
+        padding: 16px;
+        margin: 0;
+        overflow-x: auto;
+        font-family: Menlo, Consolas, monospace;
+        font-size: 13px;
+        line-height: 1.4;
+}
+
+.softone-api-response__subtitle {
+        margin-bottom: 8px;
+}
+
+.softone-api-field--highlight {
+        border-color: #2271b1;
+        box-shadow: 0 0 0 1px rgba(34, 113, 177, 0.2);
+        background: #f0f6fc;
+}
+
+@media (min-width: 782px) {
+        .softone-api-form-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .softone-api-field--checkbox {
+                align-self: stretch;
+        }
+}
+
+@media (min-width: 960px) {
+        .softone-api-layout {
+                grid-template-columns: minmax(260px, 1fr) minmax(0, 2fr);
+                align-items: start;
+        }
+
+        .softone-api-card--credentials {
+                position: sticky;
+                top: 32px;
+                align-self: start;
+        }
+
+        .softone-api-card--request,
+        .softone-api-card--response {
+                grid-column: 2;
+        }
+
+        .softone-api-card--response {
+                margin-bottom: 0;
+        }
+}
