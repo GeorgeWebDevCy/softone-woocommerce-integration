@@ -207,7 +207,13 @@ class Softone_Woocommerce_Integration_Admin {
 
 		$sanitized = array();
 
-		$sanitized['endpoint']              = isset( $settings['endpoint'] ) ? esc_url_raw( trim( (string) $settings['endpoint'] ) ) : '';
+		$endpoint = isset( $settings['endpoint'] ) ? esc_url_raw( trim( (string) $settings['endpoint'] ) ) : '';
+
+		if ( '' !== $endpoint && false === strpos( $endpoint, '?' ) ) {
+			$endpoint = untrailingslashit( $endpoint );
+		}
+
+		$sanitized['endpoint']              = $endpoint;
 		$sanitized['username']              = isset( $settings['username'] ) ? $this->sanitize_text_value( $settings['username'] ) : '';
 		$sanitized['password']              = isset( $settings['password'] ) ? $this->sanitize_text_value( $settings['password'] ) : '';
 		$sanitized['app_id']                = isset( $settings['app_id'] ) ? $this->sanitize_text_value( $settings['app_id'] ) : '';
@@ -866,75 +872,81 @@ public function handle_test_connection() {
 
 		$message = '';
 		$type    = 'success';
+		$details = array();
 
 		try {
-			$client = new Softone_API_Client();
-			$client->get_client_id( true );
-			$message = __( 'Successfully connected to Softone.', 'softone-woocommerce-integration' );
+			$client    = new Softone_API_Client();
+			$client_id = $client->get_client_id( true );
+
+			$message = sprintf(
+				/* translators: %s: SoftOne client ID */
+				__( 'SoftOne connection succeeded. Client ID: %s', 'softone-woocommerce-integration' ),
+				$client_id
+			);
+
+			$details = array(
+				'client_id' => $client_id,
+			);
+
+			$this->log_connection_event(
+				'info',
+				'SoftOne connection test succeeded.',
+				array(
+					'data' => $details,
+				)
+			);
 		} catch ( Softone_API_Client_Exception $exception ) {
 			$type    = 'error';
-			$message = $exception->getMessage();
+			$message = sprintf(
+				/* translators: %s: error message */
+				__( 'SoftOne connection failed: %s', 'softone-woocommerce-integration' ),
+				$exception->getMessage()
+			);
+
+			$details = $exception->get_context();
+
+			$this->log_connection_event(
+				'error',
+				'SoftOne connection test failed.',
+				array(
+					'data'          => $details,
+					'error_message' => $exception->getMessage(),
+				)
+			);
 		} catch ( Exception $exception ) {
 			$type    = 'error';
-			$message = $exception->getMessage();
+			$message = sprintf(
+				/* translators: %s: error message */
+				__( 'SoftOne connection failed: %s', 'softone-woocommerce-integration' ),
+				$exception->getMessage()
+			);
+
+			$details = array(
+				'error'     => $exception->getMessage(),
+				'exception' => get_class( $exception ),
+			);
+
+			$this->log_connection_event(
+				'error',
+				'SoftOne connection test triggered an unexpected exception.',
+				array(
+					'data'          => $details,
+					'error_message' => $exception->getMessage(),
+				)
+			);
 		}
 
-		$this->store_test_notice( $type, $message );
+		$this->store_test_notice( $type, $message, $details );
 
-                wp_safe_redirect( $this->get_settings_page_url() );
-                exit;
+		wp_safe_redirect( $this->get_settings_page_url() );
+		exit;
 
-        }
+	}
 
-        /**
-         * Handle manual item import requests.
-         */
-        public function handle_item_import() {
-
-                if ( ! current_user_can( $this->capability ) ) {
-                        wp_die( esc_html__( 'You do not have permission to perform this action.', 'softone-woocommerce-integration' ) );
-                }
-
-                check_admin_referer( Softone_Item_Sync::ADMIN_ACTION );
-
-                $type    = 'success';
-                $message = '';
-
-                if ( ! $this->item_sync instanceof Softone_Item_Sync ) {
-                        $type    = 'error';
-                        $message = __( 'Item import service is unavailable.', 'softone-woocommerce-integration' );
-                } else {
-                        try {
-                                $result  = $this->item_sync->sync();
-                                $message = sprintf(
-                                        /* translators: 1: processed count, 2: created count, 3: updated count, 4: skipped count */
-                                        __( 'Imported %1$d items (%2$d created, %3$d updated, %4$d skipped).', 'softone-woocommerce-integration' ),
-                                        (int) $result['processed'],
-                                        (int) $result['created'],
-                                        (int) $result['updated'],
-                                        (int) $result['skipped']
-                                );
-                                update_option( Softone_Item_Sync::OPTION_LAST_RUN, time() );
-                        } catch ( Softone_API_Client_Exception $exception ) {
-                                $type    = 'error';
-                                $message = $exception->getMessage();
-                        } catch ( Exception $exception ) {
-                                $type    = 'error';
-                                $message = $exception->getMessage();
-                        }
-                }
-
-                $this->store_import_notice( $type, $message );
-
-                wp_safe_redirect( $this->get_settings_page_url() );
-                exit;
-
-        }
-
-        /**
-         * Render a stored connection test notice when available.
-         */
-        private function maybe_render_connection_notice() {
+	/**
+	 * Render a stored connection test notice when available.
+	 */
+	private function maybe_render_connection_notice() {
 
 		$notice = get_transient( $this->get_test_notice_key() );
 
@@ -944,30 +956,53 @@ public function handle_test_connection() {
 
 		delete_transient( $this->get_test_notice_key() );
 
-		$type    = isset( $notice['type'] ) && 'error' === $notice['type'] ? 'error' : 'success';
-		$classes = array( 'notice', 'notice-' . $type );
+		$type      = isset( $notice['type'] ) && 'error' === $notice['type'] ? 'error' : 'success';
+		$classes   = array( 'notice', 'notice-' . $type );
+		$details   = isset( $notice['details'] ) && is_array( $notice['details'] ) ? $notice['details'] : array();
+		$timestamp = isset( $notice['timestamp'] ) ? (int) $notice['timestamp'] : 0;
 
-		printf(
-			'<div class="%1$s"><p>%2$s</p></div>',
-			esc_attr( implode( ' ', $classes ) ),
-			esc_html( $notice['message'] )
-		);
+		echo '<div class="' . esc_attr( implode( ' ', $classes ) ) . '">';
+		echo '<p>' . esc_html( $notice['message'] ) . '</p>';
 
-        }
+		if ( 'error' === $type ) {
+			echo '<p>' . esc_html__( 'Check the WooCommerce logs for detailed diagnostics.', 'softone-woocommerce-integration' ) . '</p>';
+		}
 
-        /**
-         * Store a connection test notice for the current user.
-         *
+		if ( $timestamp > 0 ) {
+			$formatted = function_exists( 'wp_date' ) ? wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $timestamp ) : date_i18n( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $timestamp );
+			echo '<p><em>' . esc_html( sprintf( __( 'Test executed at %s.', 'softone-woocommerce-integration' ), $formatted ) ) . '</em></p>';
+		}
+
+		if ( ! empty( $details ) ) {
+			$encoded_details = wp_json_encode( $details, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+
+			if ( false !== $encoded_details ) {
+				echo '<details class="softone-connection-details"><summary>' . esc_html__( 'View diagnostic details', 'softone-woocommerce-integration' ) . '</summary>';
+				echo '<pre>' . esc_html( $encoded_details ) . '</pre>';
+				echo '</details>';
+			}
+		}
+
+		echo '</div>';
+
+	}
+
+	/**
+	 * Store a connection test notice for the current user.
+	 *
 	 * @param string $type    Notice type.
 	 * @param string $message Notice message.
+	 * @param array  $details Additional notice details.
 	 */
-	private function store_test_notice( $type, $message ) {
+	private function store_test_notice( $type, $message, array $details = array() ) {
 
 		set_transient(
 			$this->get_test_notice_key(),
 			array(
-				'type'    => $type,
-				'message' => $message,
+				'type'      => $type,
+				'message'   => $message,
+				'details'   => $details,
+				'timestamp' => time(),
 			),
 			MINUTE_IN_SECONDS
 		);
@@ -1194,7 +1229,57 @@ public function handle_test_connection() {
 	 */
 	private function sanitize_text_value( $value ) {
 
-		return sanitize_text_field( wp_unslash( $value ) );
+		if ( is_array( $value ) ) {
+			$value = '';
+		} else {
+			$value = wp_unslash( $value );
+		}
+
+		if ( is_string( $value ) ) {
+			$value = trim( $value );
+		} elseif ( is_numeric( $value ) ) {
+			$value = trim( (string) $value );
+		} else {
+			$value = trim( (string) $value );
+		}
+
+		return trim( sanitize_text_field( $value ) );
+
+	}
+
+	/**
+	 * Record the outcome of a SoftOne connection test in the WooCommerce logs when available.
+	 *
+	 * @param string $level   Log level.
+	 * @param string $message Log message.
+	 * @param array  $context Additional context data.
+	 */
+	private function log_connection_event( $level, $message, array $context = array() ) {
+
+		if ( ! function_exists( 'wc_get_logger' ) ) {
+			return;
+		}
+
+		$logger = wc_get_logger();
+
+		if ( ! $logger || ! method_exists( $logger, 'log' ) ) {
+			return;
+		}
+
+		$log_context = array_merge(
+			array( 'source' => 'softone-woocommerce-integration' ),
+			$context
+		);
+
+		if ( isset( $log_context['data'] ) && ! is_string( $log_context['data'] ) ) {
+			$encoded_data = wp_json_encode( $log_context['data'] );
+
+			if ( false !== $encoded_data ) {
+				$log_context['data'] = $encoded_data;
+			}
+		}
+
+		$logger->log( $level, $message, $log_context );
 
 	}
 

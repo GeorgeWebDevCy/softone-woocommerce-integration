@@ -15,6 +15,40 @@ if ( ! class_exists( 'Softone_API_Client_Exception' ) ) {
      * Exception thrown when SoftOne API interactions fail.
      */
     class Softone_API_Client_Exception extends RuntimeException {
+
+        /**
+         * Additional context captured when the exception was thrown.
+         *
+         * @var array
+         */
+        protected $context = array();
+
+        /**
+         * Constructor.
+         *
+         * @param string     $message Exception message.
+         * @param int        $code    Exception code.
+         * @param Throwable  $previous Previous exception.
+         * @param array      $context Additional context values.
+         */
+        public function __construct( $message = '', $code = 0, $previous = null, array $context = array() ) {
+            if ( null !== $previous && ! $previous instanceof \Throwable ) {
+                $previous = null;
+            }
+
+            parent::__construct( $message, (int) $code, $previous );
+
+            $this->context = $context;
+        }
+
+        /**
+         * Retrieve the captured context.
+         *
+         * @return array
+         */
+        public function get_context() {
+            return is_array( $this->context ) ? $this->context : array();
+        }
     }
 }
 
@@ -138,15 +172,15 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             $this->settings = wp_parse_args( $settings, $this->get_settings_from_options() );
 
             $this->endpoint = isset( $this->settings['endpoint'] ) ? trim( (string) $this->settings['endpoint'] ) : '';
-            $this->username = isset( $this->settings['username'] ) ? (string) $this->settings['username'] : '';
-            $this->password = isset( $this->settings['password'] ) ? (string) $this->settings['password'] : '';
-            $this->app_id   = isset( $this->settings['app_id'] ) ? (string) $this->settings['app_id'] : '';
-            $this->company  = isset( $this->settings['company'] ) ? (string) $this->settings['company'] : '';
-            $this->branch   = isset( $this->settings['branch'] ) ? (string) $this->settings['branch'] : '';
-            $this->module   = isset( $this->settings['module'] ) ? (string) $this->settings['module'] : '';
-            $this->refid    = isset( $this->settings['refid'] ) ? (string) $this->settings['refid'] : '';
-            $this->default_saldoc_series = isset( $this->settings['default_saldoc_series'] ) ? (string) $this->settings['default_saldoc_series'] : '';
-            $this->warehouse             = isset( $this->settings['warehouse'] ) ? (string) $this->settings['warehouse'] : '';
+            $this->username = isset( $this->settings['username'] ) ? trim( (string) $this->settings['username'] ) : '';
+            $this->password = isset( $this->settings['password'] ) ? trim( (string) $this->settings['password'] ) : '';
+            $this->app_id   = isset( $this->settings['app_id'] ) ? trim( (string) $this->settings['app_id'] ) : '';
+            $this->company  = isset( $this->settings['company'] ) ? trim( (string) $this->settings['company'] ) : '';
+            $this->branch   = isset( $this->settings['branch'] ) ? trim( (string) $this->settings['branch'] ) : '';
+            $this->module   = isset( $this->settings['module'] ) ? trim( (string) $this->settings['module'] ) : '';
+            $this->refid    = isset( $this->settings['refid'] ) ? trim( (string) $this->settings['refid'] ) : '';
+            $this->default_saldoc_series = isset( $this->settings['default_saldoc_series'] ) ? trim( (string) $this->settings['default_saldoc_series'] ) : '';
+            $this->warehouse             = isset( $this->settings['warehouse'] ) ? trim( (string) $this->settings['warehouse'] ) : '';
 
             $timeout = isset( $this->settings['timeout'] ) ? absint( $this->settings['timeout'] ) : self::DEFAULT_TIMEOUT;
             $this->timeout = $timeout > 0 ? $timeout : self::DEFAULT_TIMEOUT;
@@ -173,6 +207,12 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 'username' => $this->username,
                 'password' => $this->password,
             );
+
+            foreach ( $this->get_handshake_fields() as $key => $value ) {
+                if ( '' !== $value && ! array_key_exists( $key, $payload ) ) {
+                    $payload[ $key ] = $value;
+                }
+            }
 
             $response = $this->call_service( 'login', $payload, false );
 
@@ -201,11 +241,13 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             $payload = array(
                 'clientID' => $client_id,
                 'clientid' => $client_id,
-                'company'  => '' === $this->company ? null : $this->company,
-                'branch'   => '' === $this->branch ? null : $this->branch,
-                'module'   => '' === $this->module ? null : $this->module,
-                'refid'    => '' === $this->refid ? null : $this->refid,
             );
+
+            foreach ( $this->get_handshake_fields() as $key => $value ) {
+                if ( '' !== $value ) {
+                    $payload[ $key ] = $value;
+                }
+            }
 
             $response = $this->call_service( 'authenticate', $payload, false );
 
@@ -321,11 +363,13 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
 
             if ( isset( $response['success'] ) && false === $response['success'] ) {
                 $message = $this->extract_error_message( $response );
-                $this->log_error( $message, array(
+                $context = array(
                     'service'  => $service,
+                    'request'  => $this->redact_sensitive_values( $body ),
                     'response' => $this->redact_sensitive_values( $response ),
-                ) );
-                throw new Softone_API_Client_Exception( $message );
+                );
+                $this->log_error( $message, $context );
+                throw new Softone_API_Client_Exception( $message, 0, null, $context );
             }
 
             if ( $requires_client_id && ! empty( $response['clientID'] ) ) {
@@ -492,11 +536,15 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             if ( false === $encoded_body ) {
                 $message = __( 'Unable to encode SoftOne request payload as JSON.', 'softone-woocommerce-integration' );
 
-                $this->log_error( $message, array(
-                    'service' => $service,
-                ) );
+                $context = array(
+                    'service'  => $service,
+                    'endpoint' => $endpoint,
+                    'request'  => $this->redact_sensitive_values( $body ),
+                );
 
-                throw new Softone_API_Client_Exception( $message );
+                $this->log_error( $message, $context );
+
+                throw new Softone_API_Client_Exception( $message, 0, null, $context );
             }
 
             $args = array(
@@ -519,12 +567,16 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                     $response->get_error_message()
                 );
 
-                $this->log_error( $message, array(
-                    'service' => $service,
-                    'body'    => $this->redact_sensitive_values( $body ),
-                ) );
+                $context = array(
+                    'service'  => $service,
+                    'endpoint' => $endpoint,
+                    'request'  => $this->redact_sensitive_values( $body ),
+                    'error'    => $response->get_error_messages(),
+                );
 
-                throw new Softone_API_Client_Exception( $message );
+                $this->log_error( $message, $context );
+
+                throw new Softone_API_Client_Exception( $message, 0, null, $context );
             }
 
             $status_code = wp_remote_retrieve_response_code( $response );
@@ -538,11 +590,17 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                     $raw_body
                 );
 
-                $this->log_error( $message, array(
-                    'service' => $service,
-                ) );
+                $context = array(
+                    'service'      => $service,
+                    'endpoint'     => $endpoint,
+                    'request'      => $this->redact_sensitive_values( $body ),
+                    'status_code'  => $status_code,
+                    'response'     => $raw_body,
+                );
 
-                throw new Softone_API_Client_Exception( $message );
+                $this->log_error( $message, $context );
+
+                throw new Softone_API_Client_Exception( $message, 0, null, $context );
             }
 
             $decoded = json_decode( $raw_body, true );
@@ -567,12 +625,16 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                     json_last_error_msg()
                 );
 
-                $this->log_error( $message, array(
+                $context = array(
                     'service'  => $service,
+                    'endpoint' => $endpoint,
+                    'request'  => $this->redact_sensitive_values( $body ),
                     'response' => $raw_body,
-                ) );
+                );
 
-                throw new Softone_API_Client_Exception( $message );
+                $this->log_error( $message, $context );
+
+                throw new Softone_API_Client_Exception( $message, 0, null, $context );
             }
 
             return is_array( $decoded ) ? $decoded : array();
@@ -734,6 +796,32 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             }
 
             return $body;
+        }
+
+        /**
+         * Retrieve the SoftOne handshake fields configured in the settings.
+         *
+         * @return array
+         */
+        protected function get_handshake_fields() {
+            $fields = array(
+                'company' => $this->company,
+                'branch'  => $this->branch,
+                'module'  => $this->module,
+                'refid'   => $this->refid,
+            );
+
+            foreach ( $fields as $key => $value ) {
+                if ( is_string( $value ) ) {
+                    $fields[ $key ] = trim( $value );
+                } elseif ( null === $value ) {
+                    $fields[ $key ] = '';
+                } else {
+                    $fields[ $key ] = trim( (string) $value );
+                }
+            }
+
+            return $fields;
         }
 
         /**
