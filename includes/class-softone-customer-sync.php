@@ -397,6 +397,35 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
                 $country = $customer->get_shipping_country();
             }
 
+            $country_code      = strtoupper( trim( (string) $country ) );
+            $softone_country   = '';
+            $country_log_attrs = array(
+                'customer_id' => $customer->get_id(),
+            );
+
+            if ( null !== $trdr ) {
+                $country_log_attrs['trdr'] = (string) $trdr;
+            }
+
+            if ( '' !== $country_code ) {
+                $country_log_attrs['country'] = $country_code;
+                $softone_country              = $this->map_country_to_softone_id( $country_code );
+
+                if ( '' === $softone_country ) {
+                    $this->log(
+                        'error',
+                        sprintf(
+                            /* translators: %s: ISO 3166-1 alpha-2 country code. */
+                            __( 'SoftOne country mapping missing for ISO code %s.', 'softone-woocommerce-integration' ),
+                            $country_code
+                        ),
+                        $country_log_attrs
+                    );
+
+                    return array();
+                }
+            }
+
             $record = array(
                 'CODE'    => $this->generate_customer_code( $customer ),
                 'NAME'    => $name,
@@ -407,7 +436,7 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
                 'ADDRESS2'=> $address_2,
                 'CITY'    => $city,
                 'ZIP'     => $postcode,
-                'COUNTRY' => $country,
+                'COUNTRY' => $softone_country,
             );
 
             if ( null !== $trdr ) {
@@ -446,6 +475,76 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
             }
 
             return ! empty( $value );
+        }
+
+        /**
+         * Map an ISO 3166-1 alpha-2 country code to the SoftOne numeric identifier.
+         *
+         * @param string $country_code ISO country code from WooCommerce data.
+         *
+         * @return string
+         */
+        public function map_country_to_softone_id( $country_code ) {
+            $country_code = strtoupper( trim( (string) $country_code ) );
+
+            if ( '' === $country_code ) {
+                return '';
+            }
+
+            $mappings = array();
+
+            if ( function_exists( 'softone_wc_integration_get_setting' ) ) {
+                $mappings = softone_wc_integration_get_setting( 'country_mappings', array() );
+            }
+
+            if ( ! is_array( $mappings ) ) {
+                $mappings = array();
+            }
+
+            $normalized = array();
+
+            foreach ( $mappings as $code => $identifier ) {
+                if ( ! is_scalar( $code ) ) {
+                    continue;
+                }
+
+                $normalized_code = strtoupper( trim( (string) $code ) );
+
+                if ( '' === $normalized_code ) {
+                    continue;
+                }
+
+                $normalized_identifier = is_scalar( $identifier ) ? trim( (string) $identifier ) : '';
+
+                if ( '' === $normalized_identifier ) {
+                    continue;
+                }
+
+                $normalized[ $normalized_code ] = $normalized_identifier;
+            }
+
+            /**
+             * Filter the configured country mappings before they are used.
+             *
+             * @param array<string,string>   $normalized   Associative array of ISO => SoftOne ID pairs.
+             * @param string                 $country_code Requested ISO country code.
+             * @param Softone_Customer_Sync  $customer_sync Customer synchronisation service instance.
+             */
+            $normalized = apply_filters( 'softone_wc_integration_country_mappings', $normalized, $country_code, $this );
+
+            $softone_id = isset( $normalized[ $country_code ] ) ? (string) $normalized[ $country_code ] : '';
+
+            /**
+             * Filter the resolved SoftOne country identifier.
+             *
+             * @param string                $softone_id   The mapped identifier (empty string when missing).
+             * @param string                $country_code Requested ISO country code.
+             * @param array<string,string>  $normalized   Associative array of ISO => SoftOne ID pairs.
+             * @param Softone_Customer_Sync $customer_sync Customer synchronisation service instance.
+             */
+            $softone_id = apply_filters( 'softone_wc_integration_country_id', $softone_id, $country_code, $normalized, $this );
+
+            return is_scalar( $softone_id ) ? trim( (string) $softone_id ) : '';
         }
 
         /**

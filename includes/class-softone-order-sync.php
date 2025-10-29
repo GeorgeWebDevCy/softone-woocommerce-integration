@@ -279,6 +279,40 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
                 return '';
             }
 
+            $billing_country = strtoupper( trim( (string) $order->get_billing_country() ) );
+
+            if ( '' === $billing_country && method_exists( $order, 'get_shipping_country' ) ) {
+                $billing_country = strtoupper( trim( (string) $order->get_shipping_country() ) );
+            }
+
+            $softone_country = '';
+
+            if ( '' !== $billing_country && $this->customer_sync ) {
+                $softone_country = $this->customer_sync->map_country_to_softone_id( $billing_country );
+
+                if ( '' === $softone_country ) {
+                    $this->log(
+                        'error',
+                        sprintf(
+                            /* translators: %s: ISO 3166-1 alpha-2 country code. */
+                            __( 'SoftOne country mapping missing for ISO code %s.', 'softone-woocommerce-integration' ),
+                            $billing_country
+                        ),
+                        array(
+                            'order_id' => $order->get_id(),
+                            'country'  => $billing_country,
+                        )
+                    );
+
+                    $this->add_order_note(
+                        $order,
+                        __( 'SoftOne guest customer creation skipped because the country mapping is missing.', 'softone-woocommerce-integration' )
+                    );
+
+                    return '';
+                }
+            }
+
             $record = array(
                 'CODE'    => sprintf( '%sG%06d', Softone_Customer_Sync::CODE_PREFIX, $order->get_id() ),
                 'NAME'    => $name,
@@ -288,7 +322,7 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
                 'ADDRESS2'=> $order->get_billing_address_2(),
                 'CITY'    => $order->get_billing_city(),
                 'ZIP'     => $order->get_billing_postcode(),
-                'COUNTRY' => $order->get_billing_country(),
+                'COUNTRY' => $softone_country,
             );
 
             $record = array_filter( $record, array( $this, 'filter_empty_value' ) );

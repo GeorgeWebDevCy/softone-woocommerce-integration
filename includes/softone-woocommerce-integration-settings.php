@@ -30,6 +30,7 @@ if ( ! function_exists( 'softone_wc_integration_get_settings' ) ) {
             'refid'                 => '',
             'default_saldoc_series' => '',
             'warehouse'             => '',
+            'country_mappings'      => array(),
             'timeout'               => Softone_API_Client::DEFAULT_TIMEOUT,
             'client_id_ttl'         => Softone_API_Client::DEFAULT_CLIENT_ID_TTL,
         );
@@ -122,5 +123,22 @@ if ( ! function_exists( 'softone_wc_integration_get_default_saldoc_series' ) ) {
 if ( ! function_exists( 'softone_wc_integration_get_warehouse' ) ) {
     function softone_wc_integration_get_warehouse() {
         return (string) softone_wc_integration_get_setting( 'warehouse', '' );
+    }
+}
+
+if ( ! function_exists( 'softone_wc_integration_get_country_mappings' ) ) {
+    /**
+     * Retrieve the configured ISO-to-SoftOne country mapping table.
+     *
+     * @return array<string,string>
+     */
+    function softone_wc_integration_get_country_mappings() {
+        $mappings = softone_wc_integration_get_setting( 'country_mappings', array() );
+
+        if ( ! is_array( $mappings ) ) {
+            return array();
+        }
+
+        return $mappings;
     }
 }
