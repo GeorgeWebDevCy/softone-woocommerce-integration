@@ -94,6 +94,20 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
         protected $refid = '';
 
         /**
+         * Default SALDOC series.
+         *
+         * @var string
+         */
+        protected $default_saldoc_series = '';
+
+        /**
+         * Default warehouse code.
+         *
+         * @var string
+         */
+        protected $warehouse = '';
+
+        /**
          * Request timeout.
          *
          * @var int
@@ -131,6 +145,8 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             $this->branch   = isset( $this->settings['branch'] ) ? (string) $this->settings['branch'] : '';
             $this->module   = isset( $this->settings['module'] ) ? (string) $this->settings['module'] : '';
             $this->refid    = isset( $this->settings['refid'] ) ? (string) $this->settings['refid'] : '';
+            $this->default_saldoc_series = isset( $this->settings['default_saldoc_series'] ) ? (string) $this->settings['default_saldoc_series'] : '';
+            $this->warehouse             = isset( $this->settings['warehouse'] ) ? (string) $this->settings['warehouse'] : '';
 
             $timeout = isset( $this->settings['timeout'] ) ? absint( $this->settings['timeout'] ) : self::DEFAULT_TIMEOUT;
             $this->timeout = $timeout > 0 ? $timeout : self::DEFAULT_TIMEOUT;
@@ -567,6 +583,8 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 'branch'         => '',
                 'module'         => '',
                 'refid'          => '',
+                'default_saldoc_series' => '',
+                'warehouse'             => '',
                 'timeout'        => self::DEFAULT_TIMEOUT,
                 'client_id_ttl'  => self::DEFAULT_CLIENT_ID_TTL,
             );
@@ -589,6 +607,24 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
         protected function get_client_meta() {
             $meta = get_option( self::OPTION_CLIENT_ID_META_KEY, array() );
             return is_array( $meta ) ? $meta : array();
+        }
+
+        /**
+         * Retrieve the configured default SALDOC series.
+         *
+         * @return string
+         */
+        public function get_default_saldoc_series() {
+            return $this->default_saldoc_series;
+        }
+
+        /**
+         * Retrieve the configured default warehouse code.
+         *
+         * @return string
+         */
+        public function get_warehouse() {
+            return $this->warehouse;
         }
 
         /**
