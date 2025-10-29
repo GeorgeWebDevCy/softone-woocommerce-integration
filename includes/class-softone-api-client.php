@@ -547,6 +547,19 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
 
             $decoded = json_decode( $raw_body, true );
 
+            if ( null === $decoded && JSON_ERROR_UTF8 === json_last_error() ) {
+                $normalized_body = $this->normalize_json_encoding( $raw_body );
+
+                if ( $normalized_body !== $raw_body ) {
+                    $raw_body = $normalized_body;
+                    $decoded  = json_decode( $raw_body, true );
+                }
+
+                if ( null === $decoded && defined( 'JSON_INVALID_UTF8_SUBSTITUTE' ) ) {
+                    $decoded = json_decode( $raw_body, true, 512, JSON_INVALID_UTF8_SUBSTITUTE );
+                }
+            }
+
             if ( null === $decoded && JSON_ERROR_NONE !== json_last_error() ) {
                 $message = sprintf(
                     /* translators: %s: raw JSON response */
@@ -563,6 +576,51 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             }
 
             return is_array( $decoded ) ? $decoded : array();
+        }
+
+        /**
+         * Ensure the provided JSON payload is valid UTF-8.
+         *
+         * @param string $payload Response payload returned by SoftOne.
+         *
+         * @return string
+         */
+        protected function normalize_json_encoding( $payload ) {
+            if ( ! is_string( $payload ) || '' === $payload ) {
+                return $payload;
+            }
+
+            if ( function_exists( 'wp_check_invalid_utf8' ) ) {
+                $checked = wp_check_invalid_utf8( $payload, true );
+                if ( is_string( $checked ) ) {
+                    $payload = $checked;
+                }
+            }
+
+            $encoding = false;
+
+            if ( function_exists( 'mb_detect_encoding' ) && function_exists( 'mb_convert_encoding' ) ) {
+                $encoding = mb_detect_encoding( $payload, array( 'UTF-8', 'ISO-8859-1', 'ISO-8859-7', 'ISO-8859-15', 'Windows-1253', 'Windows-1252', 'ASCII' ), true );
+
+                if ( $encoding && 'UTF-8' !== strtoupper( $encoding ) ) {
+                    $converted = @mb_convert_encoding( $payload, 'UTF-8', $encoding );
+
+                    if ( false !== $converted ) {
+                        return $converted;
+                    }
+                }
+            }
+
+            if ( function_exists( 'iconv' ) ) {
+                $from_encoding = ( $encoding && 'UTF-8' !== strtoupper( $encoding ) ) ? $encoding : 'UTF-8';
+                $converted     = @iconv( $from_encoding, 'UTF-8//IGNORE', $payload );
+
+                if ( false !== $converted ) {
+                    return $converted;
+                }
+            }
+
+            return $payload;
         }
 
         /**
