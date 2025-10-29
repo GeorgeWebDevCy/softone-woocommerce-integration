@@ -37,6 +37,12 @@ if ( ! defined( 'WPINC' ) ) {
  */
 define( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION', '1.0.0' );
 
+// Load Composer autoloader when present (e.g. when installed via Composer).
+$softone_wc_integration_autoload = __DIR__ . '/vendor/autoload.php';
+if ( file_exists( $softone_wc_integration_autoload ) ) {
+	require $softone_wc_integration_autoload;
+}
+
 /**
  * The code that runs during plugin activation.
  * This action is documented in includes/class-softone-woocommerce-integration-activator.php
@@ -63,6 +69,76 @@ register_deactivation_hook( __FILE__, 'deactivate_softone_woocommerce_integratio
  * admin-specific hooks, and public-facing site hooks.
  */
 require plugin_dir_path( __FILE__ ) . 'includes/class-softone-woocommerce-integration.php';
+
+/**
+ * Bootstraps the plugin update checker when the library is available.
+ *
+ * Uses Yahnis Elsts' plugin-update-checker package (installed via Composer) to
+ * discover updates from a VCS repository. Developers can override the default
+ * configuration with filters:
+ *
+ * - `softone_woocommerce_integration_update_url` (string) Repository API URL.
+ * - `softone_woocommerce_integration_update_branch` (string) Target branch name.
+ * - `softone_woocommerce_integration_use_release_assets` (bool) Toggle release assets.
+ *
+ * @return void
+ */
+function softone_woocommerce_integration_bootstrap_update_checker() {
+	$namespaced_factory = '\YahnisElsts\PluginUpdateChecker\v5\PucFactory';
+	$legacy_factory     = '\Puc_v4_Factory';
+
+	if ( ! class_exists( $namespaced_factory ) && ! class_exists( $legacy_factory ) ) {
+		return;
+	}
+
+	$default_repository = 'https://github.com/georgenicolaou/softone-woocommerce-integration';
+	$repository_url     = apply_filters( 'softone_woocommerce_integration_update_url', $default_repository );
+
+	if ( empty( $repository_url ) ) {
+		return;
+	}
+
+	$repository_url = rtrim( $repository_url, '/' ) . '/';
+
+	if ( class_exists( $namespaced_factory ) ) {
+		$update_checker = $namespaced_factory::buildUpdateChecker(
+			$repository_url,
+			__FILE__,
+			'softone-woocommerce-integration'
+		);
+	} elseif ( class_exists( $legacy_factory ) ) { // @codeCoverageIgnore - backwards compatibility.
+		$update_checker = $legacy_factory::buildUpdateChecker(
+			$repository_url,
+			__FILE__,
+			'softone-woocommerce-integration'
+		);
+	}
+
+	if ( empty( $update_checker ) ) {
+		return;
+	}
+
+	$branch = apply_filters( 'softone_woocommerce_integration_update_branch', 'main' );
+	if ( ! empty( $branch ) && method_exists( $update_checker, 'setBranch' ) ) {
+		$update_checker->setBranch( $branch );
+	}
+
+	$use_release_assets = apply_filters( 'softone_woocommerce_integration_use_release_assets', false );
+	if ( $use_release_assets && method_exists( $update_checker, 'getVcsApi' ) ) {
+		$vcs_api = $update_checker->getVcsApi();
+		if ( is_object( $vcs_api ) && method_exists( $vcs_api, 'enableReleaseAssets' ) ) {
+			$vcs_api->enableReleaseAssets();
+		}
+	}
+
+	/**
+	 * Fires after the update checker has been initialized.
+	 *
+	 * @param object $update_checker The update checker instance.
+	 */
+	do_action( 'softone_woocommerce_integration_update_checker_ready', $update_checker );
+}
+add_action( 'plugins_loaded', 'softone_woocommerce_integration_bootstrap_update_checker', 1 );
 
 /**
  * Begins execution of the plugin.

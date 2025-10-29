@@ -1,0 +1,10 @@
+{
+    "name": "georgenicolaou/softone-woocommerce-integration",
+    "description": "Softone WooCommerce integration plugin.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=7.4",
+        "yahnis-elsts/plugin-update-checker": "^5.0"
+    }
+}

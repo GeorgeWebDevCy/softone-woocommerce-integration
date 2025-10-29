@@ -82,6 +82,14 @@ Upgrade notices describe the reason a user should upgrade.  No more than 300 cha
 = 0.5 =
 This version fixes a security related bug.  Upgrade immediately.
 
+== Automatic Updates ==
+
+The plugin now bundles [yahnis-elsts/plugin-update-checker](https://github.com/YahnisElsts/plugin-update-checker) via Composer so that installations can pull new releases directly from the Git repository.
+
+1. Run `composer install` inside the plugin directory to install dependencies.
+1. Adjust the repository URL, branch or release asset usage using the `softone_woocommerce_integration_update_url`, `softone_woocommerce_integration_update_branch` and `softone_woocommerce_integration_use_release_assets` filters if needed.
+1. WordPress will automatically discover updates exposed by the configured repository and prompt you to update from the Plugins screen.
+
 == Arbitrary section ==
 
 You may provide arbitrary sections, in the same format as the ones above.  This may be of use for extremely complicated
