@@ -314,15 +314,18 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
             }
 
             $record = array(
-                'CODE'    => sprintf( '%sG%06d', Softone_Customer_Sync::CODE_PREFIX, $order->get_id() ),
-                'NAME'    => $name,
-                'EMAIL'   => $order->get_billing_email(),
-                'PHONE01' => $order->get_billing_phone(),
-                'ADDRESS' => $order->get_billing_address_1(),
-                'ADDRESS2'=> $order->get_billing_address_2(),
-                'CITY'    => $order->get_billing_city(),
-                'ZIP'     => $order->get_billing_postcode(),
-                'COUNTRY' => $softone_country,
+                'CODE'        => sprintf( '%sG%06d', Softone_Customer_Sync::CODE_PREFIX, $order->get_id() ),
+                'NAME'        => $name,
+                'EMAIL'       => $order->get_billing_email(),
+                'PHONE01'     => $order->get_billing_phone(),
+                'ADDRESS'     => $order->get_billing_address_1(),
+                'ADDRESS2'    => $order->get_billing_address_2(),
+                'CITY'        => $order->get_billing_city(),
+                'ZIP'         => $order->get_billing_postcode(),
+                'COUNTRY'     => $softone_country,
+                'AREAS'       => $this->api_client->get_areas(),
+                'SOCURRENCY'  => $this->api_client->get_socurrency(),
+                'TRDCATEGORY' => $this->api_client->get_trdcategory(),
             );
 
             $record = array_filter( $record, array( $this, 'filter_empty_value' ) );

@@ -142,6 +142,27 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
         protected $warehouse = '';
 
         /**
+         * Default customer area identifier.
+         *
+         * @var string
+         */
+        protected $areas = '';
+
+        /**
+         * Default customer currency identifier.
+         *
+         * @var string
+         */
+        protected $socurrency = '';
+
+        /**
+         * Default customer trading category.
+         *
+         * @var string
+         */
+        protected $trdcategory = '';
+
+        /**
          * Request timeout.
          *
          * @var int
@@ -181,6 +202,9 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             $this->refid    = isset( $this->settings['refid'] ) ? trim( (string) $this->settings['refid'] ) : '';
             $this->default_saldoc_series = isset( $this->settings['default_saldoc_series'] ) ? trim( (string) $this->settings['default_saldoc_series'] ) : '';
             $this->warehouse             = isset( $this->settings['warehouse'] ) ? trim( (string) $this->settings['warehouse'] ) : '';
+            $this->areas                 = isset( $this->settings['areas'] ) ? trim( (string) $this->settings['areas'] ) : '';
+            $this->socurrency            = isset( $this->settings['socurrency'] ) ? trim( (string) $this->settings['socurrency'] ) : '';
+            $this->trdcategory           = isset( $this->settings['trdcategory'] ) ? trim( (string) $this->settings['trdcategory'] ) : '';
 
             $timeout = isset( $this->settings['timeout'] ) ? absint( $this->settings['timeout'] ) : self::DEFAULT_TIMEOUT;
             $this->timeout = $timeout > 0 ? $timeout : self::DEFAULT_TIMEOUT;
@@ -725,6 +749,9 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 'refid'          => '',
                 'default_saldoc_series' => '',
                 'warehouse'             => '',
+                'areas'                 => '',
+                'socurrency'            => '',
+                'trdcategory'           => '',
                 'timeout'        => self::DEFAULT_TIMEOUT,
                 'client_id_ttl'  => self::DEFAULT_CLIENT_ID_TTL,
             );
@@ -765,6 +792,33 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
          */
         public function get_warehouse() {
             return $this->warehouse;
+        }
+
+        /**
+         * Retrieve the configured default customer area identifier.
+         *
+         * @return string
+         */
+        public function get_areas() {
+            return $this->areas;
+        }
+
+        /**
+         * Retrieve the configured default customer currency identifier.
+         *
+         * @return string
+         */
+        public function get_socurrency() {
+            return $this->socurrency;
+        }
+
+        /**
+         * Retrieve the configured default customer trading category.
+         *
+         * @return string
+         */
+        public function get_trdcategory() {
+            return $this->trdcategory;
         }
 
         /**
