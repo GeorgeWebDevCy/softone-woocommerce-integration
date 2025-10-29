@@ -91,7 +91,7 @@ function softone_woocommerce_integration_bootstrap_update_checker() {
 		return;
 	}
 
-	$default_repository = 'https://github.com/georgenicolaou/softone-woocommerce-integration';
+        $default_repository = 'https://github.com/GeorgeWebDevCy/softone-woocommerce-integration';
 	$repository_url     = apply_filters( 'softone_woocommerce_integration_update_url', $default_repository );
 
 	if ( empty( $repository_url ) ) {
