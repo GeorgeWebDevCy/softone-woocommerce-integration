@@ -492,7 +492,7 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
                 return;
             }
 
-            if ( $this->logger instanceof WC_Logger ) {
+            if ( class_exists( 'WC_Logger' ) && $this->logger instanceof WC_Logger ) {
                 $context['source'] = self::LOGGER_SOURCE;
             }
 
