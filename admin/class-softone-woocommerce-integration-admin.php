@@ -98,16 +98,35 @@ class Softone_Woocommerce_Integration_Admin {
 			return;
 		}
 
-		$parent_slug = 'woocommerce';
+                $page_title = __( 'Softone Integration', 'softone-woocommerce-integration' );
 
-		add_submenu_page(
-			$parent_slug,
-			__( 'Softone Integration', 'softone-woocommerce-integration' ),
-			__( 'Softone Integration', 'softone-woocommerce-integration' ),
-			$this->capability,
-			$this->menu_slug,
-			array( $this, 'render_settings_page' )
-		);
+                add_menu_page(
+                        $page_title,
+                        $page_title,
+                        $this->capability,
+                        $this->menu_slug,
+                        array( $this, 'render_settings_page' ),
+                        'dashicons-update-alt',
+                        56
+                );
+
+                add_submenu_page(
+                        $this->menu_slug,
+                        __( 'Settings', 'softone-woocommerce-integration' ),
+                        __( 'Settings', 'softone-woocommerce-integration' ),
+                        $this->capability,
+                        $this->menu_slug,
+                        array( $this, 'render_settings_page' )
+                );
+
+                add_submenu_page(
+                        'woocommerce',
+                        $page_title,
+                        $page_title,
+                        $this->capability,
+                        $this->menu_slug,
+                        array( $this, 'render_settings_page' )
+                );
 
 	}
 
