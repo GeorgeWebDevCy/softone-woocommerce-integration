@@ -57,25 +57,32 @@ class Softone_Woocommerce_Integration {
 	 */
 	protected $version;
 
-	/**
-	 * Define the core functionality of the plugin.
-	 *
-	 * Set the plugin name and the plugin version that can be used throughout the plugin.
-	 * Load the dependencies, define the locale, and set the hooks for the admin area and
-	 * the public-facing side of the site.
-	 *
-	 * @since    1.0.0
-	 */
-	public function __construct() {
+        /**
+         * Item synchronisation service instance.
+         *
+         * @var Softone_Item_Sync
+         */
+        protected $item_sync;
+
+        /**
+         * Define the core functionality of the plugin.
+         *
+         * Set the plugin name and the plugin version that can be used throughout the plugin.
+         * Load the dependencies, define the locale, and set the hooks for the admin area and
+         * the public-facing side of the site.
+         *
+         * @since    1.0.0
+         */
+        public function __construct() {
                 if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
                         $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
                 } else {
-                        $this->version = '1.2.0';
+                        $this->version = '1.3.0';
                 }
-		$this->plugin_name = 'softone-woocommerce-integration';
+                $this->plugin_name = 'softone-woocommerce-integration';
 
-		$this->load_dependencies();
-		$this->set_locale();
+                $this->load_dependencies();
+                $this->set_locale();
 		$this->define_admin_hooks();
 		$this->define_public_hooks();
 
@@ -111,6 +118,11 @@ class Softone_Woocommerce_Integration {
                 require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-api-client.php';
 
                 /**
+                 * Service class for synchronising items from SoftOne into WooCommerce.
+                 */
+                require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-item-sync.php';
+
+                /**
                  * Helper functions for accessing plugin settings.
                  */
                 require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/softone-woocommerce-integration-settings.php';
@@ -132,9 +144,12 @@ class Softone_Woocommerce_Integration {
 		 */
 		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'public/class-softone-woocommerce-integration-public.php';
 
-		$this->loader = new Softone_Woocommerce_Integration_Loader();
+                $this->loader    = new Softone_Woocommerce_Integration_Loader();
+                $this->item_sync = new Softone_Item_Sync();
 
-	}
+                $this->item_sync->register_hooks( $this->loader );
+
+        }
 
 	/**
 	 * Define the locale for this plugin for internationalization.
@@ -162,15 +177,16 @@ class Softone_Woocommerce_Integration {
 	 */
 	private function define_admin_hooks() {
 	
-	$plugin_admin = new Softone_Woocommerce_Integration_Admin( $this->get_plugin_name(), $this->get_version() );
-	
-	$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_styles' );
-	$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts' );
-	$this->loader->add_action( 'admin_menu', $plugin_admin, 'register_menu' );
-	$this->loader->add_action( 'admin_init', $plugin_admin, 'register_settings' );
-	$this->loader->add_action( 'admin_post_softone_wc_integration_test_connection', $plugin_admin, 'handle_test_connection' );
-	
-	}
+        $plugin_admin = new Softone_Woocommerce_Integration_Admin( $this->get_plugin_name(), $this->get_version(), $this->item_sync );
+
+        $this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_styles' );
+        $this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts' );
+        $this->loader->add_action( 'admin_menu', $plugin_admin, 'register_menu' );
+        $this->loader->add_action( 'admin_init', $plugin_admin, 'register_settings' );
+        $this->loader->add_action( 'admin_post_softone_wc_integration_test_connection', $plugin_admin, 'handle_test_connection' );
+        $this->loader->add_action( 'admin_post_' . Softone_Item_Sync::ADMIN_ACTION, $plugin_admin, 'handle_item_import' );
+
+        }
 
 	/**
 	 * Register all of the hooks related to the public-facing functionality

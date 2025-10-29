@@ -29,8 +29,12 @@ class Softone_Woocommerce_Integration_Deactivator {
 	 *
 	 * @since    1.0.0
 	 */
-	public static function deactivate() {
+        public static function deactivate() {
 
-	}
+                require_once plugin_dir_path( __FILE__ ) . 'class-softone-item-sync.php';
+
+                Softone_Item_Sync::clear_scheduled_event();
+
+        }
 
 }

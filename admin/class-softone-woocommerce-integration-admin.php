@@ -46,19 +46,33 @@ class Softone_Woocommerce_Integration_Admin {
 	 */
 	private $menu_slug = 'softone-woocommerce-integration-settings';
 
-	/**
-	 * Capability required to manage plugin settings.
-	 *
-	 * @var string
-	 */
-	private $capability = 'manage_options';
+        /**
+         * Capability required to manage plugin settings.
+         *
+         * @var string
+         */
+        private $capability = 'manage_options';
 
-	/**
-	 * Base transient key for connection test notices.
-	 *
-	 * @var string
-	 */
-	private $test_notice_transient = 'softone_wc_integration_test_notice_';
+        /**
+         * Base transient key for connection test notices.
+         *
+         * @var string
+         */
+        private $test_notice_transient = 'softone_wc_integration_test_notice_';
+
+        /**
+         * Base transient key for import notices.
+         *
+         * @var string
+         */
+        private $import_notice_transient = 'softone_wc_integration_import_notice_';
+
+        /**
+         * Item synchronisation service.
+         *
+         * @var Softone_Item_Sync
+         */
+        private $item_sync;
 
 	/**
 	 * Initialize the class and set its properties.
@@ -67,12 +81,13 @@ class Softone_Woocommerce_Integration_Admin {
 	 * @param string $plugin_name The name of this plugin.
 	 * @param string $version     The version of this plugin.
 	 */
-	public function __construct( $plugin_name, $version ) {
+        public function __construct( $plugin_name, $version, Softone_Item_Sync $item_sync ) {
 
-		$this->plugin_name = $plugin_name;
-		$this->version     = $version;
+                $this->plugin_name = $plugin_name;
+                $this->version     = $version;
+                $this->item_sync   = $item_sync;
 
-	}
+        }
 
 	/**
 	 * Register the plugin submenu.
@@ -180,6 +195,7 @@ class Softone_Woocommerce_Integration_Admin {
 <div class="wrap">
 <h1><?php esc_html_e( 'Softone Integration', 'softone-woocommerce-integration' ); ?></h1>
 <?php $this->maybe_render_connection_notice(); ?>
+<?php $this->maybe_render_import_notice(); ?>
 <?php settings_errors( 'softone_wc_integration' ); ?>
 <form action="<?php echo esc_url( admin_url( 'options.php' ) ); ?>" method="post">
 <?php
@@ -194,10 +210,25 @@ submit_button();
 <input type="hidden" name="action" value="softone_wc_integration_test_connection" />
 <?php submit_button( __( 'Test Connection', 'softone-woocommerce-integration' ), 'secondary', 'softone_wc_integration_test', false ); ?>
 </form>
+
+<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" style="margin-top: 1.5em;">
+<?php wp_nonce_field( Softone_Item_Sync::ADMIN_ACTION ); ?>
+<input type="hidden" name="action" value="<?php echo esc_attr( Softone_Item_Sync::ADMIN_ACTION ); ?>" />
+<?php
+$last_run = get_option( Softone_Item_Sync::OPTION_LAST_RUN );
+if ( $last_run ) {
+        printf(
+                '<p><em>%s</em></p>',
+                esc_html( sprintf( __( 'Last import completed on %s.', 'softone-woocommerce-integration' ), wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $last_run ) ) )
+        );
+}
+submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'secondary', 'softone_wc_integration_run_item_import', false );
+?>
+</form>
 </div>
 <?php
 
-	}
+        }
 
 	/**
 	 * Handle connection test requests.
@@ -227,15 +258,60 @@ submit_button();
 
 		$this->store_test_notice( $type, $message );
 
-		wp_safe_redirect( $this->get_settings_page_url() );
-		exit;
+                wp_safe_redirect( $this->get_settings_page_url() );
+                exit;
 
-	}
+        }
 
-	/**
-	 * Render a stored connection test notice when available.
-	 */
-	private function maybe_render_connection_notice() {
+        /**
+         * Handle manual item import requests.
+         */
+        public function handle_item_import() {
+
+                if ( ! current_user_can( $this->capability ) ) {
+                        wp_die( esc_html__( 'You do not have permission to perform this action.', 'softone-woocommerce-integration' ) );
+                }
+
+                check_admin_referer( Softone_Item_Sync::ADMIN_ACTION );
+
+                $type    = 'success';
+                $message = '';
+
+                if ( ! $this->item_sync instanceof Softone_Item_Sync ) {
+                        $type    = 'error';
+                        $message = __( 'Item import service is unavailable.', 'softone-woocommerce-integration' );
+                } else {
+                        try {
+                                $result  = $this->item_sync->sync();
+                                $message = sprintf(
+                                        /* translators: 1: processed count, 2: created count, 3: updated count, 4: skipped count */
+                                        __( 'Imported %1$d items (%2$d created, %3$d updated, %4$d skipped).', 'softone-woocommerce-integration' ),
+                                        (int) $result['processed'],
+                                        (int) $result['created'],
+                                        (int) $result['updated'],
+                                        (int) $result['skipped']
+                                );
+                                update_option( Softone_Item_Sync::OPTION_LAST_RUN, time() );
+                        } catch ( Softone_API_Client_Exception $exception ) {
+                                $type    = 'error';
+                                $message = $exception->getMessage();
+                        } catch ( Exception $exception ) {
+                                $type    = 'error';
+                                $message = $exception->getMessage();
+                        }
+                }
+
+                $this->store_import_notice( $type, $message );
+
+                wp_safe_redirect( $this->get_settings_page_url() );
+                exit;
+
+        }
+
+        /**
+         * Render a stored connection test notice when available.
+         */
+        private function maybe_render_connection_notice() {
 
 		$notice = get_transient( $this->get_test_notice_key() );
 
@@ -254,11 +330,11 @@ submit_button();
 			esc_html( $notice['message'] )
 		);
 
-	}
+        }
 
-	/**
-	 * Store a connection test notice for the current user.
-	 *
+        /**
+         * Store a connection test notice for the current user.
+         *
 	 * @param string $type    Notice type.
 	 * @param string $message Notice message.
 	 */
@@ -284,9 +360,65 @@ submit_button();
 
 		$user_id = get_current_user_id();
 
-		return $this->test_notice_transient . ( $user_id ? $user_id : 'guest' );
+                return $this->test_notice_transient . ( $user_id ? $user_id : 'guest' );
 
-	}
+        }
+
+        /**
+         * Render a stored item import notice when available.
+         */
+        private function maybe_render_import_notice() {
+
+                $notice = get_transient( $this->get_import_notice_key() );
+
+                if ( empty( $notice['message'] ) ) {
+                        return;
+                }
+
+                delete_transient( $this->get_import_notice_key() );
+
+                $type    = isset( $notice['type'] ) && 'error' === $notice['type'] ? 'error' : 'success';
+                $classes = array( 'notice', 'notice-' . $type );
+
+                printf(
+                        '<div class="%1$s"><p>%2$s</p></div>',
+                        esc_attr( implode( ' ', $classes ) ),
+                        esc_html( $notice['message'] )
+                );
+
+        }
+
+        /**
+         * Store an import notice for the current user.
+         *
+         * @param string $type    Notice type.
+         * @param string $message Notice message.
+         */
+        private function store_import_notice( $type, $message ) {
+
+                set_transient(
+                        $this->get_import_notice_key(),
+                        array(
+                                'type'    => $type,
+                                'message' => $message,
+                        ),
+                        MINUTE_IN_SECONDS
+                );
+
+        }
+
+        /**
+         * Generate the transient key for import notices for the current user.
+         *
+         * @return string
+         */
+        private function get_import_notice_key() {
+
+                $user_id = get_current_user_id();
+
+                return $this->import_notice_transient . ( $user_id ? $user_id : 'guest' );
+
+        }
 
 	/**
 	 * Retrieve the settings page URL.

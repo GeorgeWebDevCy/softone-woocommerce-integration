@@ -29,8 +29,12 @@ class Softone_Woocommerce_Integration_Activator {
 	 *
 	 * @since    1.0.0
 	 */
-	public static function activate() {
+        public static function activate() {
 
-	}
+                require_once plugin_dir_path( __FILE__ ) . 'class-softone-item-sync.php';
+
+                Softone_Item_Sync::schedule_event();
+
+        }
 
 }
