@@ -21,7 +21,7 @@
             },
             "time": "2025-05-20T12:29:01+00:00",
             "type": "library",
-            "installation-source": "source",
+            "installation-source": "dist",
             "autoload": {
                 "files": [
                     "load-v5p6.php"
@@ -54,6 +54,6 @@
             "install-path": "../yahnis-elsts/plugin-update-checker"
         }
     ],
-    "dev": false,
+    "dev": true,
     "dev-package-names": []
 }

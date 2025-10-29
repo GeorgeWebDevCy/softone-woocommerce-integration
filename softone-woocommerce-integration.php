@@ -88,6 +88,14 @@ function softone_woocommerce_integration_bootstrap_update_checker() {
 	$legacy_factory     = '\Puc_v4_Factory';
 
 	if ( ! class_exists( $namespaced_factory ) && ! class_exists( $legacy_factory ) ) {
+		$embedded_loader = __DIR__ . '/vendor/yahnis-elsts/plugin-update-checker/load-v5p6.php';
+
+		if ( file_exists( $embedded_loader ) ) {
+			require_once $embedded_loader;
+		}
+	}
+
+	if ( ! class_exists( $namespaced_factory ) && ! class_exists( $legacy_factory ) ) {
 		return;
 	}
 
