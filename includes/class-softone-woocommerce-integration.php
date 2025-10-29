@@ -91,7 +91,7 @@ class Softone_Woocommerce_Integration {
                 if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
                         $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
                 } else {
-                        $this->version = '1.6.1';
+                        $this->version = '1.7.0';
                 }
                 $this->plugin_name = 'softone-woocommerce-integration';
 

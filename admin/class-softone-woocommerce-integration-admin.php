@@ -290,6 +290,15 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
 
                 $result    = $this->get_api_tester_result();
                 $form_data = $this->prepare_api_tester_form_data( $result );
+                $presets   = $this->get_api_tester_presets();
+
+                $default_preset_description = __( 'Choose a preset to automatically populate the form fields.', 'softone-woocommerce-integration' );
+                $preset_description         = $default_preset_description;
+
+                if ( ! empty( $form_data['preset'] ) && isset( $presets[ $form_data['preset'] ] ) && ! empty( $presets[ $form_data['preset'] ]['description'] ) ) {
+                        $preset_description = $presets[ $form_data['preset'] ]['description'];
+                }
+
 
 ?>
 <div class="wrap">
@@ -326,6 +335,18 @@ $classes = array( 'notice', 'notice-' . $status );
 <input type="hidden" name="action" value="<?php echo esc_attr( $this->api_tester_action ); ?>" />
 <table class="form-table" role="presentation">
 <tbody>
+<tr>
+<th scope="row"><label for="softone_api_preset"><?php esc_html_e( 'Preset', 'softone-woocommerce-integration' ); ?></label></th>
+<td>
+<select name="softone_preset" id="softone_api_preset">
+<option value="" <?php selected( $form_data['preset'], '' ); ?>><?php esc_html_e( 'Manual selection', 'softone-woocommerce-integration' ); ?></option>
+<?php foreach ( $presets as $preset_key => $preset_config ) : ?>
+<option value="<?php echo esc_attr( $preset_key ); ?>" <?php selected( $form_data['preset'], $preset_key ); ?>><?php echo esc_html( $preset_config['label'] ); ?></option>
+<?php endforeach; ?>
+</select>
+<p class="description" id="softone_api_preset_description" data-default-description="<?php echo esc_attr( $default_preset_description ); ?>"><?php echo esc_html( $preset_description ); ?></p>
+</td>
+</tr>
 <tr>
 <th scope="row"><label for="softone_service_type"><?php esc_html_e( 'Service', 'softone-woocommerce-integration' ); ?></label></th>
 <td>
@@ -384,15 +405,192 @@ $classes = array( 'notice', 'notice-' . $status );
         }
 
         /**
+         * Retrieve the available API tester presets.
+         *
+         * @return array<string,array<string,mixed>>
+         */
+        private function get_api_tester_presets() {
+
+                return array(
+                        'sql_get_customers'   => array(
+                                'label'       => __( 'SqlData → getCustomers', 'softone-woocommerce-integration' ),
+                                'description' => __( 'Fetch customer records with the getCustomers SqlData query. Update the payload to filter by email, code, or other columns.', 'softone-woocommerce-integration' ),
+                                'form'        => array(
+                                        'service_type'       => 'sql_data',
+                                        'sql_name'           => 'getCustomers',
+                                        'requires_client_id' => true,
+                                        'payload'            => $this->encode_api_tester_payload(
+                                                array(
+                                                        'params'   => array(
+                                                                'EMAIL' => 'customer@example.com',
+                                                        ),
+                                                        'pagesize' => 25,
+                                                )
+                                        ),
+                                ),
+                        ),
+                        'sql_get_items'       => array(
+                                'label'       => __( 'SqlData → getItems', 'softone-woocommerce-integration' ),
+                                'description' => __( 'Retrieve product data using the getItems SqlData query. Adjust the payload parameters to target specific items or categories.', 'softone-woocommerce-integration' ),
+                                'form'        => array(
+                                        'service_type'       => 'sql_data',
+                                        'sql_name'           => 'getItems',
+                                        'requires_client_id' => true,
+                                        'payload'            => $this->encode_api_tester_payload(
+                                                array(
+                                                        'params'   => array(
+                                                                'CODE' => 'ITEM-CODE',
+                                                        ),
+                                                        'pagesize' => 25,
+                                                )
+                                        ),
+                                ),
+                        ),
+                        'set_create_customer' => array(
+                                'label'       => __( 'setData → CUSTOMER', 'softone-woocommerce-integration' ),
+                                'description' => __( 'Create or update a SoftOne customer record. Replace the sample values with real customer information before sending.', 'softone-woocommerce-integration' ),
+                                'form'        => array(
+                                        'service_type'       => 'set_data',
+                                        'object'             => 'CUSTOMER',
+                                        'requires_client_id' => true,
+                                        'payload'            => $this->encode_api_tester_payload(
+                                                array(
+                                                        'data' => array(
+                                                                'CUSTOMER' => array(
+                                                                        array(
+                                                                                'CODE'    => 'WEB000001',
+                                                                                'NAME'    => 'Customer Name',
+                                                                                'EMAIL'   => 'customer@example.com',
+                                                                                'PHONE01' => '+35712345678',
+                                                                        ),
+                                                                ),
+                                                        ),
+                                                )
+                                        ),
+                                ),
+                        ),
+                        'set_create_saldoc'   => array(
+                                'label'       => __( 'setData → SALDOC', 'softone-woocommerce-integration' ),
+                                'description' => __( 'Create a SoftOne sales document (SALDOC). Provide a valid customer (TRDR), series, and item lines before testing.', 'softone-woocommerce-integration' ),
+                                'form'        => array(
+                                        'service_type'       => 'set_data',
+                                        'object'             => 'SALDOC',
+                                        'requires_client_id' => true,
+                                        'payload'            => $this->encode_api_tester_payload(
+                                                array(
+                                                        'data' => array(
+                                                                'SALDOC' => array(
+                                                                        array(
+                                                                                'SERIES'   => 'A1',
+                                                                                'TRDR'     => '1234',
+                                                                                'TRNDATE'  => '2023-01-01',
+                                                                                'COMMENTS' => 'Sample order created from the API tester.',
+                                                                                'ITELINES' => array(
+                                                                                        array(
+                                                                                                'MTRL'  => 'ITEM-CODE',
+                                                                                                'QTY1'  => 1,
+                                                                                                'PRICE' => 10,
+                                                                                        ),
+                                                                                ),
+                                                                        ),
+                                                                ),
+                                                        ),
+                                                )
+                                        ),
+                                ),
+                        ),
+                        'auth_login'          => array(
+                                'label'       => __( 'Custom → login', 'softone-woocommerce-integration' ),
+                                'description' => __( 'Call the login service without using the cached client ID. Replace the placeholder credentials with real values.', 'softone-woocommerce-integration' ),
+                                'form'        => array(
+                                        'service_type'       => 'custom',
+                                        'custom_service'     => 'login',
+                                        'requires_client_id' => false,
+                                        'payload'            => $this->encode_api_tester_payload(
+                                                array(
+                                                        'username' => 'your-softone-username',
+                                                        'password' => 'your-softone-password',
+                                                )
+                                        ),
+                                ),
+                        ),
+                        'auth_authenticate'   => array(
+                                'label'       => __( 'Custom → authenticate', 'softone-woocommerce-integration' ),
+                                'description' => __( 'Authenticate an existing login session. Provide the clientID returned from login and optionally override the company, branch, module, or refid.', 'softone-woocommerce-integration' ),
+                                'form'        => array(
+                                        'service_type'       => 'custom',
+                                        'custom_service'     => 'authenticate',
+                                        'requires_client_id' => false,
+                                        'payload'            => $this->encode_api_tester_payload(
+                                                array(
+                                                        'clientID' => 'REPLACE-WITH-CLIENT-ID',
+                                                        'company'  => '1000',
+                                                        'branch'   => '1000',
+                                                        'module'   => '0',
+                                                        'refid'    => 'WEB',
+                                                )
+                                        ),
+                                ),
+                        ),
+                );
+
+        }
+
+        /**
+         * Prepare preset configuration for the admin script.
+         *
+         * @return array<string,array<string,mixed>>
+         */
+        private function get_api_tester_presets_for_script() {
+
+                $presets = array();
+
+                foreach ( $this->get_api_tester_presets() as $preset_key => $preset_config ) {
+                        $presets[ $preset_key ] = array(
+                                'label'       => isset( $preset_config['label'] ) ? $preset_config['label'] : '',
+                                'description' => isset( $preset_config['description'] ) ? $preset_config['description'] : '',
+                                'form'        => array(
+                                        'service_type'       => isset( $preset_config['form']['service_type'] ) ? $preset_config['form']['service_type'] : '',
+                                        'sql_name'           => isset( $preset_config['form']['sql_name'] ) ? $preset_config['form']['sql_name'] : '',
+                                        'object'             => isset( $preset_config['form']['object'] ) ? $preset_config['form']['object'] : '',
+                                        'custom_service'     => isset( $preset_config['form']['custom_service'] ) ? $preset_config['form']['custom_service'] : '',
+                                        'requires_client_id' => isset( $preset_config['form']['requires_client_id'] ) ? (bool) $preset_config['form']['requires_client_id'] : true,
+                                        'payload'            => isset( $preset_config['form']['payload'] ) ? $preset_config['form']['payload'] : '',
+                                ),
+                        );
+                }
+
+                return $presets;
+
+        }
+
+        /**
+         * Encode a preset payload for display in the API tester.
+         *
+         * @param array $payload Payload to encode.
+         *
+         * @return string
+         */
+        private function encode_api_tester_payload( array $payload ) {
+
+                $encoded = wp_json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+
+                return false === $encoded ? '' : $encoded;
+
+        }
+
+        /**
          * Prepare default form values for the API tester.
          *
          * @param array $result Stored tester result.
          *
          * @return array
          */
-	private function prepare_api_tester_form_data( $result ) {
+        private function prepare_api_tester_form_data( $result ) {
 
+               $presets  = $this->get_api_tester_presets();
                $defaults = array(
+                       'preset'             => '',
                        'service_type'       => 'sql_data',
                        'sql_name'           => '',
                        'object'             => '',
@@ -401,18 +599,43 @@ $classes = array( 'notice', 'notice-' . $status );
                        'payload'            => '',
                );
 
+               $request_preset = '';
+
+               if ( isset( $_GET['softone_api_preset'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only.
+                       $request_preset = sanitize_key( wp_unslash( $_GET['softone_api_preset'] ) );
+               } elseif ( isset( $result['form']['preset'] ) ) {
+                       $request_preset = sanitize_key( $result['form']['preset'] );
+               }
+
+               if ( '' !== $request_preset && isset( $presets[ $request_preset ]['form'] ) && is_array( $presets[ $request_preset ]['form'] ) ) {
+                       $defaults = wp_parse_args(
+                               array_merge(
+                                       $presets[ $request_preset ]['form'],
+                                       array( 'preset' => $request_preset )
+                               ),
+                               $defaults
+                       );
+               }
+
                if ( isset( $result['form'] ) && is_array( $result['form'] ) ) {
                        $form = wp_parse_args( $result['form'], $defaults );
                } else {
                        $form = $defaults;
                }
 
+               $form['preset'] = isset( $form['preset'] ) ? sanitize_key( $form['preset'] ) : '';
+
+               if ( '' !== $form['preset'] && ! isset( $presets[ $form['preset'] ] ) ) {
+                       $form['preset'] = '';
+               }
+
                $form['service_type']       = in_array( $form['service_type'], array( 'sql_data', 'set_data', 'custom' ), true ) ? $form['service_type'] : 'sql_data';
                $form['requires_client_id'] = ! empty( $form['requires_client_id'] );
+               $form['payload']            = is_string( $form['payload'] ) ? $form['payload'] : '';
 
                return $form;
 
-       }
+        }
 
         /**
          * Format values for display in the API tester output.
@@ -460,7 +683,15 @@ $classes = array( 'notice', 'notice-' . $status );
                        $service_type = 'sql_data';
                }
 
+               $available_presets = $this->get_api_tester_presets();
+               $preset            = isset( $_POST['softone_preset'] ) ? sanitize_key( wp_unslash( $_POST['softone_preset'] ) ) : '';
+
+               if ( '' !== $preset && ! isset( $available_presets[ $preset ] ) ) {
+                       $preset = '';
+               }
+
                $form_data = array(
+                       'preset'             => $preset,
                        'service_type'       => $service_type,
                        'sql_name'           => isset( $_POST['softone_sql_name'] ) ? sanitize_text_field( wp_unslash( $_POST['softone_sql_name'] ) ) : '',
                        'object'             => isset( $_POST['softone_object'] ) ? sanitize_text_field( wp_unslash( $_POST['softone_object'] ) ) : '',
@@ -913,24 +1144,24 @@ public function handle_test_connection() {
 			return;
 		}
 
-$lookup = array(
-'endpoint'              => 'softone_wc_integration_get_endpoint',
-'username'              => 'softone_wc_integration_get_username',
-'password'              => 'softone_wc_integration_get_password',
-'app_id'                => 'softone_wc_integration_get_app_id',
-'company'               => 'softone_wc_integration_get_company',
-'branch'                => 'softone_wc_integration_get_branch',
-'module'                => 'softone_wc_integration_get_module',
-'refid'                 => 'softone_wc_integration_get_refid',
-'default_saldoc_series' => 'softone_wc_integration_get_default_saldoc_series',
-'warehouse'             => 'softone_wc_integration_get_warehouse',
-);
+                $lookup = array(
+                        'endpoint'              => 'softone_wc_integration_get_endpoint',
+                        'username'              => 'softone_wc_integration_get_username',
+                        'password'              => 'softone_wc_integration_get_password',
+                        'app_id'                => 'softone_wc_integration_get_app_id',
+                        'company'               => 'softone_wc_integration_get_company',
+                        'branch'                => 'softone_wc_integration_get_branch',
+                        'module'                => 'softone_wc_integration_get_module',
+                        'refid'                 => 'softone_wc_integration_get_refid',
+                        'default_saldoc_series' => 'softone_wc_integration_get_default_saldoc_series',
+                        'warehouse'             => 'softone_wc_integration_get_warehouse',
+                );
 
-if ( isset( $lookup[ $key ] ) && is_callable( $lookup[ $key ] ) ) {
-$value = call_user_func( $lookup[ $key ] );
-} else {
-$value = '';
-}
+                if ( isset( $lookup[ $key ] ) && is_callable( $lookup[ $key ] ) ) {
+                        $value = call_user_func( $lookup[ $key ] );
+                } else {
+                        $value = '';
+                }
 
 		$attributes = array(
 			'type'         => $type,
@@ -986,6 +1217,15 @@ $value = '';
 	public function enqueue_scripts() {
 
 		wp_enqueue_script( $this->plugin_name, plugin_dir_url( __FILE__ ) . 'js/softone-woocommerce-integration-admin.js', array( 'jquery' ), $this->version, false );
+
+                wp_localize_script(
+                        $this->plugin_name,
+                        'softoneApiTester',
+                        array(
+                                'presets'            => $this->get_api_tester_presets_for_script(),
+                                'defaultDescription' => __( 'Choose a preset to automatically populate the form fields.', 'softone-woocommerce-integration' ),
+                        )
+                );
 
 	}
 
