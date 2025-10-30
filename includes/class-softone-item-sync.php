@@ -429,11 +429,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 wp_set_object_terms( $product_id, array(), $taxonomy );
             }
 
-            if ( '' !== $brand_value ) {
-                update_post_meta( $product_id, 'product_brand', $brand_value );
-            } else {
-                delete_post_meta( $product_id, 'product_brand' );
-            }
+            $this->assign_brand_term( $product_id, $brand_value );
 
             $action = $is_new ? 'created' : 'updated';
 
@@ -652,6 +648,51 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             return array_values( array_unique( array_filter( $categories ) ) );
+        }
+
+        /**
+         * Assign the brand taxonomy term to a product.
+         *
+         * @param int    $product_id  Product identifier.
+         * @param string $brand_value Brand name.
+         *
+         * @return void
+         */
+        protected function assign_brand_term( $product_id, $brand_value ) {
+            $product_id = (int) $product_id;
+
+            if ( $product_id <= 0 ) {
+                return;
+            }
+
+            $brand_value = trim( (string) $brand_value );
+
+            if ( ! taxonomy_exists( 'product_brand' ) ) {
+                if ( '' !== $brand_value ) {
+                    update_post_meta( $product_id, 'product_brand', $brand_value );
+                } else {
+                    delete_post_meta( $product_id, 'product_brand' );
+                }
+
+                return;
+            }
+
+            // Ensure legacy metadata is removed once taxonomy handling is active.
+            delete_post_meta( $product_id, 'product_brand' );
+
+            if ( '' === $brand_value || $this->is_numeric_term_name( $brand_value ) ) {
+                wp_set_object_terms( $product_id, array(), 'product_brand' );
+
+                return;
+            }
+
+            $term_id = $this->ensure_term( $brand_value, 'product_brand' );
+
+            if ( ! $term_id ) {
+                return;
+            }
+
+            wp_set_object_terms( $product_id, array( (int) $term_id ), 'product_brand' );
         }
 
         /**
