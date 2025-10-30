@@ -396,6 +396,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 $product->set_category_ids( $category_ids );
             }
 
+            $brand_value           = trim( $this->get_value( $data, array( 'brand_name', 'brand' ) ) );
             $attribute_assignments = $this->prepare_attribute_assignments( $data, $product );
 
             if ( ! empty( $attribute_assignments['attributes'] ) ) {
@@ -426,6 +427,12 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
             foreach ( $attribute_assignments['clear'] as $taxonomy ) {
                 wp_set_object_terms( $product_id, array(), $taxonomy );
+            }
+
+            if ( '' !== $brand_value ) {
+                update_post_meta( $product_id, 'product_brand', $brand_value );
+            } else {
+                delete_post_meta( $product_id, 'product_brand' );
             }
 
             $action = $is_new ? 'created' : 'updated';
@@ -677,17 +684,17 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $attribute_map = array(
                 'colour' => array(
                     'label'    => __( 'Colour', 'softone-woocommerce-integration' ),
-                    'value'    => $this->get_value( $data, array( 'colour_name', 'color_name', 'colour' ) ),
+                    'value'    => trim( $this->get_value( $data, array( 'colour_name', 'color_name', 'colour' ) ) ),
                     'position' => 0,
                 ),
                 'size'   => array(
                     'label'    => __( 'Size', 'softone-woocommerce-integration' ),
-                    'value'    => $this->get_value( $data, array( 'size_name', 'size' ) ),
+                    'value'    => trim( $this->get_value( $data, array( 'size_name', 'size' ) ) ),
                     'position' => 1,
                 ),
                 'brand'  => array(
                     'label'    => __( 'Brand', 'softone-woocommerce-integration' ),
-                    'value'    => $this->get_value( $data, array( 'brand_name', 'brand' ) ),
+                    'value'    => trim( $this->get_value( $data, array( 'brand_name', 'brand' ) ) ),
                     'position' => 2,
                 ),
             );
