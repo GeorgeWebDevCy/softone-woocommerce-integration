@@ -20,14 +20,14 @@ if ( ! function_exists( 'softone_wc_integration_get_settings' ) ) {
         $stored = is_array( $stored ) ? $stored : array();
 
         $defaults = array(
-            'endpoint'              => '',
+            'endpoint'              => Softone_API_Client::LEGACY_DEFAULT_ENDPOINT,
             'username'              => '',
             'password'              => '',
-            'app_id'                => '',
-            'company'               => '',
-            'branch'                => '',
-            'module'                => '',
-            'refid'                 => '',
+            'app_id'                => Softone_API_Client::LEGACY_DEFAULT_APP_ID,
+            'company'               => Softone_API_Client::LEGACY_DEFAULT_COMPANY,
+            'branch'                => Softone_API_Client::LEGACY_DEFAULT_BRANCH,
+            'module'                => Softone_API_Client::LEGACY_DEFAULT_MODULE,
+            'refid'                 => Softone_API_Client::LEGACY_DEFAULT_REFID,
             'default_saldoc_series' => '',
             'warehouse'             => '',
             'areas'                 => '',
@@ -40,12 +40,64 @@ if ( ! function_exists( 'softone_wc_integration_get_settings' ) ) {
 
         $settings = wp_parse_args( $stored, $defaults );
 
+        foreach ( softone_wc_integration_get_legacy_defaults() as $key => $value ) {
+            if ( '' === softone_wc_integration_normalize_setting_value( $settings, $key ) ) {
+                $settings[ $key ] = $value;
+            }
+        }
+
         /**
          * Filter the plugin settings before they are returned.
          *
          * @param array $settings Plugin settings.
          */
         return apply_filters( 'softone_wc_integration_settings_raw', $settings );
+    }
+}
+
+if ( ! function_exists( 'softone_wc_integration_get_legacy_defaults' ) ) {
+    /**
+     * Retrieve the legacy PT Kids connection defaults.
+     *
+     * @return array<string,string>
+     */
+    function softone_wc_integration_get_legacy_defaults() {
+        return array(
+            'endpoint' => Softone_API_Client::LEGACY_DEFAULT_ENDPOINT,
+            'app_id'   => Softone_API_Client::LEGACY_DEFAULT_APP_ID,
+            'company'  => Softone_API_Client::LEGACY_DEFAULT_COMPANY,
+            'branch'   => Softone_API_Client::LEGACY_DEFAULT_BRANCH,
+            'module'   => Softone_API_Client::LEGACY_DEFAULT_MODULE,
+            'refid'    => Softone_API_Client::LEGACY_DEFAULT_REFID,
+        );
+    }
+}
+
+if ( ! function_exists( 'softone_wc_integration_normalize_setting_value' ) ) {
+    /**
+     * Normalise a stored setting value when checking for fallbacks.
+     *
+     * @param array  $settings Settings array.
+     * @param string $key      Setting key.
+     *
+     * @return string
+     */
+    function softone_wc_integration_normalize_setting_value( array $settings, $key ) {
+        if ( ! array_key_exists( $key, $settings ) ) {
+            return '';
+        }
+
+        $value = $settings[ $key ];
+
+        if ( is_string( $value ) ) {
+            return trim( $value );
+        }
+
+        if ( null === $value ) {
+            return '';
+        }
+
+        return trim( (string) $value );
     }
 }
 
