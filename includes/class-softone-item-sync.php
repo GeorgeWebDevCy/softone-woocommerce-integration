@@ -18,6 +18,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         const CRON_HOOK          = 'softone_wc_integration_sync_items';
         const ADMIN_ACTION       = 'softone_wc_integration_run_item_import';
         const META_MTRL          = '_softone_mtrl_id';
+        const META_PAYLOAD_HASH  = '_softone_payload_hash';
         const OPTION_LAST_RUN    = 'softone_wc_integration_last_item_sync';
         const LOGGER_SOURCE      = 'softone-item-sync';
         const DEFAULT_CRON_EVENT = 'hourly';
@@ -253,6 +254,10 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $product_id = $this->find_existing_product( $sku, $mtrl );
             $is_new     = 0 === $product_id;
 
+            $hash_source = $data;
+            ksort( $hash_source );
+            $payload_hash = md5( wp_json_encode( $hash_source ) );
+
             if ( $is_new ) {
                 $product = new WC_Product_Simple();
                 $product->set_status( 'publish' );
@@ -262,6 +267,26 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
             if ( ! $product ) {
                 throw new Exception( __( 'Failed to load the matching WooCommerce product.', 'softone-woocommerce-integration' ) );
+            }
+
+            if ( ! $is_new ) {
+                $existing_hash = (string) get_post_meta( $product_id, self::META_PAYLOAD_HASH, true );
+
+                if ( '' !== $existing_hash && $existing_hash === $payload_hash ) {
+                    $this->log(
+                        'debug',
+                        'Skipping product import because the payload hash matches the existing product.',
+                        array(
+                            'product_id'    => $product_id,
+                            'sku'           => $sku,
+                            'mtrl'          => $mtrl,
+                            'payload_hash'  => $payload_hash,
+                            'existing_hash' => $existing_hash,
+                        )
+                    );
+
+                    return 'skipped';
+                }
             }
 
             $name = $this->get_value( $data, array( 'desc', 'description', 'code' ) );
@@ -311,6 +336,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             if ( $mtrl ) {
                 update_post_meta( $product_id, self::META_MTRL, $mtrl );
             }
+
+            update_post_meta( $product_id, self::META_PAYLOAD_HASH, $payload_hash );
 
             foreach ( $attribute_assignments['terms'] as $taxonomy => $term_ids ) {
                 wp_set_object_terms( $product_id, $term_ids, $taxonomy );
