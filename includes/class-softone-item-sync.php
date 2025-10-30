@@ -350,7 +350,17 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 $product->set_name( $name );
             }
 
-            $description = $this->get_value( $data, array( 'remarks', 'remark', 'notes' ) );
+            $description = $this->get_value(
+                $data,
+                array(
+                    'long_description',
+                    'longdescription',
+                    'cccsocylodes',
+                    'remarks',
+                    'remark',
+                    'notes',
+                )
+            );
             if ( '' !== $description ) {
                 $product->set_description( $description );
             }
