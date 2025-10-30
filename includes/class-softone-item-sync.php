@@ -109,7 +109,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             try {
                 $result = $this->sync();
                 if ( isset( $result['processed'] ) ) {
-                    update_option( self::OPTION_LAST_RUN, time() );
+                    $timestamp = isset( $result['started_at'] ) ? (int) $result['started_at'] : time();
+                    update_option( self::OPTION_LAST_RUN, $timestamp );
                 }
             } catch ( Exception $exception ) {
                 $this->log( 'error', $exception->getMessage(), array( 'exception' => $exception ) );
@@ -122,26 +123,67 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
          * @throws Softone_API_Client_Exception When API requests fail.
          * @throws Exception                     When WooCommerce is not available.
          *
+         * @param bool|null $force_full_import Whether to force a full import.
+         *
          * @return array{
          *     processed:int,
          *     created:int,
          *     updated:int,
-         *     skipped:int
+         *     skipped:int,
+         *     started_at:int
          * }
          */
-        public function sync() {
+        public function sync( $force_full_import = null ) {
             if ( ! class_exists( 'WC_Product' ) ) {
                 throw new Exception( __( 'WooCommerce is required to sync items.', 'softone-woocommerce-integration' ) );
             }
 
-            $response = $this->api_client->sql_data( 'getItems' );
+            $started_at = time();
+            $last_run   = (int) get_option( self::OPTION_LAST_RUN );
+
+            if ( null === $force_full_import ) {
+                $force_full_import = false;
+            }
+
+            /**
+             * Allow forcing a full item sync instead of a delta update.
+             *
+             * @param bool $force_full_import Current full import flag.
+             * @param int  $last_run          Unix timestamp of the previous run.
+             */
+            $force_full_import = (bool) apply_filters( 'softone_wc_integration_item_sync_force_full', $force_full_import, $last_run );
+
+            $extra = array();
+
+            if ( $last_run > 0 && ! $force_full_import ) {
+                $elapsed_seconds = max( 0, $started_at - $last_run );
+                $minutes         = max( 1, (int) ceil( $elapsed_seconds / MINUTE_IN_SECONDS ) );
+                $extra['pMins']  = $minutes;
+
+                $this->log(
+                    'info',
+                    sprintf( 'Running Softone item sync in delta mode for the last %d minute(s).', $minutes ),
+                    array(
+                        'minutes'    => $minutes,
+                        'started_at' => $started_at,
+                        'last_run'   => $last_run,
+                    )
+                );
+            }
+
+            if ( empty( $extra ) ) {
+                $response = $this->api_client->sql_data( 'getItems' );
+            } else {
+                $response = $this->api_client->sql_data( 'getItems', array(), $extra );
+            }
             $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
 
             $stats = array(
-                'processed' => 0,
-                'created'   => 0,
-                'updated'   => 0,
-                'skipped'   => 0,
+                'processed'  => 0,
+                'created'    => 0,
+                'updated'    => 0,
+                'skipped'    => 0,
+                'started_at' => $started_at,
             );
 
             foreach ( $rows as $row ) {
