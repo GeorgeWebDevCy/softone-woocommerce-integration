@@ -163,6 +163,13 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
         protected $trdcategory = '';
 
         /**
+         * Handshake values returned by the most recent login response.
+         *
+         * @var array<string, string>
+         */
+        protected $login_handshake = array();
+
+        /**
          * Request timeout.
          *
          * @var int
@@ -252,6 +259,8 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 $this->log_error( __( 'SoftOne login succeeded but no clientID was returned.', 'softone-woocommerce-integration' ) );
                 throw new Softone_API_Client_Exception( __( 'SoftOne login failed to provide a client ID.', 'softone-woocommerce-integration' ) );
             }
+
+            $this->login_handshake = $this->extract_handshake_from_login_response( $response );
 
             return $response;
         }
@@ -883,7 +892,83 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 }
             }
 
+            if ( ! empty( $this->login_handshake ) ) {
+                foreach ( $this->login_handshake as $key => $value ) {
+                    if ( array_key_exists( $key, $fields ) && '' === $fields[ $key ] && '' !== $value ) {
+                        $fields[ $key ] = $value;
+                    }
+                }
+            }
+
             return $fields;
+        }
+
+        /**
+         * Derive handshake values from a login response payload.
+         *
+         * @param array $login_response Login response payload.
+         *
+         * @return array<string,string>
+         */
+        protected function extract_handshake_from_login_response( array $login_response ) {
+            $handshake = array(
+                'company' => '',
+                'branch'  => '',
+                'module'  => '',
+                'refid'   => '',
+            );
+
+            if ( empty( $login_response['objs'] ) || ! is_array( $login_response['objs'] ) ) {
+                return $handshake;
+            }
+
+            $object = null;
+
+            foreach ( $login_response['objs'] as $entry ) {
+                if ( is_array( $entry ) ) {
+                    $object = $entry;
+                    break;
+                }
+            }
+
+            if ( null === $object ) {
+                return $handshake;
+            }
+
+            $mapping = array(
+                'COMPANY' => 'company',
+                'company' => 'company',
+                'BRANCH'  => 'branch',
+                'branch'  => 'branch',
+                'MODULE'  => 'module',
+                'module'  => 'module',
+                'REFID'   => 'refid',
+                'refid'   => 'refid',
+            );
+
+            foreach ( $mapping as $source => $target ) {
+                if ( array_key_exists( $source, $object ) ) {
+                    $value = $object[ $source ];
+
+                    if ( is_string( $value ) ) {
+                        $value = trim( $value );
+                    } elseif ( is_numeric( $value ) ) {
+                        $value = (string) $value;
+                    } elseif ( null === $value ) {
+                        $value = '';
+                    } elseif ( is_bool( $value ) ) {
+                        $value = $value ? '1' : '0';
+                    } else {
+                        $value = trim( (string) $value );
+                    }
+
+                    if ( '' !== $value ) {
+                        $handshake[ $target ] = $value;
+                    }
+                }
+            }
+
+            return $handshake;
         }
 
         /**
