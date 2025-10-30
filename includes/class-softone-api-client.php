@@ -65,6 +65,16 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
         const DEFAULT_CLIENT_ID_TTL      = 1800; // 30 minutes.
 
         /**
+         * Legacy SoftOne connection defaults used by the PT Kids environment.
+         */
+        const LEGACY_DEFAULT_ENDPOINT = 'https://ptkids.oncloud.gr/s1services';
+        const LEGACY_DEFAULT_APP_ID   = '1000';
+        const LEGACY_DEFAULT_COMPANY  = '10';
+        const LEGACY_DEFAULT_BRANCH   = '101';
+        const LEGACY_DEFAULT_MODULE   = '0';
+        const LEGACY_DEFAULT_REFID    = '1000';
+
+        /**
          * Cached settings.
          *
          * @var array
@@ -748,24 +758,30 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             $stored = is_array( $stored ) ? $stored : array();
 
             $defaults = array(
-                'endpoint'       => '',
-                'username'       => '',
-                'password'       => '',
-                'app_id'         => '',
-                'company'        => '',
-                'branch'         => '',
-                'module'         => '',
-                'refid'          => '',
+                'endpoint'              => self::LEGACY_DEFAULT_ENDPOINT,
+                'username'              => '',
+                'password'              => '',
+                'app_id'                => self::LEGACY_DEFAULT_APP_ID,
+                'company'               => self::LEGACY_DEFAULT_COMPANY,
+                'branch'                => self::LEGACY_DEFAULT_BRANCH,
+                'module'                => self::LEGACY_DEFAULT_MODULE,
+                'refid'                 => self::LEGACY_DEFAULT_REFID,
                 'default_saldoc_series' => '',
                 'warehouse'             => '',
                 'areas'                 => '',
                 'socurrency'            => '',
                 'trdcategory'           => '',
-                'timeout'        => self::DEFAULT_TIMEOUT,
-                'client_id_ttl'  => self::DEFAULT_CLIENT_ID_TTL,
+                'timeout'               => self::DEFAULT_TIMEOUT,
+                'client_id_ttl'         => self::DEFAULT_CLIENT_ID_TTL,
             );
 
             $settings = wp_parse_args( $stored, $defaults );
+
+            foreach ( $this->get_legacy_default_fields() as $key => $value ) {
+                if ( '' === $this->sanitize_default_fallback_value( $settings, $key ) ) {
+                    $settings[ $key ] = $value;
+                }
+            }
 
             /**
              * Filter the SoftOne API client settings prior to use.
@@ -773,6 +789,48 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
              * @param array $settings Settings array.
              */
             return apply_filters( 'softone_wc_integration_settings', $settings );
+        }
+
+        /**
+         * Retrieve the legacy default SoftOne connection values.
+         *
+         * @return array<string,string>
+         */
+        protected function get_legacy_default_fields() {
+            return array(
+                'endpoint' => self::LEGACY_DEFAULT_ENDPOINT,
+                'app_id'   => self::LEGACY_DEFAULT_APP_ID,
+                'company'  => self::LEGACY_DEFAULT_COMPANY,
+                'branch'   => self::LEGACY_DEFAULT_BRANCH,
+                'module'   => self::LEGACY_DEFAULT_MODULE,
+                'refid'    => self::LEGACY_DEFAULT_REFID,
+            );
+        }
+
+        /**
+         * Helper method to normalise stored settings before applying fallbacks.
+         *
+         * @param array  $settings Settings array.
+         * @param string $key      Setting key being inspected.
+         *
+         * @return string
+         */
+        protected function sanitize_default_fallback_value( array $settings, $key ) {
+            if ( ! array_key_exists( $key, $settings ) ) {
+                return '';
+            }
+
+            $value = $settings[ $key ];
+
+            if ( is_string( $value ) ) {
+                return trim( $value );
+            }
+
+            if ( null === $value ) {
+                return '';
+            }
+
+            return trim( (string) $value );
         }
 
         /**
