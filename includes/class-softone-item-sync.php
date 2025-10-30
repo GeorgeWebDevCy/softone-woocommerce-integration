@@ -39,6 +39,34 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         protected $logger;
 
         /**
+         * Cache for taxonomy terms keyed by taxonomy and term name.
+         *
+         * @var array<string,int>
+         */
+        protected $term_cache = array();
+
+        /**
+         * Cache for attribute terms keyed by taxonomy and term name.
+         *
+         * @var array<string,int>
+         */
+        protected $attribute_term_cache = array();
+
+        /**
+         * Cache for attribute taxonomies keyed by slug.
+         *
+         * @var array<string,int>
+         */
+        protected $attribute_taxonomy_cache = array();
+
+        /**
+         * Cache usage statistics for debugging purposes.
+         *
+         * @var array<string,int>
+         */
+        protected $cache_stats = array();
+
+        /**
          * Constructor.
          *
          * @param Softone_API_Client|null           $api_client API client instance.
@@ -47,6 +75,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         public function __construct( ?Softone_API_Client $api_client = null, $logger = null ) {
             $this->api_client = $api_client ?: new Softone_API_Client();
             $this->logger     = $logger ?: $this->get_default_logger();
+
+            $this->reset_caches();
         }
 
         /**
@@ -144,6 +174,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $started_at = time();
             $last_run   = (int) get_option( self::OPTION_LAST_RUN );
 
+            $this->reset_caches();
+
             $this->log(
                 'info',
                 'Starting Softone item sync run.',
@@ -223,6 +255,12 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             if ( $stale_processed > 0 ) {
                 $stats['stale_processed'] = $stale_processed;
             }
+
+            $this->log(
+                'debug',
+                'Softone item sync cache usage summary.',
+                array( 'cache_stats' => $this->cache_stats )
+            );
 
             return $stats;
         }
@@ -687,10 +725,23 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 return 0;
             }
 
+            $key = strtolower( (string) $slug );
+
+            if ( array_key_exists( $key, $this->attribute_taxonomy_cache ) ) {
+                $this->cache_stats['attribute_taxonomy_cache_hits']++;
+
+                return (int) $this->attribute_taxonomy_cache[ $key ];
+            }
+
+            $this->cache_stats['attribute_taxonomy_cache_misses']++;
+
             $attribute_id = wc_attribute_taxonomy_id_by_name( $slug );
 
             if ( $attribute_id ) {
-                return (int) $attribute_id;
+                $attribute_id = (int) $attribute_id;
+                $this->attribute_taxonomy_cache[ $key ] = $attribute_id;
+
+                return $attribute_id;
             }
 
             if ( ! function_exists( 'wc_create_attribute' ) ) {
@@ -714,6 +765,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             $attribute_id = (int) $result;
+            $this->cache_stats['attribute_taxonomy_created']++;
 
             delete_transient( 'wc_attribute_taxonomies' );
 
@@ -740,6 +792,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 );
             }
 
+            $this->attribute_taxonomy_cache[ $key ] = $attribute_id;
+
             return $attribute_id;
         }
 
@@ -758,10 +812,23 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 return 0;
             }
 
+            $key = $this->build_attribute_term_cache_key( $taxonomy, $value );
+
+            if ( array_key_exists( $key, $this->attribute_term_cache ) ) {
+                $this->cache_stats['attribute_term_cache_hits']++;
+
+                return (int) $this->attribute_term_cache[ $key ];
+            }
+
+            $this->cache_stats['attribute_term_cache_misses']++;
+
             $term = get_term_by( 'name', $value, $taxonomy );
 
             if ( $term && ! is_wp_error( $term ) ) {
-                return (int) $term->term_id;
+                $term_id                                    = (int) $term->term_id;
+                $this->attribute_term_cache[ $key ]         = $term_id;
+
+                return $term_id;
             }
 
             $result = wp_insert_term( $value, $taxonomy );
@@ -769,10 +836,16 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             if ( is_wp_error( $result ) ) {
                 $this->log( 'error', $result->get_error_message(), array( 'taxonomy' => $taxonomy ) );
 
+                $this->attribute_term_cache[ $key ] = 0;
+
                 return 0;
             }
 
-            return (int) $result['term_id'];
+            $term_id = (int) $result['term_id'];
+            $this->cache_stats['attribute_term_created']++;
+            $this->attribute_term_cache[ $key ] = $term_id;
+
+            return $term_id;
         }
 
         /**
@@ -791,14 +864,30 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 return 0;
             }
 
+            $key = $this->build_term_cache_key( $tax, $name, $parent );
+
+            if ( array_key_exists( $key, $this->term_cache ) ) {
+                $this->cache_stats['term_cache_hits']++;
+
+                return (int) $this->term_cache[ $key ];
+            }
+
+            $this->cache_stats['term_cache_misses']++;
+
             $term = term_exists( $name, $tax, $parent );
 
             if ( is_array( $term ) && isset( $term['term_id'] ) ) {
-                return (int) $term['term_id'];
+                $term_id                    = (int) $term['term_id'];
+                $this->term_cache[ $key ]   = $term_id;
+
+                return $term_id;
             }
 
             if ( $term ) {
-                return (int) $term;
+                $term_id                  = (int) $term;
+                $this->term_cache[ $key ] = $term_id;
+
+                return $term_id;
             }
 
             $args = array();
@@ -812,10 +901,63 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             if ( is_wp_error( $result ) ) {
                 $this->log( 'error', $result->get_error_message(), array( 'taxonomy' => $tax ) );
 
+                $this->term_cache[ $key ] = 0;
+
                 return 0;
             }
 
-            return (int) $result['term_id'];
+            $term_id = (int) $result['term_id'];
+            $this->cache_stats['term_created']++;
+            $this->term_cache[ $key ] = $term_id;
+
+            return $term_id;
+        }
+
+        /**
+         * Reset all in-memory caches and statistics.
+         *
+         * @return void
+         */
+        protected function reset_caches() {
+            $this->term_cache                = array();
+            $this->attribute_term_cache      = array();
+            $this->attribute_taxonomy_cache  = array();
+            $this->cache_stats               = array(
+                'term_cache_hits'                 => 0,
+                'term_cache_misses'               => 0,
+                'term_created'                    => 0,
+                'attribute_term_cache_hits'       => 0,
+                'attribute_term_cache_misses'     => 0,
+                'attribute_term_created'          => 0,
+                'attribute_taxonomy_cache_hits'   => 0,
+                'attribute_taxonomy_cache_misses' => 0,
+                'attribute_taxonomy_created'      => 0,
+            );
+        }
+
+        /**
+         * Build a cache key for taxonomy terms.
+         *
+         * @param string $taxonomy Taxonomy name.
+         * @param string $term     Term name.
+         * @param int    $parent   Parent term identifier.
+         *
+         * @return string
+         */
+        protected function build_term_cache_key( $taxonomy, $term, $parent ) {
+            return strtolower( (string) $taxonomy ) . '|' . md5( strtolower( (string) $term ) ) . '|' . (int) $parent;
+        }
+
+        /**
+         * Build a cache key for attribute taxonomy terms.
+         *
+         * @param string $taxonomy Taxonomy name.
+         * @param string $term     Term name.
+         *
+         * @return string
+         */
+        protected function build_attribute_term_cache_key( $taxonomy, $term ) {
+            return strtolower( (string) $taxonomy ) . '|' . md5( strtolower( (string) $term ) );
         }
 
         /**
