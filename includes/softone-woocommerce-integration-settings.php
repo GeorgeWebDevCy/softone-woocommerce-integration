@@ -13,9 +13,21 @@ if ( ! function_exists( 'softone_wc_integration_get_settings' ) ) {
     /**
      * Retrieve the plugin settings from the options table.
      *
+     * @param bool $force_refresh Optional. Whether to bypass the cached result.
+     *
      * @return array
      */
-    function softone_wc_integration_get_settings() {
+    function softone_wc_integration_get_settings( $force_refresh = false ) {
+        static $cached_settings = null;
+
+        if ( $force_refresh ) {
+            $cached_settings = null;
+        }
+
+        if ( null !== $cached_settings ) {
+            return $cached_settings;
+        }
+
         $stored = get_option( Softone_API_Client::OPTION_SETTINGS_KEY, array() );
         $stored = is_array( $stored ) ? $stored : array();
 
@@ -51,7 +63,20 @@ if ( ! function_exists( 'softone_wc_integration_get_settings' ) ) {
          *
          * @param array $settings Plugin settings.
          */
-        return apply_filters( 'softone_wc_integration_settings_raw', $settings );
+        $cached_settings = apply_filters( 'softone_wc_integration_settings_raw', $settings );
+
+        return $cached_settings;
+    }
+}
+
+if ( ! function_exists( 'softone_wc_integration_flush_settings_cache' ) ) {
+    /**
+     * Clear the cached plugin settings.
+     *
+     * @return void
+     */
+    function softone_wc_integration_flush_settings_cache() {
+        softone_wc_integration_get_settings( true );
     }
 }
 
@@ -105,13 +130,14 @@ if ( ! function_exists( 'softone_wc_integration_get_setting' ) ) {
     /**
      * Retrieve a specific plugin setting value.
      *
-     * @param string $key     Setting key.
-     * @param mixed  $default Optional default value.
+     * @param string $key           Setting key.
+     * @param mixed  $default       Optional default value.
+     * @param bool   $force_refresh Optional. Whether to bypass the cached result.
      *
      * @return mixed
      */
-    function softone_wc_integration_get_setting( $key, $default = '' ) {
-        $settings = softone_wc_integration_get_settings();
+    function softone_wc_integration_get_setting( $key, $default = '', $force_refresh = false ) {
+        $settings = softone_wc_integration_get_settings( $force_refresh );
 
         if ( isset( $settings[ $key ] ) ) {
             return $settings[ $key ];
@@ -203,10 +229,12 @@ if ( ! function_exists( 'softone_wc_integration_get_country_mappings' ) ) {
     /**
      * Retrieve the configured ISO-to-SoftOne country mapping table.
      *
+     * @param bool $force_refresh Optional. Whether to bypass the cached result.
+     *
      * @return array<string,string>
      */
-    function softone_wc_integration_get_country_mappings() {
-        $mappings = softone_wc_integration_get_setting( 'country_mappings', array() );
+    function softone_wc_integration_get_country_mappings( $force_refresh = false ) {
+        $mappings = softone_wc_integration_get_setting( 'country_mappings', array(), $force_refresh );
 
         if ( ! is_array( $mappings ) ) {
             return array();
@@ -215,3 +243,7 @@ if ( ! function_exists( 'softone_wc_integration_get_country_mappings' ) ) {
         return $mappings;
     }
 }
+
+add_action( 'add_option_' . Softone_API_Client::OPTION_SETTINGS_KEY, 'softone_wc_integration_flush_settings_cache', 10, 0 );
+add_action( 'update_option_' . Softone_API_Client::OPTION_SETTINGS_KEY, 'softone_wc_integration_flush_settings_cache', 10, 0 );
+add_action( 'delete_option_' . Softone_API_Client::OPTION_SETTINGS_KEY, 'softone_wc_integration_flush_settings_cache', 10, 0 );
