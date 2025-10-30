@@ -630,14 +630,14 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
             $category_parent = 0;
 
-            if ( '' !== $category_name ) {
+            if ( '' !== $category_name && ! $this->is_numeric_term_name( $category_name ) ) {
                 $category_parent = $this->ensure_term( $category_name, 'product_cat' );
                 if ( $category_parent ) {
                     $categories[] = $category_parent;
                 }
             }
 
-            if ( '' !== $subcategory_name ) {
+            if ( '' !== $subcategory_name && ! $this->is_numeric_term_name( $subcategory_name ) ) {
                 $subcategory_id = $this->ensure_term( $subcategory_name, 'product_cat', $category_parent );
                 if ( $subcategory_id ) {
                     $categories[] = $subcategory_id;
@@ -867,6 +867,23 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $this->attribute_term_cache[ $key ] = $term_id;
 
             return $term_id;
+        }
+
+        /**
+         * Determine whether a term name is numeric-only and should be skipped.
+         *
+         * @param string $name Term name.
+         *
+         * @return bool
+         */
+        protected function is_numeric_term_name( $name ) {
+            $name = trim( (string) $name );
+
+            if ( '' === $name ) {
+                return false;
+            }
+
+            return (bool) preg_match( '/^\d+$/', $name );
         }
 
         /**
