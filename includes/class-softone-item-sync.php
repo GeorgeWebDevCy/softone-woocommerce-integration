@@ -18,6 +18,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         const CRON_HOOK          = 'softone_wc_integration_sync_items';
         const ADMIN_ACTION       = 'softone_wc_integration_run_item_import';
         const META_MTRL          = '_softone_mtrl_id';
+        const META_LAST_SYNC     = '_softone_last_synced';
         const META_PAYLOAD_HASH  = '_softone_payload_hash';
         const OPTION_LAST_RUN    = 'softone_wc_integration_last_item_sync';
         const LOGGER_SOURCE      = 'softone-item-sync';
@@ -131,7 +132,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
          *     created:int,
          *     updated:int,
          *     skipped:int,
-         *     started_at:int
+         *     started_at:int,
+         *     stale_processed?:int
          * }
          */
         public function sync( $force_full_import = null ) {
@@ -141,6 +143,15 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
             $started_at = time();
             $last_run   = (int) get_option( self::OPTION_LAST_RUN );
+
+            $this->log(
+                'info',
+                'Starting Softone item sync run.',
+                array(
+                    'started_at' => $started_at,
+                    'last_run'   => $last_run,
+                )
+            );
 
             if ( null === $force_full_import ) {
                 $force_full_import = false;
@@ -192,7 +203,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
                 try {
                     $normalized = $this->normalize_row( $row );
-                    $result     = $this->import_row( $normalized );
+                    $result     = $this->import_row( $normalized, $started_at );
 
                     if ( 'created' === $result ) {
                         $stats['created']++;
@@ -205,6 +216,12 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     $stats['skipped']++;
                     $this->log( 'error', $exception->getMessage(), array( 'row' => $row ) );
                 }
+            }
+
+            $stale_processed = $this->handle_stale_products( $started_at );
+
+            if ( $stale_processed > 0 ) {
+                $stats['stale_processed'] = $stale_processed;
             }
 
             return $stats;
@@ -237,13 +254,14 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         /**
          * Import a single row into WooCommerce.
          *
-         * @param array $data Normalised row data.
+         * @param array $data         Normalised row data.
+         * @param int   $run_timestamp Current sync run timestamp.
          *
          * @throws Exception When the row cannot be imported.
          *
          * @return string One of created, updated or skipped.
          */
-        protected function import_row( array $data ) {
+        protected function import_row( array $data, $run_timestamp ) {
             $mtrl = isset( $data['mtrl'] ) ? (string) $data['mtrl'] : '';
             $sku  = $this->determine_sku( $data );
 
@@ -339,6 +357,10 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
             update_post_meta( $product_id, self::META_PAYLOAD_HASH, $payload_hash );
 
+            if ( is_numeric( $run_timestamp ) ) {
+                update_post_meta( $product_id, self::META_LAST_SYNC, (int) $run_timestamp );
+            }
+
             foreach ( $attribute_assignments['terms'] as $taxonomy => $term_ids ) {
                 wp_set_object_terms( $product_id, $term_ids, $taxonomy );
             }
@@ -347,7 +369,138 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 wp_set_object_terms( $product_id, array(), $taxonomy );
             }
 
-            return $is_new ? 'created' : 'updated';
+            $action = $is_new ? 'created' : 'updated';
+
+            $this->log(
+                'info',
+                sprintf( 'Product %s via Softone sync.', $action ),
+                array(
+                    'product_id' => $product_id,
+                    'sku'        => $sku,
+                    'mtrl'       => $mtrl,
+                    'timestamp'  => $run_timestamp,
+                )
+            );
+
+            return $action;
+        }
+
+        /**
+         * Identify and handle products that were not updated in the current run.
+         *
+         * @param int $run_timestamp Timestamp representing the current sync run.
+         *
+         * @return int Number of products that were marked as stale.
+         */
+        protected function handle_stale_products( $run_timestamp ) {
+            if ( ! is_numeric( $run_timestamp ) || $run_timestamp <= 0 ) {
+                return 0;
+            }
+
+            $action = apply_filters( 'softone_wc_integration_stale_item_action', 'draft' );
+            if ( ! in_array( $action, array( 'draft', 'stock_out' ), true ) ) {
+                $action = 'draft';
+            }
+
+            $batch_size = (int) apply_filters( 'softone_wc_integration_stale_item_batch_size', 50 );
+            if ( $batch_size <= 0 ) {
+                $batch_size = 50;
+            }
+
+            $processed = 0;
+
+            do {
+                $query = new WP_Query(
+                    array(
+                        'post_type'      => 'product',
+                        'post_status'    => 'any',
+                        'fields'         => 'ids',
+                        'posts_per_page' => $batch_size,
+                        'orderby'        => 'ID',
+                        'order'          => 'ASC',
+                        'meta_query'     => array(
+                            'relation' => 'AND',
+                            array(
+                                'key'     => self::META_MTRL,
+                                'compare' => 'EXISTS',
+                            ),
+                            array(
+                                'relation' => 'OR',
+                                array(
+                                    'key'     => self::META_LAST_SYNC,
+                                    'compare' => 'NOT EXISTS',
+                                ),
+                                array(
+                                    'key'     => self::META_LAST_SYNC,
+                                    'value'   => (int) $run_timestamp,
+                                    'type'    => 'NUMERIC',
+                                    'compare' => '<',
+                                ),
+                            ),
+                        ),
+                    )
+                );
+
+                if ( ! $query->have_posts() ) {
+                    wp_reset_postdata();
+                    break;
+                }
+
+                foreach ( $query->posts as $product_id ) {
+                    $processed++;
+
+                    $product = wc_get_product( $product_id );
+
+                    if ( ! $product ) {
+                        $this->log(
+                            'warning',
+                            'Unable to load product while marking as stale.',
+                            array(
+                                'product_id' => $product_id,
+                            )
+                        );
+                        update_post_meta( $product_id, self::META_LAST_SYNC, (int) $run_timestamp );
+                        continue;
+                    }
+
+                    if ( 'draft' === $action ) {
+                        if ( 'draft' !== $product->get_status() ) {
+                            $product->set_status( 'draft' );
+                        }
+                    } else {
+                        $product->set_stock_status( 'outofstock' );
+                    }
+
+                    $product->save();
+
+                    update_post_meta( $product_id, self::META_LAST_SYNC, (int) $run_timestamp );
+
+                    $this->log(
+                        'info',
+                        'Marked product as stale following Softone sync run.',
+                        array(
+                            'product_id' => $product_id,
+                            'action'     => $action,
+                        )
+                    );
+                }
+
+                wp_reset_postdata();
+            } while ( true );
+
+            if ( $processed > 0 ) {
+                $this->log(
+                    'notice',
+                    sprintf( 'Handled %d stale Softone products.', $processed ),
+                    array(
+                        'action'     => $action,
+                        'timestamp'  => $run_timestamp,
+                        'batch_size' => $batch_size,
+                    )
+                );
+            }
+
+            return $processed;
         }
 
         /**
