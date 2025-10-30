@@ -180,6 +180,23 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $last_run   = (int) get_option( self::OPTION_LAST_RUN );
 
             $this->reset_caches();
+            $this->maybe_adjust_memory_limits();
+
+            $cache_addition_previous_state = null;
+            $term_counting_previous_state  = null;
+            $comment_count_previous_state  = null;
+
+            if ( function_exists( 'wp_suspend_cache_addition' ) ) {
+                $cache_addition_previous_state = wp_suspend_cache_addition( true );
+            }
+
+            if ( function_exists( 'wp_defer_term_counting' ) ) {
+                $term_counting_previous_state = wp_defer_term_counting( true );
+            }
+
+            if ( function_exists( 'wp_defer_comment_counting' ) ) {
+                $comment_count_previous_state = wp_defer_comment_counting( true );
+            }
 
             $this->log(
                 'info',
@@ -220,13 +237,6 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 );
             }
 
-            if ( empty( $extra ) ) {
-                $response = $this->api_client->sql_data( 'getItems' );
-            } else {
-                $response = $this->api_client->sql_data( 'getItems', array(), $extra );
-            }
-            $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
-
             $stats = array(
                 'processed'  => 0,
                 'created'    => 0,
@@ -235,39 +245,224 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 'started_at' => $started_at,
             );
 
-            foreach ( $rows as $row ) {
-                $stats['processed']++;
+            try {
+                foreach ( $this->yield_item_rows( $extra ) as $row ) {
+                    $stats['processed']++;
 
-                try {
-                    $normalized = $this->normalize_row( $row );
-                    $result     = $this->import_row( $normalized, $started_at );
+                    try {
+                        $normalized = $this->normalize_row( $row );
+                        $result     = $this->import_row( $normalized, $started_at );
 
-                    if ( 'created' === $result ) {
-                        $stats['created']++;
-                    } elseif ( 'updated' === $result ) {
-                        $stats['updated']++;
-                    } else {
+                        if ( 'created' === $result ) {
+                            $stats['created']++;
+                        } elseif ( 'updated' === $result ) {
+                            $stats['updated']++;
+                        } else {
+                            $stats['skipped']++;
+                        }
+                    } catch ( Exception $exception ) {
                         $stats['skipped']++;
+                        $this->log( 'error', $exception->getMessage(), array( 'row' => $row ) );
                     }
-                } catch ( Exception $exception ) {
-                    $stats['skipped']++;
-                    $this->log( 'error', $exception->getMessage(), array( 'row' => $row ) );
+                }
+
+                $stale_processed = $this->handle_stale_products( $started_at );
+
+                if ( $stale_processed > 0 ) {
+                    $stats['stale_processed'] = $stale_processed;
+                }
+
+                $this->log(
+                    'debug',
+                    'Softone item sync cache usage summary.',
+                    array( 'cache_stats' => $this->cache_stats )
+                );
+
+                return $stats;
+            } finally {
+                if ( function_exists( 'wp_suspend_cache_addition' ) && null !== $cache_addition_previous_state ) {
+                    wp_suspend_cache_addition( $cache_addition_previous_state );
+                }
+
+                if ( function_exists( 'wp_defer_term_counting' ) && null !== $term_counting_previous_state ) {
+                    wp_defer_term_counting( $term_counting_previous_state );
+                }
+
+                if ( function_exists( 'wp_defer_comment_counting' ) && null !== $comment_count_previous_state ) {
+                    wp_defer_comment_counting( $comment_count_previous_state );
                 }
             }
+        }
 
-            $stale_processed = $this->handle_stale_products( $started_at );
-
-            if ( $stale_processed > 0 ) {
-                $stats['stale_processed'] = $stale_processed;
+        /**
+         * Adjust memory limits to reduce the chance of fatal errors during large imports.
+         *
+         * @return void
+         */
+        protected function maybe_adjust_memory_limits() {
+            if ( function_exists( 'wp_raise_memory_limit' ) ) {
+                wp_raise_memory_limit( 'admin' );
             }
 
-            $this->log(
-                'debug',
-                'Softone item sync cache usage summary.',
-                array( 'cache_stats' => $this->cache_stats )
-            );
+            $target_limit = apply_filters( 'softone_wc_integration_item_sync_memory_limit', '1024M' );
 
-            return $stats;
+            if ( ! is_string( $target_limit ) || '' === trim( $target_limit ) ) {
+                return;
+            }
+
+            $target_bytes  = $this->normalize_memory_limit( $target_limit );
+            $current_limit = function_exists( 'ini_get' ) ? ini_get( 'memory_limit' ) : false;
+
+            if ( $target_bytes <= 0 && -1 !== $target_bytes ) {
+                return;
+            }
+
+            if ( false === $current_limit || '' === $current_limit ) {
+                if ( function_exists( 'ini_set' ) ) {
+                    @ini_set( 'memory_limit', $target_limit );
+                }
+                return;
+            }
+
+            $current_bytes = $this->normalize_memory_limit( $current_limit );
+
+            if ( -1 === $current_bytes || ( $current_bytes >= $target_bytes && $target_bytes > 0 ) ) {
+                return;
+            }
+
+            if ( function_exists( 'ini_set' ) ) {
+                @ini_set( 'memory_limit', $target_limit );
+            }
+        }
+
+        /**
+         * Normalise a human readable memory limit value into bytes.
+         *
+         * @param string|int|float $value Memory limit value.
+         *
+         * @return int
+         */
+        protected function normalize_memory_limit( $value ) {
+            if ( function_exists( 'wp_convert_hr_to_bytes' ) ) {
+                return (int) wp_convert_hr_to_bytes( $value );
+            }
+
+            if ( ! is_string( $value ) && ! is_numeric( $value ) ) {
+                return 0;
+            }
+
+            $value = trim( (string) $value );
+
+            if ( '' === $value ) {
+                return 0;
+            }
+
+            if ( '-1' === $value ) {
+                return -1;
+            }
+
+            $unit   = strtolower( substr( $value, -1 ) );
+            $number = (float) $value;
+
+            if ( in_array( $unit, array( 'g', 'm', 'k' ), true ) ) {
+                $number = (float) substr( $value, 0, -1 );
+            }
+
+            switch ( $unit ) {
+                case 'g':
+                    $number *= 1024;
+                    // no break.
+                case 'm':
+                    $number *= 1024;
+                    // no break.
+                case 'k':
+                    $number *= 1024;
+                    break;
+            }
+
+            return (int) round( $number );
+        }
+
+        /**
+         * Retrieve SoftOne item rows using memory friendly pagination.
+         *
+         * @param array $extra Additional payload values for the SqlData request.
+         *
+         * @return Generator<int, array<string, mixed>>
+         */
+        protected function yield_item_rows( array $extra ) {
+            $page_size = (int) apply_filters( 'softone_wc_integration_item_sync_page_size', 250 );
+
+            if ( $page_size <= 0 ) {
+                $response = empty( $extra ) ? $this->api_client->sql_data( 'getItems' ) : $this->api_client->sql_data( 'getItems', array(), $extra );
+                $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
+
+                foreach ( $rows as $row ) {
+                    yield $row;
+                }
+
+                return;
+            }
+
+            $max_pages     = (int) apply_filters( 'softone_wc_integration_item_sync_max_pages', 0 );
+            $page          = 1;
+            $previous_hash = array();
+
+            while ( true ) {
+                $page_extra = $extra;
+                $page_extra['pPage'] = $page;
+                $page_extra['pSize'] = $page_size;
+
+                $response = $this->api_client->sql_data( 'getItems', array(), $page_extra );
+                $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
+
+                if ( empty( $rows ) ) {
+                    break;
+                }
+
+                $hash_payload = wp_json_encode( $rows );
+
+                if ( false === $hash_payload ) {
+                    $hash_payload = json_encode( $rows );
+                }
+
+                $hash = md5( (string) $hash_payload );
+
+                if ( isset( $previous_hash[ $hash ] ) ) {
+                    $this->log(
+                        'warning',
+                        'Detected repeated page payload when fetching Softone item rows. Aborting further pagination to prevent an infinite loop.',
+                        array(
+                            'page'      => $page,
+                            'page_size' => $page_size,
+                        )
+                    );
+                    break;
+                }
+
+                $previous_hash[ $hash ] = true;
+
+                foreach ( $rows as $row ) {
+                    yield $row;
+                }
+
+                $row_count = count( $rows );
+                unset( $rows );
+
+                if ( function_exists( 'gc_collect_cycles' ) ) {
+                    gc_collect_cycles();
+                }
+
+                if ( $row_count < $page_size ) {
+                    break;
+                }
+
+                $page++;
+
+                if ( $max_pages > 0 && $page > $max_pages ) {
+                    break;
+                }
+            }
         }
 
         /**
