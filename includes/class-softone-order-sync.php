@@ -139,7 +139,7 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
             $document_id = (string) $response['id'];
 
             $order->update_meta_data( self::ORDER_META_DOCUMENT_ID, $document_id );
-            $order->save();
+            $this->persist_order_meta( $order );
 
             $this->add_order_note( $order, sprintf( /* translators: %s: document identifier */ __( 'SoftOne document #%s created.', 'softone-woocommerce-integration' ), $document_id ) );
             $this->log( 'info', __( 'SoftOne document created successfully.', 'softone-woocommerce-integration' ), array(
@@ -184,7 +184,7 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
 
                 if ( '' !== $trdr ) {
                     $order->update_meta_data( self::ORDER_META_TRDR, $trdr );
-                    $order->save();
+                    $this->persist_order_meta( $order );
 
                     return $trdr;
                 }
@@ -197,7 +197,7 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
 
                 if ( '' !== $trdr ) {
                     $order->update_meta_data( self::ORDER_META_TRDR, $trdr );
-                    $order->save();
+                    $this->persist_order_meta( $order );
 
                     return $trdr;
                 }
@@ -208,7 +208,7 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
 
                 if ( '' !== $trdr ) {
                     $order->update_meta_data( self::ORDER_META_TRDR, $trdr );
-                    $order->save();
+                    $this->persist_order_meta( $order );
                 }
             }
 
@@ -641,6 +641,22 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
             }
 
             $order->add_order_note( $note );
+        }
+
+        /**
+         * Persist order meta changes using the most efficient method available.
+         *
+         * @param WC_Order $order WooCommerce order instance.
+         *
+         * @return void
+         */
+        protected function persist_order_meta( WC_Order $order ) {
+            if ( method_exists( $order, 'save_meta_data' ) ) {
+                $order->save_meta_data();
+                return;
+            }
+
+            $order->save();
         }
 
         /**

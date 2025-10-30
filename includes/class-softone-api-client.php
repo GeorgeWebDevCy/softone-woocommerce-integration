@@ -559,11 +559,12 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
 
             set_transient( self::TRANSIENT_CLIENT_ID_KEY, $client_id, $ttl );
 
+            $cached_at = time();
             $meta = array(
                 'client_id' => $client_id,
-                'cached_at' => time(),
+                'cached_at' => $cached_at,
                 'ttl'       => $ttl,
-                'expires_at' => time() + $ttl,
+                'expires_at' => $cached_at + $ttl,
             );
 
             update_option( self::OPTION_CLIENT_ID_META_KEY, $meta, false );

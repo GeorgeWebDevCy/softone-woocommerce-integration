@@ -124,6 +124,11 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
          * @return void
          */
         public static function clear_scheduled_event() {
+            if ( function_exists( 'wp_clear_scheduled_hook' ) ) {
+                wp_clear_scheduled_hook( self::CRON_HOOK );
+                return;
+            }
+
             $timestamp = wp_next_scheduled( self::CRON_HOOK );
 
             while ( false !== $timestamp ) {
