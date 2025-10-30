@@ -948,7 +948,25 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
 
             if ( ! empty( $this->login_handshake ) ) {
                 foreach ( $this->login_handshake as $key => $value ) {
-                    if ( array_key_exists( $key, $fields ) && '' === $fields[ $key ] && '' !== $value ) {
+                    if ( ! array_key_exists( $key, $fields ) ) {
+                        continue;
+                    }
+
+                    if ( '' === $value ) {
+                        continue;
+                    }
+
+                    $current = $fields[ $key ];
+
+                    if ( is_string( $current ) ) {
+                        $current = trim( $current );
+                    } elseif ( null === $current ) {
+                        $current = '';
+                    } else {
+                        $current = trim( (string) $current );
+                    }
+
+                    if ( '' === $current || (string) $current !== (string) $value ) {
                         $fields[ $key ] = $value;
                     }
                 }
