@@ -365,6 +365,17 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 $product->set_description( $description );
             }
 
+            $short_description = $this->get_value(
+                $data,
+                array(
+                    'short_description',
+                    'cccsocyshdes',
+                )
+            );
+            if ( '' !== $short_description ) {
+                $product->set_short_description( $short_description );
+            }
+
             $price = $this->get_value( $data, array( 'retailprice' ) );
             if ( '' !== $price ) {
                 $product->set_regular_price( wc_format_decimal( $price ) );
