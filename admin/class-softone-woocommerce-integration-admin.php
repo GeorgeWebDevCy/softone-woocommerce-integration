@@ -938,6 +938,78 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
 
        }
 
+    /**
+     * Handle manual item import requests.
+     */
+    public function handle_item_import() {
+
+        if ( ! current_user_can( $this->capability ) ) {
+                wp_die( esc_html__( 'You do not have permission to perform this action.', 'softone-woocommerce-integration' ) );
+        }
+
+        check_admin_referer( Softone_Item_Sync::ADMIN_ACTION );
+
+        $force_full_import = null;
+
+        if ( isset( $_POST['softone_wc_integration_force_full'] ) ) {
+                $force_full_import = (bool) absint( wp_unslash( $_POST['softone_wc_integration_force_full'] ) );
+        }
+
+        try {
+                $result = $this->item_sync->sync( $force_full_import );
+
+                if ( isset( $result['started_at'] ) ) {
+                        update_option( Softone_Item_Sync::OPTION_LAST_RUN, (int) $result['started_at'] );
+                }
+
+                $processed = isset( $result['processed'] ) ? (int) $result['processed'] : 0;
+                $created   = isset( $result['created'] ) ? (int) $result['created'] : 0;
+                $updated   = isset( $result['updated'] ) ? (int) $result['updated'] : 0;
+                $skipped   = isset( $result['skipped'] ) ? (int) $result['skipped'] : 0;
+
+                $message = sprintf(
+                        /* translators: 1: total processed, 2: created count, 3: updated count, 4: skipped count */
+                        __( 'Item import completed successfully. Processed %1$d items (%2$d created, %3$d updated, %4$d skipped).', 'softone-woocommerce-integration' ),
+                        $processed,
+                        $created,
+                        $updated,
+                        $skipped
+                );
+
+                if ( isset( $result['stale_processed'] ) && $result['stale_processed'] > 0 ) {
+                        $message .= ' ' . sprintf(
+                                /* translators: %d: number of stale products handled */
+                                __( 'Marked %d stale products.', 'softone-woocommerce-integration' ),
+                                (int) $result['stale_processed']
+                        );
+                }
+
+                $this->store_import_notice( 'success', $message );
+        } catch ( Softone_API_Client_Exception $exception ) {
+                $this->store_import_notice(
+                        'error',
+                        sprintf(
+                                /* translators: %s: error message */
+                                __( 'Item import failed: %s', 'softone-woocommerce-integration' ),
+                                $exception->getMessage()
+                        )
+                );
+        } catch ( Exception $exception ) {
+                $this->store_import_notice(
+                        'error',
+                        sprintf(
+                                /* translators: %s: error message */
+                                __( 'Item import failed: %s', 'softone-woocommerce-integration' ),
+                                $exception->getMessage()
+                        )
+                );
+        }
+
+        wp_safe_redirect( $this->get_settings_page_url() );
+        exit;
+
+    }
+
 /**
  * Handle connection test requests.
  */
