@@ -391,17 +391,21 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
          * @return Generator<int, array<string, mixed>>
          */
         protected function yield_item_rows( array $extra ) {
-            $page_size = (int) apply_filters( 'softone_wc_integration_item_sync_page_size', 250 );
+            $default_page_size = 250;
+            $filtered_page_size = (int) apply_filters( 'softone_wc_integration_item_sync_page_size', $default_page_size );
 
-            if ( $page_size <= 0 ) {
-                $response = empty( $extra ) ? $this->api_client->sql_data( 'getItems' ) : $this->api_client->sql_data( 'getItems', array(), $extra );
-                $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
-
-                foreach ( $rows as $row ) {
-                    yield $row;
-                }
-
-                return;
+            if ( $filtered_page_size <= 0 ) {
+                $this->log(
+                    'warning',
+                    'Received non-positive item sync page size from filter. Falling back to default.',
+                    array(
+                        'filtered_page_size' => $filtered_page_size,
+                        'default_page_size'  => $default_page_size,
+                    )
+                );
+                $page_size = $default_page_size;
+            } else {
+                $page_size = $filtered_page_size;
             }
 
             $max_pages     = (int) apply_filters( 'softone_wc_integration_item_sync_max_pages', 0 );
