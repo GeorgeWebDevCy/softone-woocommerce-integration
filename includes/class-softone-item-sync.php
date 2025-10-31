@@ -923,14 +923,22 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
             $category_parent = 0;
 
-            if ( '' !== $category_name && ! $this->is_numeric_term_name( $category_name ) ) {
+            if (
+                '' !== $category_name
+                && ! $this->is_numeric_term_name( $category_name )
+                && ! $this->is_uncategorized_term( $category_name )
+            ) {
                 $category_parent = $this->ensure_term( $category_name, 'product_cat' );
                 if ( $category_parent ) {
                     $categories[] = $category_parent;
                 }
             }
 
-            if ( '' !== $subcategory_name && ! $this->is_numeric_term_name( $subcategory_name ) ) {
+            if (
+                '' !== $subcategory_name
+                && ! $this->is_numeric_term_name( $subcategory_name )
+                && ! $this->is_uncategorized_term( $subcategory_name )
+            ) {
                 $subcategory_id = $this->ensure_term( $subcategory_name, 'product_cat', $category_parent );
                 if ( $subcategory_id ) {
                     $categories[] = $subcategory_id;
@@ -1222,6 +1230,51 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             return (bool) preg_match( '/^\d+$/', $name );
+        }
+
+        /**
+         * Determine whether a term name refers to the default uncategorised product category.
+         *
+         * @param string $name Term name.
+         *
+         * @return bool
+         */
+        protected function is_uncategorized_term( $name ) {
+            $name = trim( (string) $name );
+
+            if ( '' === $name ) {
+                return false;
+            }
+
+            $sanitized_name = function_exists( 'sanitize_title' ) ? sanitize_title( $name ) : '';
+
+            if ( 'uncategorized' === $sanitized_name ) {
+                return true;
+            }
+
+            $default_category_id = (int) get_option( 'default_product_cat', 0 );
+            if ( $default_category_id <= 0 ) {
+                return false;
+            }
+
+            $default_category = get_term( $default_category_id, 'product_cat' );
+            if ( $default_category instanceof WP_Term ) {
+                if ( 'uncategorized' === $default_category->slug ) {
+                    return true;
+                }
+
+                if ( '' !== $sanitized_name && $sanitized_name === $default_category->slug ) {
+                    return true;
+                }
+
+                return 0 === strcasecmp( $name, $default_category->name );
+            }
+
+            if ( is_wp_error( $default_category ) ) {
+                $this->log( 'debug', 'Failed to fetch default product category.', array( 'error' => $default_category ) );
+            }
+
+            return false;
         }
 
         /**
