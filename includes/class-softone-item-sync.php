@@ -424,13 +424,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     break;
                 }
 
-                $hash_payload = wp_json_encode( $rows );
-
-                if ( false === $hash_payload ) {
-                    $hash_payload = json_encode( $rows );
-                }
-
-                $hash = md5( (string) $hash_payload );
+                $hash = $this->hash_item_rows( $rows );
 
                 if ( isset( $previous_hash[ $hash ] ) ) {
                     $this->log(
@@ -467,6 +461,98 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     break;
                 }
             }
+        }
+
+        /**
+         * Generate a deterministic hash for SoftOne item rows.
+         *
+         * @param array<int|string, mixed> $rows Rows returned from the API.
+         *
+         * @return string
+         */
+        protected function hash_item_rows( array $rows ) {
+            $context = hash_init( 'md5' );
+
+            $this->hash_append_value( $context, $rows );
+
+            return hash_final( $context );
+        }
+
+        /**
+         * Append a PHP value to the hash context using JSON encoding semantics.
+         *
+         * @param resource|\HashContext $context Hash context from hash_init().
+         * @param mixed                $value   Value to append to the hash.
+         *
+         * @return void
+         */
+        protected function hash_append_value( $context, $value ) {
+            if ( is_array( $value ) ) {
+                $keys       = array_keys( $value );
+                $item_count = count( $value );
+                $is_list    = 0 === $item_count || $keys === range( 0, $item_count - 1 );
+
+                if ( $is_list ) {
+                    hash_update( $context, '[' );
+
+                    $is_first = true;
+                    foreach ( $value as $item ) {
+                        if ( $is_first ) {
+                            $is_first = false;
+                        } else {
+                            hash_update( $context, ',' );
+                        }
+
+                        $this->hash_append_value( $context, $item );
+                    }
+
+                    hash_update( $context, ']' );
+                    return;
+                }
+
+                hash_update( $context, '{' );
+
+                $is_first = true;
+                foreach ( $value as $key => $item ) {
+                    if ( $is_first ) {
+                        $is_first = false;
+                    } else {
+                        hash_update( $context, ',' );
+                    }
+
+                    $encoded_key = $this->encode_json_fragment( (string) $key );
+                    hash_update( $context, $encoded_key );
+                    hash_update( $context, ':' );
+                    $this->hash_append_value( $context, $item );
+                }
+
+                hash_update( $context, '}' );
+                return;
+            }
+
+            $encoded = $this->encode_json_fragment( $value );
+            hash_update( $context, $encoded );
+        }
+
+        /**
+         * Encode a PHP value into a JSON fragment string.
+         *
+         * @param mixed $value Value to encode.
+         *
+         * @return string
+         */
+        protected function encode_json_fragment( $value ) {
+            $encoded = wp_json_encode( $value );
+
+            if ( false === $encoded ) {
+                $encoded = json_encode( $value );
+            }
+
+            if ( false === $encoded ) {
+                $encoded = '';
+            }
+
+            return (string) $encoded;
         }
 
         /**
