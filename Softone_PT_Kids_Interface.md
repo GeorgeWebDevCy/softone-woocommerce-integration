@@ -29,7 +29,7 @@ The data download from Softone is done via API calls through Web Services.
 
 **Base Endpoint (from PDF):**
 ```
-http://ptkids.oncloud.gr/s1services
+https://ptkids.oncloud.gr/s1services
 ```
 
 > **Security Note:** Credentials, client IDs, and serial numbers remain redacted in this document.
@@ -425,7 +425,7 @@ Use `setData` to insert/modify records for native or custom objects. Only includ
 ## Security & Sharing
 - **Do not** embed real credentials, serials, or `clientID` values in code or docs. Use a secrets vault and environment variables.  
 - Rotate credentials if this document ever leaves your trusted environment.  
-- Restrict network access to `http://ptkids.oncloud.gr/s1services` to known IPs where possible.
+- Restrict network access to `https://ptkids.oncloud.gr/s1services` to known IPs where possible.
 
 ---
 

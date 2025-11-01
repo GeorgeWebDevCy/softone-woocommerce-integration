@@ -67,7 +67,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
         /**
          * Legacy SoftOne connection defaults used by the PT Kids environment.
          */
-        const LEGACY_DEFAULT_ENDPOINT = 'http://ptkids.oncloud.gr/s1services';
+        const LEGACY_DEFAULT_ENDPOINT = 'https://ptkids.oncloud.gr/s1services';
         const LEGACY_DEFAULT_APP_ID   = '1000';
         const LEGACY_DEFAULT_COMPANY  = '10';
         const LEGACY_DEFAULT_BRANCH   = '101';
