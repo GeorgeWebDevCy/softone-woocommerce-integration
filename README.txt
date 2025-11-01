@@ -4,7 +4,7 @@ Donate link: https://www.georgenicolaou.me//
 Tags: comments, spam
 Requires at least: 3.0.1
 Tested up to: 3.4
-Stable tag: 1.8.21
+Stable tag: 1.8.22
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,9 @@ directory take precedence. For example, `/assets/screenshot-1.png` would win ove
 2. This is the second screen shot
 
 == Changelog ==
+
+= 1.8.22 =
+* Continue populating category menu items even when the product brand taxonomy is unavailable.
 
 = 1.8.21 =
 * Ensure product category assignments persist after saving WooCommerce products so synced items inherit the expected hierarchy.

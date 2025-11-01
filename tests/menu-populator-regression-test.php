@@ -321,8 +321,62 @@ $GLOBALS['softone_taxonomy_exists']['product_cat']   = true;
 $missing_taxonomy_populator = new Softone_Menu_Populator();
 $missing_result             = $missing_taxonomy_populator->filter_menu_items( $main_menu_items, $main_args );
 
-if ( count( $missing_result ) !== count( $main_menu_items ) ) {
-    fwrite( STDERR, 'Missing taxonomies did not trigger an early exit.' . PHP_EOL );
+$missing_top_categories      = array();
+$missing_category_tree       = array();
+$missing_category_id_to_title = array();
+
+foreach ( $missing_result as $item ) {
+    $classes = array();
+
+    if ( isset( $item->classes ) ) {
+        if ( is_array( $item->classes ) ) {
+            $classes = $item->classes;
+        } elseif ( is_string( $item->classes ) ) {
+            $classes = array( $item->classes );
+        }
+    }
+
+    if ( isset( $item->object ) && 'product_brand' === $item->object && in_array( 'softone-dynamic-menu-item', $classes, true ) ) {
+        fwrite( STDERR, 'Brand menu items were appended despite the taxonomy being unavailable.' . PHP_EOL );
+        exit( 1 );
+    }
+
+    if ( isset( $item->object ) && 'product_cat' === $item->object && in_array( 'softone-dynamic-menu-item', $classes, true ) ) {
+        $missing_category_id_to_title[ (int) $item->db_id ] = $item->title;
+
+        if ( 3 === (int) $item->menu_item_parent ) {
+            $missing_top_categories[]      = $item->title;
+            $missing_category_tree[ $item->title ] = array();
+        } else {
+            $parent_id = (int) $item->menu_item_parent;
+
+            if ( isset( $missing_category_id_to_title[ $parent_id ] ) ) {
+                $parent_title = $missing_category_id_to_title[ $parent_id ];
+
+                if ( ! isset( $missing_category_tree[ $parent_title ] ) ) {
+                    $missing_category_tree[ $parent_title ] = array();
+                }
+
+                $missing_category_tree[ $parent_title ][] = $item->title;
+            }
+        }
+    }
+}
+
+$expected_category_count = count( $expected_top_categories ) + array_sum( array_map( 'count', $expected_category_tree ) );
+
+if ( count( $missing_result ) !== count( $main_menu_items ) + $expected_category_count ) {
+    fwrite( STDERR, 'Category menu items were not appended when the brand taxonomy was unavailable.' . PHP_EOL );
+    exit( 1 );
+}
+
+if ( $expected_top_categories !== $missing_top_categories ) {
+    fwrite( STDERR, 'Top-level categories were not appended when the brand taxonomy was unavailable.' . PHP_EOL );
+    exit( 1 );
+}
+
+if ( $expected_category_tree !== $missing_category_tree ) {
+    fwrite( STDERR, 'Category hierarchy changed when the brand taxonomy was unavailable.' . PHP_EOL );
     exit( 1 );
 }
 

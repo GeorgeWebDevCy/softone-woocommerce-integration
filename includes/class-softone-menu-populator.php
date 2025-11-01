@@ -60,7 +60,19 @@ class Softone_Menu_Populator {
                 $brand_terms     = $this->get_brand_terms();
                 $category_groups = $this->get_category_terms();
 
-                if ( false === $brand_terms || false === $category_groups ) {
+                if ( false === $brand_terms && false === $category_groups ) {
+                        return $menu_items;
+                }
+
+                if ( false === $brand_terms ) {
+                        $brand_terms = array();
+                }
+
+                if ( false === $category_groups ) {
+                        $category_groups = array();
+                }
+
+                if ( empty( $brand_terms ) && empty( $category_groups ) ) {
                         return $menu_items;
                 }
 
