@@ -765,9 +765,9 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 return 0;
             }
 
-            $action = apply_filters( 'softone_wc_integration_stale_item_action', 'draft' );
+            $action = apply_filters( 'softone_wc_integration_stale_item_action', 'stock_out' );
             if ( ! in_array( $action, array( 'draft', 'stock_out' ), true ) ) {
-                $action = 'draft';
+                $action = 'stock_out';
             }
 
             $batch_size = (int) apply_filters( 'softone_wc_integration_stale_item_batch_size', 50 );
@@ -836,6 +836,10 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                             $product->set_status( 'draft' );
                         }
                     } else {
+                        if ( 'publish' !== $product->get_status() ) {
+                            $product->set_status( 'publish' );
+                        }
+
                         $product->set_stock_status( 'outofstock' );
                     }
 
