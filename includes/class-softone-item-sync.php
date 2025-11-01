@@ -934,8 +934,26 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         protected function prepare_category_ids( array $data ) {
             $categories = array();
 
-            $category_name    = $this->get_value( $data, array( 'commercategory_name', 'commercategory', 'category_name' ) );
-            $subcategory_name = $this->get_value( $data, array( 'submecategory_name', 'subcategory_name', 'subcategory' ) );
+            $category_name    = $this->get_value(
+                $data,
+                array(
+                    'commercategory_name',
+                    'commercategory',
+                    'category_name',
+                    'Category Name',
+                    'Category',
+                )
+            );
+            $subcategory_name = $this->get_value(
+                $data,
+                array(
+                    'submecategory_name',
+                    'subcategory_name',
+                    'subcategory',
+                    'Subcategory Name',
+                    'Subcategory',
+                )
+            );
 
             $category_parent = 0;
 
@@ -1309,6 +1327,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 return 0;
             }
 
+            $parent = (int) $parent;
+
             $key = $this->build_term_cache_key( $tax, $name, $parent );
 
             if ( array_key_exists( $key, $this->term_cache ) ) {
@@ -1319,17 +1339,35 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
             $this->cache_stats['term_cache_misses']++;
 
+            $sanitized_name = function_exists( 'sanitize_title' ) ? sanitize_title( $name ) : '';
+
             $term = term_exists( $name, $tax, $parent );
 
-            if ( is_array( $term ) && isset( $term['term_id'] ) ) {
-                $term_id                    = (int) $term['term_id'];
-                $this->term_cache[ $key ]   = $term_id;
+            if ( ! $term && '' !== $sanitized_name ) {
+                $term = term_exists( $sanitized_name, $tax, $parent );
+            }
+
+            $term_id = $this->normalize_term_identifier( $term );
+
+            if ( $term_id > 0 ) {
+                $this->term_cache[ $key ] = $term_id;
 
                 return $term_id;
             }
 
-            if ( $term ) {
-                $term_id                  = (int) $term;
+            $existing_term = null;
+
+            if ( '' !== $sanitized_name ) {
+                $existing_term = get_term_by( 'slug', $sanitized_name, $tax );
+            }
+
+            if ( ! ( $existing_term instanceof WP_Term ) ) {
+                $existing_term = get_term_by( 'name', $name, $tax );
+            }
+
+            if ( $existing_term instanceof WP_Term ) {
+                $term_id = $this->maybe_update_term_parent( $existing_term, $tax, $parent );
+
                 $this->term_cache[ $key ] = $term_id;
 
                 return $term_id;
@@ -1338,7 +1376,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $args = array();
 
             if ( $parent ) {
-                $args['parent'] = (int) $parent;
+                $args['parent'] = $parent;
             }
 
             $result = wp_insert_term( $name, $tax, $args );
@@ -1356,6 +1394,69 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $this->term_cache[ $key ] = $term_id;
 
             return $term_id;
+        }
+
+        /**
+         * Normalise the result of a term lookup to a term identifier.
+         *
+         * @param mixed $term Term lookup result.
+         *
+         * @return int
+         */
+        protected function normalize_term_identifier( $term ) {
+            if ( is_array( $term ) && isset( $term['term_id'] ) ) {
+                return (int) $term['term_id'];
+            }
+
+            if ( $term instanceof WP_Term ) {
+                return (int) $term->term_id;
+            }
+
+            if ( $term ) {
+                return (int) $term;
+            }
+
+            return 0;
+        }
+
+        /**
+         * Ensure that an existing term adheres to the requested hierarchy.
+         *
+         * @param WP_Term $term   Term instance.
+         * @param string  $tax    Taxonomy name.
+         * @param int     $parent Desired parent term identifier.
+         *
+         * @return int
+         */
+        protected function maybe_update_term_parent( WP_Term $term, $tax, $parent ) {
+            $parent = (int) $parent;
+
+            if ( (int) $term->parent === $parent ) {
+                return (int) $term->term_id;
+            }
+
+            $result = wp_update_term(
+                $term->term_id,
+                $tax,
+                array(
+                    'parent' => max( 0, $parent ),
+                )
+            );
+
+            if ( is_wp_error( $result ) ) {
+                $this->log(
+                    'error',
+                    $result->get_error_message(),
+                    array(
+                        'taxonomy' => $tax,
+                        'term_id'  => $term->term_id,
+                    )
+                );
+
+                return (int) $term->term_id;
+            }
+
+            return (int) $result['term_id'];
         }
 
         /**
