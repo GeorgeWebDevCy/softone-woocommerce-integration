@@ -48,6 +48,8 @@ if ( ! function_exists( 'softone_wc_integration_get_settings' ) ) {
             'country_mappings'      => array(),
             'timeout'               => Softone_API_Client::DEFAULT_TIMEOUT,
             'client_id_ttl'         => Softone_API_Client::DEFAULT_CLIENT_ID_TTL,
+            'zero_stock_quantity_fallback'    => 'no',
+            'backorder_out_of_stock_products' => 'no',
         );
 
         $settings = wp_parse_args( $stored, $defaults );
@@ -222,6 +224,28 @@ if ( ! function_exists( 'softone_wc_integration_get_socurrency' ) ) {
 if ( ! function_exists( 'softone_wc_integration_get_trdcategory' ) ) {
     function softone_wc_integration_get_trdcategory() {
         return (string) softone_wc_integration_get_setting( 'trdcategory', '' );
+    }
+}
+
+if ( ! function_exists( 'softone_wc_integration_should_force_minimum_stock' ) ) {
+    /**
+     * Determine whether zero stock values should be converted to one during sync.
+     *
+     * @return bool
+     */
+    function softone_wc_integration_should_force_minimum_stock() {
+        return 'yes' === softone_wc_integration_get_setting( 'zero_stock_quantity_fallback', 'no' );
+    }
+}
+
+if ( ! function_exists( 'softone_wc_integration_should_backorder_out_of_stock' ) ) {
+    /**
+     * Determine whether out of stock products should be marked as available on backorder.
+     *
+     * @return bool
+     */
+    function softone_wc_integration_should_backorder_out_of_stock() {
+        return 'yes' === softone_wc_integration_get_setting( 'backorder_out_of_stock_products', 'no' );
     }
 }
 
