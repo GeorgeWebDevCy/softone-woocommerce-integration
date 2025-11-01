@@ -391,7 +391,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             $client_id = null;
 
             if ( $requires_client_id ) {
-                $client_id = $this->get_client_id();
+                $client_id = $this->get_client_id( true );
 
                 if ( '' === $client_id ) {
                     throw new Softone_API_Client_Exception( __( '[SO-API-011] Unable to determine SoftOne client ID.', 'softone-woocommerce-integration' ) );
