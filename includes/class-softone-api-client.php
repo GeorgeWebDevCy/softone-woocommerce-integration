@@ -249,7 +249,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 'password' => $this->password,
             );
 
-            foreach ( $this->get_handshake_fields() as $key => $value ) {
+            foreach ( $this->get_handshake_fields( false ) as $key => $value ) {
                 if ( '' !== $value ) {
                     $payload[ $key ] = $value;
                 }
@@ -931,9 +931,11 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
         /**
          * Retrieve the SoftOne handshake fields configured in the settings.
          *
+         * @param bool $include_dynamic Whether to include handshake values derived from the last login response.
+         *
          * @return array
          */
-        protected function get_handshake_fields() {
+        protected function get_handshake_fields( $include_dynamic = true ) {
             $fields = array(
                 'company' => $this->company,
                 'branch'  => $this->branch,
@@ -951,7 +953,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 }
             }
 
-            if ( ! empty( $this->login_handshake ) ) {
+            if ( $include_dynamic && ! empty( $this->login_handshake ) ) {
                 foreach ( $this->login_handshake as $key => $value ) {
                     if ( ! array_key_exists( $key, $fields ) ) {
                         continue;
