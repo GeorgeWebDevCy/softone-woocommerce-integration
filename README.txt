@@ -4,7 +4,7 @@ Donate link: https://www.georgenicolaou.me//
 Tags: comments, spam
 Requires at least: 3.0.1
 Tested up to: 3.4
-Stable tag: 1.8.7
+Stable tag: 1.8.8
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,10 @@ directory take precedence. For example, `/assets/screenshot-1.png` would win ove
 2. This is the second screen shot
 
 == Changelog ==
+
+= 1.8.8 =
+* Added mutually exclusive stock handling options for zero-quantity imports.
+* Introduced an automatic backorder mode that marks zero-stock items as pre-orderable.
 
 = 1.0 =
 * A change since the previous version.

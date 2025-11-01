@@ -675,10 +675,31 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
             $stock_quantity = $this->get_value( $data, array( 'stock_qty', 'qty1' ) );
             if ( '' !== $stock_quantity ) {
-                $stock_amount = wc_stock_amount( $stock_quantity );
+                $stock_amount                = wc_stock_amount( $stock_quantity );
+                $quantity_fallback_enabled   = function_exists( 'softone_wc_integration_is_zero_stock_quantity_fallback_enabled' ) ? softone_wc_integration_is_zero_stock_quantity_fallback_enabled() : false;
+                $backorder_enabled           = function_exists( 'softone_wc_integration_is_zero_stock_backorder_enabled' ) ? softone_wc_integration_is_zero_stock_backorder_enabled() : false;
+
+                if ( $quantity_fallback_enabled ) {
+                    $backorder_enabled = false;
+                }
+
                 $product->set_manage_stock( true );
-                $product->set_stock_quantity( $stock_amount );
-                $product->set_stock_status( $stock_amount > 0 ? 'instock' : 'outofstock' );
+
+                if ( $stock_amount <= 0 && $quantity_fallback_enabled ) {
+                    $product->set_stock_quantity( 1 );
+                    $product->set_backorders( 'no' );
+                    $product->set_stock_status( 'instock' );
+                } else {
+                    $product->set_stock_quantity( $stock_amount );
+
+                    if ( $stock_amount <= 0 && $backorder_enabled ) {
+                        $product->set_backorders( 'notify' );
+                        $product->set_stock_status( 'onbackorder' );
+                    } else {
+                        $product->set_backorders( 'no' );
+                        $product->set_stock_status( $stock_amount > 0 ? 'instock' : 'outofstock' );
+                    }
+                }
             }
 
             $category_ids = $this->prepare_category_ids( $data );

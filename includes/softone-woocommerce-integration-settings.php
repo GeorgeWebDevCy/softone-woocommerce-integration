@@ -48,6 +48,8 @@ if ( ! function_exists( 'softone_wc_integration_get_settings' ) ) {
             'country_mappings'      => array(),
             'timeout'               => Softone_API_Client::DEFAULT_TIMEOUT,
             'client_id_ttl'         => Softone_API_Client::DEFAULT_CLIENT_ID_TTL,
+            'zero_stock_quantity_fallback' => false,
+            'zero_stock_backorder'         => false,
         );
 
         $settings = wp_parse_args( $stored, $defaults );
@@ -198,6 +200,18 @@ if ( ! function_exists( 'softone_wc_integration_get_refid' ) ) {
 if ( ! function_exists( 'softone_wc_integration_get_default_saldoc_series' ) ) {
     function softone_wc_integration_get_default_saldoc_series() {
         return (string) softone_wc_integration_get_setting( 'default_saldoc_series', '' );
+    }
+}
+
+if ( ! function_exists( 'softone_wc_integration_is_zero_stock_quantity_fallback_enabled' ) ) {
+    function softone_wc_integration_is_zero_stock_quantity_fallback_enabled() {
+        return (bool) softone_wc_integration_get_setting( 'zero_stock_quantity_fallback', false );
+    }
+}
+
+if ( ! function_exists( 'softone_wc_integration_is_zero_stock_backorder_enabled' ) ) {
+    function softone_wc_integration_is_zero_stock_backorder_enabled() {
+        return (bool) softone_wc_integration_get_setting( 'zero_stock_backorder', false );
     }
 }
 
