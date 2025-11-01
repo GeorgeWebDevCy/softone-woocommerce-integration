@@ -938,35 +938,189 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
          */
         protected function prepare_category_ids( array $data ) {
             $categories = array();
+            $parent_id  = 0;
+
+            $category_levels = $this->extract_category_levels( $data );
+
+            foreach ( $category_levels as $level_name ) {
+                if (
+                    '' === $level_name
+                    || $this->is_numeric_term_name( $level_name )
+                    || $this->is_uncategorized_term( $level_name )
+                ) {
+                    continue;
+                }
+
+                $term_id = $this->ensure_term( $level_name, 'product_cat', $parent_id );
+
+                if ( ! $term_id ) {
+                    continue;
+                }
+
+                $categories[] = (int) $term_id;
+                $parent_id    = (int) $term_id;
+            }
+
+            return array_values( array_unique( array_filter( $categories ) ) );
+        }
+
+        /**
+         * Extract the category hierarchy from a SoftOne row.
+         *
+         * @param array $data Normalised row data.
+         *
+         * @return array<int, string>
+         */
+        protected function extract_category_levels( array $data ) {
+            $hierarchy_keys = array(
+                'commercategory_hierarchy',
+                'commercategory_path',
+                'category_hierarchy',
+                'category_path',
+                'categories_hierarchy',
+            );
+
+            foreach ( $hierarchy_keys as $hierarchy_key ) {
+                if ( ! isset( $data[ $hierarchy_key ] ) ) {
+                    continue;
+                }
+
+                $value = $data[ $hierarchy_key ];
+
+                if ( is_array( $value ) ) {
+                    $levels = array();
+
+                    foreach ( $value as $level ) {
+                        if ( is_string( $level ) ) {
+                            $level = trim( $level );
+                            if ( '' !== $level ) {
+                                $levels[] = $level;
+                            }
+                        }
+                    }
+
+                    if ( ! empty( $levels ) ) {
+                        return $this->unique_category_levels( $levels );
+                    }
+
+                    continue;
+                }
+
+                $levels = $this->parse_category_hierarchy_string( $value );
+
+                if ( ! empty( $levels ) ) {
+                    return $this->unique_category_levels( $levels );
+                }
+            }
 
             $category_name    = $this->get_value( $data, array( 'commercategory_name', 'commercategory', 'category_name' ) );
             $subcategory_name = $this->get_value( $data, array( 'submecategory_name', 'subcategory_name', 'subcategory' ) );
 
-            $category_parent = 0;
+            $category_levels = $this->parse_category_hierarchy_string( $category_name );
 
-            if (
-                '' !== $category_name
-                && ! $this->is_numeric_term_name( $category_name )
-                && ! $this->is_uncategorized_term( $category_name )
-            ) {
-                $category_parent = $this->ensure_term( $category_name, 'product_cat' );
-                if ( $category_parent ) {
-                    $categories[] = $category_parent;
+            if ( count( $category_levels ) > 1 ) {
+                return $this->unique_category_levels( $category_levels );
+            }
+
+            $levels = array();
+
+            if ( '' !== $category_name ) {
+                $levels[] = $category_name;
+            }
+
+            if ( '' !== $subcategory_name ) {
+                $subcategory_levels = $this->parse_category_hierarchy_string( $subcategory_name );
+
+                if ( count( $subcategory_levels ) > 1 ) {
+                    if ( ! empty( $levels ) && 0 === strcasecmp( $levels[0], $subcategory_levels[0] ) ) {
+                        $subcategory_levels = array_slice( $subcategory_levels, 1 );
+                    }
+
+                    $levels = array_merge( $levels, $subcategory_levels );
+                } elseif ( empty( $levels ) || 0 !== strcasecmp( end( $levels ), $subcategory_name ) ) {
+                    $levels[] = $subcategory_name;
                 }
             }
 
-            if (
-                '' !== $subcategory_name
-                && ! $this->is_numeric_term_name( $subcategory_name )
-                && ! $this->is_uncategorized_term( $subcategory_name )
-            ) {
-                $subcategory_id = $this->ensure_term( $subcategory_name, 'product_cat', $category_parent );
-                if ( $subcategory_id ) {
-                    $categories[] = $subcategory_id;
+            return $this->unique_category_levels( $levels );
+        }
+
+        /**
+         * Normalise a category hierarchy string into an ordered list of levels.
+         *
+         * @param mixed $value Raw hierarchy representation.
+         *
+         * @return array<int, string>
+         */
+        protected function parse_category_hierarchy_string( $value ) {
+            if ( is_array( $value ) ) {
+                $levels = array();
+
+                foreach ( $value as $level ) {
+                    if ( is_string( $level ) ) {
+                        $level = trim( $level );
+                        if ( '' !== $level ) {
+                            $levels[] = $level;
+                        }
+                    }
                 }
+
+                return $levels;
             }
 
-            return array_values( array_unique( array_filter( $categories ) ) );
+            $value = trim( (string) $value );
+
+            if ( '' === $value ) {
+                return array();
+            }
+
+            $normalized = str_replace(
+                array( '-->', '->', '»', '›', '→', '\\', '/', '|' ),
+                '>',
+                $value
+            );
+
+            $normalized = preg_replace( '/>+/', '>', $normalized );
+
+            $parts = array_map( 'trim', explode( '>', (string) $normalized ) );
+            $parts = array_filter( $parts, 'strlen' );
+
+            if ( empty( $parts ) ) {
+                return array();
+            }
+
+            return array_values( $parts );
+        }
+
+        /**
+         * Ensure the provided category levels are unique while preserving order.
+         *
+         * @param array<int, string> $levels Category levels.
+         *
+         * @return array<int, string>
+         */
+        protected function unique_category_levels( array $levels ) {
+            $unique = array();
+            $seen   = array();
+
+            foreach ( $levels as $level ) {
+                $level = trim( (string) $level );
+
+                if ( '' === $level ) {
+                    continue;
+                }
+
+                $key = strtolower( $level );
+
+                if ( isset( $seen[ $key ] ) ) {
+                    continue;
+                }
+
+                $seen[ $key ] = true;
+                $unique[]     = $level;
+            }
+
+            return $unique;
         }
 
         /**
