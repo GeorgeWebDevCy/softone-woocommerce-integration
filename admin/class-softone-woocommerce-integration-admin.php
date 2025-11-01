@@ -44,14 +44,28 @@ class Softone_Woocommerce_Integration_Admin {
 	 *
 	 * @var string
 	 */
-	private $menu_slug = 'softone-woocommerce-integration-settings';
+        private $menu_slug = 'softone-woocommerce-integration-settings';
+
+        /**
+         * Category log submenu slug.
+         *
+         * @var string
+         */
+        private $category_logs_slug = 'softone-woocommerce-integration-category-logs';
 
         /**
          * API tester submenu slug.
          *
          * @var string
          */
-	private $api_tester_slug = 'softone-woocommerce-integration-api-tester';
+        private $api_tester_slug = 'softone-woocommerce-integration-api-tester';
+
+        /**
+         * Maximum number of category log entries to display.
+         *
+         * @var int
+         */
+        private $category_log_limit = 200;
 
         /**
          * Capability required to manage plugin settings.
@@ -142,6 +156,15 @@ class Softone_Woocommerce_Integration_Admin {
 
                 add_submenu_page(
                         $this->menu_slug,
+                        __( 'Category Sync Logs', 'softone-woocommerce-integration' ),
+                        __( 'Category Sync Logs', 'softone-woocommerce-integration' ),
+                        $this->capability,
+                        $this->category_logs_slug,
+                        array( $this, 'render_category_logs_page' )
+                );
+
+                add_submenu_page(
+                        $this->menu_slug,
                         __( 'API Tester', 'softone-woocommerce-integration' ),
                         __( 'API Tester', 'softone-woocommerce-integration' ),
                         $this->capability,
@@ -158,7 +181,16 @@ class Softone_Woocommerce_Integration_Admin {
                         array( $this, 'render_settings_page' )
                 );
 
-	}
+                add_submenu_page(
+                        'woocommerce',
+                        __( 'Category Sync Logs', 'softone-woocommerce-integration' ),
+                        __( 'Category Sync Logs', 'softone-woocommerce-integration' ),
+                        $this->capability,
+                        $this->category_logs_slug,
+                        array( $this, 'render_category_logs_page' )
+                );
+
+        }
 
 	/**
 	 * Register plugin settings and fields.
@@ -299,10 +331,10 @@ class Softone_Woocommerce_Integration_Admin {
 
         }
 
-	/**
-	 * Display the plugin settings page.
-	 */
-	public function render_settings_page() {
+        /**
+         * Display the plugin settings page.
+         */
+        public function render_settings_page() {
 
                 if ( ! current_user_can( $this->capability ) ) {
                         return;
@@ -334,10 +366,10 @@ submit_button();
 <?php
 $last_run = get_option( Softone_Item_Sync::OPTION_LAST_RUN );
 if ( $last_run ) {
-        printf(
-                '<p><em>%s</em></p>',
-                esc_html( sprintf( __( 'Last import completed on %s.', 'softone-woocommerce-integration' ), wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $last_run ) ) )
-        );
+printf(
+'<p><em>%s</em></p>',
+esc_html( sprintf( __( 'Last import completed on %s.', 'softone-woocommerce-integration' ), wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $last_run ) ) )
+);
 }
 submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'secondary', 'softone_wc_integration_run_item_import', false );
 ?>
@@ -348,9 +380,301 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
         }
 
         /**
-         * Render the API tester page.
+         * Display the category synchronisation log viewer.
          */
-	public function render_api_tester_page() {
+        public function render_category_logs_page() {
+
+                if ( ! current_user_can( $this->capability ) ) {
+                        return;
+                }
+
+                $result          = $this->get_category_log_entries();
+                $entries         = isset( $result['entries'] ) && is_array( $result['entries'] ) ? $result['entries'] : array();
+                $scanned_files   = isset( $result['files'] ) && is_array( $result['files'] ) ? $result['files'] : array();
+                $log_directory   = isset( $result['directory'] ) ? (string) $result['directory'] : '';
+                $error_message   = isset( $result['error'] ) ? (string) $result['error'] : '';
+                $displayed_limit = (int) $this->category_log_limit;
+
+                $log_file_names = array();
+                foreach ( $scanned_files as $file_path ) {
+                        $log_file_names[] = basename( (string) $file_path );
+                }
+
+                $entries_heading = esc_attr__( 'Latest category synchronisation events', 'softone-woocommerce-integration' );
+
+?>
+<div class="wrap softone-category-logs">
+<h1><?php esc_html_e( 'Category Sync Logs', 'softone-woocommerce-integration' ); ?></h1>
+<p class="description"><?php esc_html_e( 'Review the SoftOne category creation and assignment activity captured during catalogue imports.', 'softone-woocommerce-integration' ); ?></p>
+
+<?php if ( '' !== $error_message ) : ?>
+<div class="notice notice-error"><p><?php echo esc_html( $error_message ); ?></p></div>
+<?php endif; ?>
+
+<section class="softone-log-section" aria-label="<?php echo esc_attr( $entries_heading ); ?>">
+<p class="softone-log-section__intro"><?php echo esc_html( sprintf( __( 'Displaying up to %d recent entries containing category synchronisation activity.', 'softone-woocommerce-integration' ), $displayed_limit ) ); ?></p>
+
+<?php if ( empty( $entries ) ) : ?>
+<p><?php esc_html_e( 'No category synchronisation entries were found in the WooCommerce logs.', 'softone-woocommerce-integration' ); ?></p>
+<?php else : ?>
+<ul class="softone-log-list">
+<?php foreach ( $entries as $entry ) :
+$level         = isset( $entry['level'] ) && '' !== $entry['level'] ? (string) $entry['level'] : 'info';
+$level_class   = 'softone-log-entry--' . sanitize_html_class( $level );
+$level_label   = strtoupper( $level );
+$timestamp     = isset( $entry['timestamp'] ) ? (int) $entry['timestamp'] : 0;
+$timestamp_raw = isset( $entry['timestamp_raw'] ) ? (string) $entry['timestamp_raw'] : '';
+$message       = isset( $entry['message'] ) ? (string) $entry['message'] : '';
+$context       = isset( $entry['context'] ) ? (string) $entry['context'] : '';
+$source        = isset( $entry['source'] ) ? (string) $entry['source'] : '';
+$file_name     = isset( $entry['file'] ) ? (string) $entry['file'] : '';
+
+$display_time = '';
+if ( $timestamp > 0 ) {
+$format = get_option( 'date_format', 'Y-m-d' ) . ' ' . get_option( 'time_format', 'H:i' );
+if ( function_exists( 'wp_date' ) ) {
+$display_time = wp_date( $format, $timestamp );
+} else {
+$display_time = date_i18n( $format, $timestamp );
+}
+} elseif ( '' !== $timestamp_raw ) {
+$display_time = $timestamp_raw;
+} else {
+$display_time = __( 'Unknown time', 'softone-woocommerce-integration' );
+}
+?>
+<li class="softone-log-entry <?php echo esc_attr( $level_class ); ?>">
+<header class="softone-log-entry__header">
+<span class="softone-log-entry__timestamp"><?php echo esc_html( $display_time ); ?></span>
+<span class="softone-log-entry__level"><?php echo esc_html( $level_label ); ?></span>
+</header>
+<div class="softone-log-entry__message"><?php echo esc_html( $message ); ?></div>
+<?php if ( '' !== $context ) : ?>
+<pre class="softone-log-entry__context"><?php echo esc_html( $context ); ?></pre>
+<?php endif; ?>
+<footer class="softone-log-entry__meta">
+<?php if ( '' !== $source ) : ?>
+<span class="softone-log-entry__meta-item"><?php echo esc_html( sprintf( __( 'Source: %s', 'softone-woocommerce-integration' ), $source ) ); ?></span>
+<?php endif; ?>
+<?php if ( '' !== $file_name ) : ?>
+<span class="softone-log-entry__meta-item"><?php echo esc_html( sprintf( __( 'File: %s', 'softone-woocommerce-integration' ), $file_name ) ); ?></span>
+<?php endif; ?>
+</footer>
+</li>
+<?php endforeach; ?>
+</ul>
+<?php endif; ?>
+</section>
+
+<section class="softone-log-footnote" aria-label="<?php esc_attr_e( 'Log sources', 'softone-woocommerce-integration' ); ?>">
+<?php if ( ! empty( $log_file_names ) ) : ?>
+<p><?php echo esc_html( sprintf( __( 'Log files scanned: %s', 'softone-woocommerce-integration' ), implode( ', ', $log_file_names ) ) ); ?></p>
+<?php endif; ?>
+<?php if ( '' !== $log_directory ) : ?>
+<p><?php echo esc_html( sprintf( __( 'WooCommerce log directory: %s', 'softone-woocommerce-integration' ), $log_directory ) ); ?></p>
+<?php endif; ?>
+</section>
+</div>
+<?php
+
+}
+
+       /**
+        * Retrieve category synchronisation log entries from WooCommerce logs.
+        *
+        * @return array<string,mixed> {
+        *     @type array $entries   Structured log entries.
+        *     @type array $files     Log file paths that were scanned.
+        *     @type string $directory Log directory path when available.
+        *     @type string $error    Error message when logs are unavailable.
+        * }
+        */
+       private function get_category_log_entries() {
+
+               $result = array(
+                       'entries'   => array(),
+                       'files'     => array(),
+                       'directory' => '',
+                       'error'     => '',
+               );
+
+               if ( ! defined( 'WC_LOG_DIR' ) ) {
+                       $result['error'] = __( 'WooCommerce logging is not available on this site.', 'softone-woocommerce-integration' );
+                       return $result;
+               }
+
+               $log_directory          = (string) WC_LOG_DIR;
+               $result['directory'] = $log_directory;
+
+               if ( ! is_dir( $log_directory ) || ! is_readable( $log_directory ) ) {
+                       $result['error'] = __( 'The WooCommerce log directory could not be accessed.', 'softone-woocommerce-integration' );
+                       return $result;
+               }
+
+               $logger_source = 'softone-item-sync';
+               if ( class_exists( 'Softone_Item_Sync' ) ) {
+                       $logger_source = Softone_Item_Sync::LOGGER_SOURCE;
+               }
+
+               $separator = defined( 'DIRECTORY_SEPARATOR' ) ? DIRECTORY_SEPARATOR : '/';
+               $pattern   = rtrim( $log_directory, '/\\' ) . $separator . '*' . $logger_source . '*.log';
+
+               $files = glob( $pattern );
+               if ( empty( $files ) ) {
+                       return $result;
+               }
+
+               rsort( $files );
+               $files = array_slice( $files, 0, 10 );
+
+               $result['files'] = $files;
+
+               $entries = array();
+               $order   = 0;
+
+               foreach ( $files as $file_path ) {
+                       if ( ! is_readable( $file_path ) ) {
+                               continue;
+                       }
+
+                       $lines = @file( $file_path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Avoid warnings when log files are not readable.
+
+                       if ( false === $lines ) {
+                               continue;
+                       }
+
+                       foreach ( $lines as $line ) {
+                               if ( false === strpos( (string) $line, 'SOFTONE_CAT_SYNC' ) ) {
+                                       continue;
+                               }
+
+                               $order++;
+                               $entries[] = $this->parse_category_log_line( (string) $line, (string) $file_path, $order );
+                       }
+               }
+
+               if ( empty( $entries ) ) {
+                       return $result;
+               }
+
+               usort(
+                       $entries,
+                       function ( $a, $b ) {
+                               if ( $a['timestamp'] === $b['timestamp'] ) {
+                                       return $b['order'] <=> $a['order'];
+                               }
+
+                               return $b['timestamp'] <=> $a['timestamp'];
+                       }
+               );
+
+               $result['entries'] = array_slice( $entries, 0, $this->category_log_limit );
+
+               return $result;
+       }
+
+       /**
+        * Parse a WooCommerce log line into a structured array.
+        *
+        * @param string $line      Raw log line.
+        * @param string $file_path Source file path.
+        * @param int    $order     Incremental order value for stable sorting.
+        *
+        * @return array<string,mixed>
+        */
+       private function parse_category_log_line( $line, $file_path, $order ) {
+
+               $entry = array(
+                       'timestamp_raw' => '',
+                       'timestamp'     => 0,
+                       'level'         => '',
+                       'source'        => '',
+                       'message'       => trim( (string) $line ),
+                       'context'       => '',
+                       'file'          => basename( $file_path ),
+                       'order'         => (int) $order,
+               );
+
+               if ( preg_match( '/^\[(?P<timestamp>[^\]]+)\]\s+(?P<level>[A-Z]+)\s+(?P<source>[^:]+):\s+(?P<message>.*)$/', $line, $matches ) ) {
+                       $entry['timestamp_raw'] = trim( $matches['timestamp'] );
+                       $entry['timestamp']     = $this->parse_log_timestamp( $entry['timestamp_raw'] );
+                       $entry['level']         = strtolower( trim( $matches['level'] ) );
+                       $entry['source']        = trim( $matches['source'] );
+                       $entry['message']       = trim( $matches['message'] );
+               }
+
+               list( $message, $context ) = $this->split_log_context( $entry['message'] );
+
+               $entry['message'] = $message;
+               $entry['context'] = $context;
+
+               return $entry;
+       }
+
+       /**
+        * Convert a WooCommerce log timestamp into a Unix timestamp.
+        *
+        * @param string $timestamp_string Raw timestamp from the log.
+        *
+        * @return int
+        */
+       private function parse_log_timestamp( $timestamp_string ) {
+
+               $timestamp_string = trim( (string) $timestamp_string );
+
+               if ( '' === $timestamp_string ) {
+                       return 0;
+               }
+
+               $normalized = str_replace( 'T', ' ', $timestamp_string );
+
+               if ( false !== stripos( $normalized, 'UTC' ) ) {
+                       $normalized = str_ireplace( 'UTC', '+00:00', $normalized );
+               }
+
+               $timestamp = strtotime( $normalized );
+
+               if ( false === $timestamp ) {
+                       $stripped = preg_replace( '/\s+[+-]\d{2}:\d{2}$/', '', $normalized );
+                       if ( is_string( $stripped ) ) {
+                               $timestamp = strtotime( $stripped );
+                       }
+               }
+
+               if ( false === $timestamp ) {
+                       return 0;
+               }
+
+               return (int) $timestamp;
+       }
+
+       /**
+        * Separate the log message body from its context payload.
+        *
+        * @param string $message Raw log message.
+        *
+        * @return array{0:string,1:string}
+        */
+       private function split_log_context( $message ) {
+
+               $message = (string) $message;
+
+               $position = strpos( $message, 'Context:' );
+
+               if ( false === $position ) {
+                       return array( $message, '' );
+               }
+
+               $clean_message = trim( substr( $message, 0, $position ) );
+               $context       = trim( substr( $message, $position + strlen( 'Context:' ) ) );
+
+               return array( $clean_message, $context );
+       }
+
+/**
+ * Render the API tester page.
+ */
+public function render_api_tester_page() {
 
                 if ( ! current_user_can( $this->capability ) ) {
                         return;
