@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.8.23
+Stable tag: 1.8.24
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -78,6 +78,10 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 
 == Changelog ==
 
+= 1.8.24 =
+* Refresh the plugin documentation to highlight key synchronisation workflows and setup guidance.
+* Clarify troubleshooting tips and manual QA steps to support the documentation overhaul.
+
 = 1.8.23 =
 * Refresh plugin documentation to reflect the latest synchronisation features, tools, and troubleshooting workflows.
 
@@ -102,8 +106,8 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 
 == Upgrade Notice ==
 
-= 1.8.23 =
-This update revises the plugin documentation to outline current setup, synchronisation flows, and troubleshooting tips. Review the README before onboarding new stores.
+= 1.8.24 =
+This release overhauls the documentation, expanding setup guidance and troubleshooting steps so new stores can integrate more smoothly.
 
 == Automatic Updates ==
 
