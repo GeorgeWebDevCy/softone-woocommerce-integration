@@ -241,7 +241,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
          */
         public function login() {
             if ( '' === $this->username || '' === $this->password ) {
-                throw new Softone_API_Client_Exception( __( 'SoftOne credentials are missing. Please provide a username and password.', 'softone-woocommerce-integration' ) );
+                throw new Softone_API_Client_Exception( __( '[SO-API-001] SoftOne credentials are missing. Please provide a username and password.', 'softone-woocommerce-integration' ) );
             }
 
             $payload = array(
@@ -266,8 +266,8 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             $response = $this->call_service( 'login', $payload, false );
 
             if ( empty( $response['clientID'] ) ) {
-                $this->log_error( __( 'SoftOne login succeeded but no clientID was returned.', 'softone-woocommerce-integration' ) );
-                throw new Softone_API_Client_Exception( __( 'SoftOne login failed to provide a client ID.', 'softone-woocommerce-integration' ) );
+                $this->log_error( __( '[SO-API-002] SoftOne login succeeded but no clientID was returned.', 'softone-woocommerce-integration' ) );
+                throw new Softone_API_Client_Exception( __( '[SO-API-003] SoftOne login failed to provide a client ID.', 'softone-woocommerce-integration' ) );
             }
 
             $this->login_handshake = $this->extract_handshake_from_login_response( $response );
@@ -286,7 +286,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
          */
         public function authenticate( $client_id ) {
             if ( '' === $client_id ) {
-                throw new Softone_API_Client_Exception( __( 'Cannot authenticate without a SoftOne client ID.', 'softone-woocommerce-integration' ) );
+                throw new Softone_API_Client_Exception( __( '[SO-API-004] Cannot authenticate without a SoftOne client ID.', 'softone-woocommerce-integration' ) );
             }
 
             $payload = array(
@@ -303,8 +303,8 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             $response = $this->call_service( 'authenticate', $payload, false );
 
             if ( empty( $response['clientID'] ) ) {
-                $this->log_error( __( 'SoftOne authentication did not return a clientID.', 'softone-woocommerce-integration' ) );
-                throw new Softone_API_Client_Exception( __( 'SoftOne authentication failed to provide a client ID.', 'softone-woocommerce-integration' ) );
+                $this->log_error( __( '[SO-API-005] SoftOne authentication did not return a clientID.', 'softone-woocommerce-integration' ) );
+                throw new Softone_API_Client_Exception( __( '[SO-API-006] SoftOne authentication failed to provide a client ID.', 'softone-woocommerce-integration' ) );
             }
 
             return $response;
@@ -323,7 +323,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
          */
         public function sql_data( $sql_name, array $arguments = array(), array $extra = array() ) {
             if ( '' === $sql_name ) {
-                throw new Softone_API_Client_Exception( __( 'A SQL name is required for SqlData requests.', 'softone-woocommerce-integration' ) );
+                throw new Softone_API_Client_Exception( __( '[SO-API-007] A SQL name is required for SqlData requests.', 'softone-woocommerce-integration' ) );
             }
 
             $payload = array_merge(
@@ -353,7 +353,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
          */
         public function set_data( $object, array $data, array $extra = array() ) {
             if ( '' === $object ) {
-                throw new Softone_API_Client_Exception( __( 'A SoftOne object name is required for setData requests.', 'softone-woocommerce-integration' ) );
+                throw new Softone_API_Client_Exception( __( '[SO-API-008] A SoftOne object name is required for setData requests.', 'softone-woocommerce-integration' ) );
             }
 
             $payload = array_merge(
@@ -381,11 +381,11 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
          */
         public function call_service( $service, array $data = array(), $requires_client_id = true, $retry_on_authentication = true ) {
             if ( '' === $service ) {
-                throw new Softone_API_Client_Exception( __( 'A SoftOne service name is required.', 'softone-woocommerce-integration' ) );
+                throw new Softone_API_Client_Exception( __( '[SO-API-009] A SoftOne service name is required.', 'softone-woocommerce-integration' ) );
             }
 
             if ( '' === $this->endpoint ) {
-                throw new Softone_API_Client_Exception( __( 'SoftOne endpoint is not configured.', 'softone-woocommerce-integration' ) );
+                throw new Softone_API_Client_Exception( __( '[SO-API-010] SoftOne endpoint is not configured.', 'softone-woocommerce-integration' ) );
             }
 
             $client_id = null;
@@ -394,7 +394,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 $client_id = $this->get_client_id();
 
                 if ( '' === $client_id ) {
-                    throw new Softone_API_Client_Exception( __( 'Unable to determine SoftOne client ID.', 'softone-woocommerce-integration' ) );
+                    throw new Softone_API_Client_Exception( __( '[SO-API-011] Unable to determine SoftOne client ID.', 'softone-woocommerce-integration' ) );
                 }
             }
 
@@ -403,7 +403,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
 
             if ( isset( $response['success'] ) && false === $response['success'] ) {
                 if ( $requires_client_id && $retry_on_authentication && $this->is_authentication_error( $response ) ) {
-                    $this->log_warning( __( 'SoftOne session appears to have expired. Refreshing credentials.', 'softone-woocommerce-integration' ), array( 'service' => $service ) );
+                    $this->log_warning( __( '[SO-API-012] SoftOne session appears to have expired. Refreshing credentials.', 'softone-woocommerce-integration' ), array( 'service' => $service ) );
                     $this->clear_cached_client_id();
 
                     $client_id = $this->get_client_id( true );
@@ -477,20 +477,20 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
          * @return string
          */
         protected function bootstrap_client_session() {
-            $this->log_info( __( 'Requesting a fresh SoftOne session.', 'softone-woocommerce-integration' ) );
+            $this->log_info( __( '[SO-API-013] Requesting a fresh SoftOne session.', 'softone-woocommerce-integration' ) );
 
             $login_response = $this->login();
             $client_id      = isset( $login_response['clientID'] ) ? (string) $login_response['clientID'] : '';
 
             if ( '' === $client_id ) {
-                throw new Softone_API_Client_Exception( __( 'SoftOne login failed to return a client ID.', 'softone-woocommerce-integration' ) );
+                throw new Softone_API_Client_Exception( __( '[SO-API-014] SoftOne login failed to return a client ID.', 'softone-woocommerce-integration' ) );
             }
 
             $authenticate_response = $this->authenticate( $client_id );
             $authenticated_id      = isset( $authenticate_response['clientID'] ) ? (string) $authenticate_response['clientID'] : '';
 
             if ( '' === $authenticated_id ) {
-                throw new Softone_API_Client_Exception( __( 'SoftOne authentication did not return a client ID.', 'softone-woocommerce-integration' ) );
+                throw new Softone_API_Client_Exception( __( '[SO-API-015] SoftOne authentication did not return a client ID.', 'softone-woocommerce-integration' ) );
             }
 
             $ttl = $this->determine_client_ttl( $login_response, $authenticate_response );
@@ -586,7 +586,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             $encoded_body = wp_json_encode( $body );
 
             if ( false === $encoded_body ) {
-                $message = __( 'Unable to encode SoftOne request payload as JSON.', 'softone-woocommerce-integration' );
+                $message = __( '[SO-API-016] Unable to encode SoftOne request payload as JSON.', 'softone-woocommerce-integration' );
 
                 $context = array(
                     'service'  => $service,
@@ -615,7 +615,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             if ( is_wp_error( $response ) ) {
                 $message = sprintf(
                     /* translators: %s: error message */
-                    __( 'SoftOne request error: %s', 'softone-woocommerce-integration' ),
+                    __( '[SO-API-017] SoftOne request error: %s', 'softone-woocommerce-integration' ),
                     $response->get_error_message()
                 );
 
@@ -637,7 +637,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             if ( $status_code < 200 || $status_code >= 300 ) {
                 $message = sprintf(
                     /* translators: 1: HTTP status code, 2: response body */
-                    __( 'SoftOne responded with HTTP %1$s: %2$s', 'softone-woocommerce-integration' ),
+                    __( '[SO-API-018] SoftOne responded with HTTP %1$s: %2$s', 'softone-woocommerce-integration' ),
                     $status_code,
                     $raw_body
                 );
@@ -673,7 +673,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             if ( null === $decoded && JSON_ERROR_NONE !== json_last_error() ) {
                 $message = sprintf(
                     /* translators: %s: raw JSON response */
-                    __( 'SoftOne returned invalid JSON: %s', 'softone-woocommerce-integration' ),
+                    __( '[SO-API-019] SoftOne returned invalid JSON: %s', 'softone-woocommerce-integration' ),
                     json_last_error_msg()
                 );
 
@@ -1119,7 +1119,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             }
 
             if ( $fallback ) {
-                return __( 'SoftOne request failed.', 'softone-woocommerce-integration' );
+                return __( '[SO-API-020] SoftOne request failed.', 'softone-woocommerce-integration' );
             }
 
             return '';

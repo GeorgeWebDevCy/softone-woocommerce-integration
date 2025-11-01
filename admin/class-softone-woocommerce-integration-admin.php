@@ -794,7 +794,7 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
                                $this->store_api_tester_result(
                                        array(
                                                'status'  => 'error',
-                                               'message' => sprintf( __( 'Invalid JSON payload: %s', 'softone-woocommerce-integration' ), json_last_error_msg() ),
+                                               'message' => sprintf( __( '[SO-ADM-001] Invalid JSON payload: %s', 'softone-woocommerce-integration' ), json_last_error_msg() ),
                                                'service' => '',
                                                'request' => array(),
                                                'response' => null,
@@ -809,7 +809,7 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
                                $this->store_api_tester_result(
                                        array(
                                                'status'  => 'error',
-                                               'message' => __( 'JSON payload must decode to an array or object.', 'softone-woocommerce-integration' ),
+                                               'message' => __( '[SO-ADM-002] JSON payload must decode to an array or object.', 'softone-woocommerce-integration' ),
                                                'service' => '',
                                                'request' => array(),
                                                'response' => null,
@@ -834,7 +834,7 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
                                        $this->store_api_tester_result(
                                                array(
                                                        'status'  => 'error',
-                                                       'message' => __( 'A setData object name is required.', 'softone-woocommerce-integration' ),
+                                                       'message' => __( '[SO-ADM-003] A setData object name is required.', 'softone-woocommerce-integration' ),
                                                        'service' => $service_name,
                                                        'request' => array(),
                                                        'response' => null,
@@ -855,7 +855,7 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
                                        $this->store_api_tester_result(
                                                array(
                                                        'status'  => 'error',
-                                                       'message' => __( 'A custom service name is required.', 'softone-woocommerce-integration' ),
+                                                       'message' => __( '[SO-ADM-004] A custom service name is required.', 'softone-woocommerce-integration' ),
                                                        'service' => '',
                                                        'request' => array(),
                                                        'response' => null,
@@ -875,7 +875,7 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
                                        $this->store_api_tester_result(
                                                array(
                                                        'status'  => 'error',
-                                                       'message' => __( 'A SqlData name is required.', 'softone-woocommerce-integration' ),
+                                                       'message' => __( '[SO-ADM-005] A SqlData name is required.', 'softone-woocommerce-integration' ),
                                                        'service' => $service_name,
                                                        'request' => array(),
                                                        'response' => null,
@@ -990,7 +990,7 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
                         'error',
                         sprintf(
                                 /* translators: %s: error message */
-                                __( 'Item import failed: %s', 'softone-woocommerce-integration' ),
+                                __( '[SO-ADM-006] Item import failed: %s', 'softone-woocommerce-integration' ),
                                 $exception->getMessage()
                         )
                 );
@@ -999,7 +999,7 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
                         'error',
                         sprintf(
                                 /* translators: %s: error message */
-                                __( 'Item import failed: %s', 'softone-woocommerce-integration' ),
+                                __( '[SO-ADM-007] Item import failed: %s', 'softone-woocommerce-integration' ),
                                 $exception->getMessage()
                         )
                 );
@@ -1050,7 +1050,7 @@ public function handle_test_connection() {
 			$type    = 'error';
 			$message = sprintf(
 				/* translators: %s: error message */
-				__( 'SoftOne connection failed: %s', 'softone-woocommerce-integration' ),
+                                __( '[SO-ADM-008] SoftOne connection failed: %s', 'softone-woocommerce-integration' ),
 				$exception->getMessage()
 			);
 
@@ -1068,7 +1068,7 @@ public function handle_test_connection() {
 			$type    = 'error';
 			$message = sprintf(
 				/* translators: %s: error message */
-				__( 'SoftOne connection failed: %s', 'softone-woocommerce-integration' ),
+                                __( '[SO-ADM-009] SoftOne connection failed: %s', 'softone-woocommerce-integration' ),
 				$exception->getMessage()
 			);
 
