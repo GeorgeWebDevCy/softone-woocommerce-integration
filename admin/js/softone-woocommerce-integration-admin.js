@@ -1,4 +1,3 @@
-
 (function( $ ) {
         'use strict';
 
@@ -121,30 +120,5 @@
 
                 updateDescription( $presetField.val() );
                 markPresetFields( $presetField.val() );
-        } );
-
-        $( function() {
-                var $exclusive = $( 'input[type="checkbox"][data-exclusive-group]' );
-
-                if ( ! $exclusive.length ) {
-                        return;
-                }
-
-                $exclusive.on( 'change', function() {
-                        var $current = $( this );
-                        var group    = $current.data( 'exclusive-group' );
-
-                        if ( ! group ) {
-                                return;
-                        }
-
-                        if ( $current.is( ':checked' ) ) {
-                                $exclusive
-                                        .filter( function() {
-                                                return group === $( this ).data( 'exclusive-group' ) && this !== $current[0];
-                                        } )
-                                        .prop( 'checked', false );
-                        }
-                } );
         } );
 })( jQuery );
