@@ -228,7 +228,7 @@ class Softone_Woocommerce_Integration_Admin {
 
 		$sanitized['endpoint']              = $endpoint;
 		$sanitized['username']              = isset( $settings['username'] ) ? $this->sanitize_text_value( $settings['username'] ) : '';
-		$sanitized['password']              = isset( $settings['password'] ) ? $this->sanitize_text_value( $settings['password'] ) : '';
+		$sanitized['password']              = isset( $settings['password'] ) ? $this->sanitize_password_value( $settings['password'] ) : '';
 		$sanitized['app_id']                = isset( $settings['app_id'] ) ? $this->sanitize_text_value( $settings['app_id'] ) : '';
 		$sanitized['company']               = isset( $settings['company'] ) ? $this->sanitize_text_value( $settings['company'] ) : '';
 		$sanitized['branch']                = isset( $settings['branch'] ) ? $this->sanitize_text_value( $settings['branch'] ) : '';
@@ -1487,6 +1487,29 @@ public function handle_test_connection() {
                 return $mappings;
 
         }
+
+        /**
+         * Sanitizes the Softone password setting without stripping special characters.
+         *
+         * @param mixed $value Raw input value.
+         *
+         * @return string
+        */
+	private function sanitize_password_value( $value ) {
+
+		if ( is_array( $value ) ) {
+			return '';
+		}
+
+		$value = wp_unslash( $value );
+
+		if ( is_object( $value ) && ! method_exists( $value, '__toString' ) ) {
+			return '';
+		}
+
+		return trim( (string) $value );
+
+	}
 
         /**
          * Sanitize a generic text value.
