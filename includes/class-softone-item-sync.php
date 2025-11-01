@@ -986,12 +986,16 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $category_slug    = function_exists( 'sanitize_title' ) ? sanitize_title( $category_name ) : '';
             $subcategory_slug = function_exists( 'sanitize_title' ) ? sanitize_title( $subcategory_name ) : '';
 
+            $item_log_context = $this->get_item_log_context( $data );
+
             $category_context = array(
                 'raw_name'       => $category_name,
                 'sanitized_slug' => $category_slug,
                 'term_id'        => 0,
                 'parent_id'      => 0,
             );
+
+            $category_log_context = $this->extend_log_context_with_item( $category_context, $item_log_context );
 
             if (
                 '' !== $category_name
@@ -1001,17 +1005,20 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 $this->log(
                     'debug',
                     'SOFTONE_CAT_SYNC_002 Ensuring top-level category.',
-                    $category_context
+                    $category_log_context
                 );
                 $category_parent = $this->ensure_term( $category_name, 'product_cat' );
                 $this->log(
                     'debug',
                     'SOFTONE_CAT_SYNC_002 Result for top-level category ensure.',
-                    array_merge(
-                        $category_context,
-                        array(
-                            'term_id' => $category_parent,
-                        )
+                    $this->extend_log_context_with_item(
+                        array_merge(
+                            $category_context,
+                            array(
+                                'term_id' => $category_parent,
+                            )
+                        ),
+                        $item_log_context
                     )
                 );
                 if ( $category_parent ) {
@@ -1029,11 +1036,14 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 $this->log(
                     'debug',
                     'SOFTONE_CAT_SYNC_001 Skipping top-level category ensure.',
-                    array_merge(
-                        $category_context,
-                        array(
-                            'reason' => $reason,
-                        )
+                    $this->extend_log_context_with_item(
+                        array_merge(
+                            $category_context,
+                            array(
+                                'reason' => $reason,
+                            )
+                        ),
+                        $item_log_context
                     )
                 );
             }
@@ -1045,6 +1055,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 'parent_id'      => $category_parent,
             );
 
+            $subcategory_log_context = $this->extend_log_context_with_item( $subcategory_context, $item_log_context );
+
             if (
                 '' !== $subcategory_name
                 && ! $this->is_numeric_term_name( $subcategory_name )
@@ -1053,17 +1065,20 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 $this->log(
                     'debug',
                     'SOFTONE_CAT_SYNC_005 Ensuring subcategory.',
-                    $subcategory_context
+                    $subcategory_log_context
                 );
                 $subcategory_id = $this->ensure_term( $subcategory_name, 'product_cat', $category_parent );
                 $this->log(
                     'debug',
                     'SOFTONE_CAT_SYNC_005 Result for subcategory ensure.',
-                    array_merge(
-                        $subcategory_context,
-                        array(
-                            'term_id' => $subcategory_id,
-                        )
+                    $this->extend_log_context_with_item(
+                        array_merge(
+                            $subcategory_context,
+                            array(
+                                'term_id' => $subcategory_id,
+                            )
+                        ),
+                        $item_log_context
                     )
                 );
                 if ( $subcategory_id ) {
@@ -1081,11 +1096,14 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 $this->log(
                     'debug',
                     'SOFTONE_CAT_SYNC_004 Skipping subcategory ensure.',
-                    array_merge(
-                        $subcategory_context,
-                        array(
-                            'reason' => $reason,
-                        )
+                    $this->extend_log_context_with_item(
+                        array_merge(
+                            $subcategory_context,
+                            array(
+                                'reason' => $reason,
+                            )
+                        ),
+                        $item_log_context
                     )
                 );
             }
@@ -1674,6 +1692,101 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             return '';
+        }
+
+        /**
+         * Append concise item information to a log context array.
+         *
+         * @param array $context       Existing log context.
+         * @param array $item_context  Item-specific context details.
+         *
+         * @return array
+         */
+        protected function extend_log_context_with_item( array $context, array $item_context ) {
+            if ( empty( $item_context ) ) {
+                return $context;
+            }
+
+            $context['item'] = $item_context;
+
+            return $context;
+        }
+
+        /**
+         * Build a compact representation of the SoftOne item for logging purposes.
+         *
+         * @param array $data Normalised item data.
+         *
+         * @return array<string,string>
+         */
+        protected function get_item_log_context( array $data ) {
+            $context = array();
+
+            if ( isset( $data['mtrl'] ) ) {
+                $mtrl = trim( (string) $data['mtrl'] );
+                if ( '' !== $mtrl ) {
+                    $context['mtrl'] = $mtrl;
+                }
+            }
+
+            $sku = $this->determine_sku( $data );
+            if ( '' !== $sku ) {
+                $context['sku'] = $sku;
+            }
+
+            if ( isset( $data['code'] ) ) {
+                $code = trim( (string) $data['code'] );
+                if ( '' !== $code && ( ! isset( $context['sku'] ) || $context['sku'] !== $code ) ) {
+                    $context['code'] = $code;
+                }
+            }
+
+            $name = $this->get_value(
+                $data,
+                array(
+                    'desc',
+                    'description',
+                    'item_description',
+                    'itemname',
+                    'name',
+                )
+            );
+
+            if ( '' !== $name ) {
+                $context['name'] = $this->truncate_log_value( $name );
+            }
+
+            return $context;
+        }
+
+        /**
+         * Truncate a string to keep log entries concise.
+         *
+         * @param string $value      Original value.
+         * @param int    $max_length Maximum length to keep.
+         *
+         * @return string
+         */
+        protected function truncate_log_value( $value, $max_length = 120 ) {
+            $value = (string) $value;
+
+            if ( $max_length <= 0 ) {
+                return $value;
+            }
+
+            if ( function_exists( 'mb_strlen' ) && function_exists( 'mb_substr' ) ) {
+                if ( mb_strlen( $value ) <= $max_length ) {
+                    return $value;
+                }
+
+                return rtrim( mb_substr( $value, 0, $max_length - 1 ) ) . '…';
+            }
+
+            if ( strlen( $value ) <= $max_length ) {
+                return $value;
+            }
+
+            return rtrim( substr( $value, 0, $max_length - 1 ) ) . '…';
         }
 
         /**
