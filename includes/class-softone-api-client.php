@@ -67,7 +67,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
         /**
          * Legacy SoftOne connection defaults used by the PT Kids environment.
          */
-        const LEGACY_DEFAULT_ENDPOINT = 'https://ptkids.oncloud.gr/s1services';
+        const LEGACY_DEFAULT_ENDPOINT = 'http://ptkids.oncloud.gr/s1services';
         const LEGACY_DEFAULT_APP_ID   = '1000';
         const LEGACY_DEFAULT_COMPANY  = '10';
         const LEGACY_DEFAULT_BRANCH   = '101';
@@ -244,63 +244,19 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 throw new Softone_API_Client_Exception( __( '[SO-API-001] SoftOne credentials are missing. Please provide a username and password.', 'softone-woocommerce-integration' ) );
             }
 
+            $this->login_handshake = array();
+
             $payload = array(
                 'username' => $this->username,
                 'password' => $this->password,
             );
 
-            $handshake_fields = array();
-
-            foreach ( $this->get_handshake_fields() as $key => $value ) {
-                if ( '' === $value || null === $value ) {
-                    continue;
-                }
-
-                $handshake_fields[ $key ] = $value;
-            }
-
-            if ( ! empty( $handshake_fields ) ) {
-                /**
-                 * Allow developers to adjust the handshake fields added to the login payload.
-                 *
-                 * @param array<string, string>      $handshake_fields Handshake fields to include.
-                 * @param Softone_API_Client|null   $client           API client instance.
-                 */
-                $handshake_fields = apply_filters( 'softone_wc_integration_login_handshake_fields', $handshake_fields, $this );
-
-                if ( ! is_array( $handshake_fields ) ) {
-                    $handshake_fields = array();
-                }
-            }
-
-            $send_handshake = ! empty( $handshake_fields );
-
-            /**
-             * Toggle whether the SoftOne login request should include handshake values.
-             *
-             * @param bool                     $send_handshake   Whether handshake fields should be merged into the payload.
-             * @param array<string, string>    $handshake_fields Handshake fields prepared for the request.
-             * @param Softone_API_Client|null  $client           API client instance.
-             */
-            $send_handshake = apply_filters( 'softone_wc_integration_send_login_handshake', $send_handshake, $handshake_fields, $this );
-
-            if ( $send_handshake && ! empty( $handshake_fields ) ) {
-                foreach ( $handshake_fields as $key => $value ) {
-                    if ( '' === $value || null === $value ) {
-                        unset( $handshake_fields[ $key ] );
-                    }
-                }
-
-                if ( ! empty( $handshake_fields ) ) {
-                    $payload = array_merge( $payload, $handshake_fields );
-                }
+            if ( null !== $this->app_id && '' !== $this->app_id ) {
+                $payload['appId'] = $this->normalize_app_id( $this->app_id );
             }
 
             /**
              * Filter the login payload before dispatching the request.
-             *
-             * Developers can adjust the handshake behaviour via the
-             * `softone_wc_integration_send_login_handshake` filter.
              *
              * @param array                   $payload Login payload.
              * @param Softone_API_Client|null $client  API client instance.
@@ -335,13 +291,16 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
 
             $payload = array(
                 'clientID' => $client_id,
-                'clientid' => $client_id,
             );
 
-            foreach ( $this->get_handshake_fields() as $key => $value ) {
-                if ( '' !== $value ) {
-                    $payload[ $key ] = $value;
+            $handshake_fields = $this->get_handshake_fields();
+
+            foreach ( $handshake_fields as $key => $value ) {
+                if ( '' === $value || null === $value ) {
+                    continue;
                 }
+
+                $payload[ $key ] = $value;
             }
 
             $response = $this->call_service( 'authenticate', $payload, false );
@@ -377,6 +336,10 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 $extra
             );
 
+            if ( null !== $this->app_id && '' !== $this->app_id && ! isset( $payload['appId'] ) ) {
+                $payload['appId'] = $this->normalize_app_id( $this->app_id );
+            }
+
             if ( ! empty( $arguments ) ) {
                 $payload['params'] = $arguments;
             }
@@ -407,6 +370,10 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 ),
                 $extra
             );
+
+            if ( null !== $this->app_id && '' !== $this->app_id && ! isset( $payload['appId'] ) ) {
+                $payload['appId'] = $this->normalize_app_id( $this->app_id );
+            }
 
             return $this->call_service( 'setData', $payload );
         }
@@ -951,12 +918,13 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             $body['service'] = $service;
 
             if ( null !== $client_id ) {
-                $body['clientID'] = $client_id;
-                $body['clientid'] = $client_id;
-            }
+                $service_key = strtolower( $service );
 
-            if ( null !== $this->app_id && '' !== $this->app_id && ! isset( $body['appId'] ) ) {
-                $body['appId'] = $this->normalize_app_id( $this->app_id );
+                if ( 'sqldata' === $service_key ) {
+                    $body['clientid'] = $client_id;
+                } else {
+                    $body['clientID'] = $client_id;
+                }
             }
 
             foreach ( $body as $key => $value ) {
@@ -975,43 +943,41 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
          */
         protected function get_handshake_fields() {
             $fields = array(
-                'company' => $this->company,
-                'branch'  => $this->branch,
-                'module'  => $this->module,
-                'refid'   => $this->refid,
+                'company' => '',
+                'branch'  => '',
+                'module'  => '',
+                'refid'   => '',
             );
 
-            foreach ( $fields as $key => $value ) {
-                if ( is_string( $value ) ) {
-                    $fields[ $key ] = trim( $value );
-                } elseif ( null === $value ) {
-                    $fields[ $key ] = '';
-                } else {
-                    $fields[ $key ] = trim( (string) $value );
-                }
-            }
+            $sources = array(
+                is_array( $this->login_handshake ) ? $this->login_handshake : array(),
+                array(
+                    'company' => $this->company,
+                    'branch'  => $this->branch,
+                    'module'  => $this->module,
+                    'refid'   => $this->refid,
+                ),
+            );
 
-            if ( ! empty( $this->login_handshake ) ) {
-                foreach ( $this->login_handshake as $key => $value ) {
+            foreach ( $sources as $source ) {
+                foreach ( $source as $key => $value ) {
                     if ( ! array_key_exists( $key, $fields ) ) {
                         continue;
+                    }
+
+                    if ( is_string( $value ) ) {
+                        $value = trim( $value );
+                    } elseif ( null === $value ) {
+                        $value = '';
+                    } else {
+                        $value = trim( (string) $value );
                     }
 
                     if ( '' === $value ) {
                         continue;
                     }
 
-                    $current = $fields[ $key ];
-
-                    if ( is_string( $current ) ) {
-                        $current = trim( $current );
-                    } elseif ( null === $current ) {
-                        $current = '';
-                    } else {
-                        $current = trim( (string) $current );
-                    }
-
-                    if ( '' === $current || (string) $current !== (string) $value ) {
+                    if ( '' === $fields[ $key ] ) {
                         $fields[ $key ] = $value;
                     }
                 }

@@ -4,7 +4,7 @@ Donate link: https://www.georgenicolaou.me//
 Tags: comments, spam
 Requires at least: 3.0.1
 Tested up to: 3.4
-Stable tag: 1.8.11
+Stable tag: 1.8.12
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -123,13 +123,9 @@ Additional optional checks:
 
 == Login Handshake Behaviour ==
 
-The plugin now forwards the configured handshake fields (Company, Branch, Module, and Ref ID) during the SoftOne `login` request when those values are present under **Softone Integration → Settings**. Sites that must retain the legacy behaviour introduced for PT Kids can disable the additional payload parameters in code:
+SoftOne now expects the login request to contain **only** the username, password, and (optionally) the App ID. Handshake details (Company, Branch, Module, and Ref ID) are supplied by the SoftOne server in the login response and are re-used automatically for the follow-up `authenticate` request. When SoftOne does not return a value the plugin falls back to the values configured under **Softone Integration → Settings**.
 
-```
-add_filter( 'softone_wc_integration_send_login_handshake', '__return_false' );
-```
-
-Developers can also adjust the specific values sent to SoftOne via the `softone_wc_integration_login_handshake_fields` filter. Both hooks run before the `softone_wc_integration_login_payload` filter so that existing integrations can continue to refine the final request body as needed.
+The `softone_wc_integration_login_payload` filter remains available for integrations that need to adjust the final login payload before it is dispatched.
 
 == Arbitrary section ==
 

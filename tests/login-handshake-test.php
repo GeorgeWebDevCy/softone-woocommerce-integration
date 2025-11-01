@@ -1,6 +1,6 @@
 <?php
 /**
- * Verify that configured handshake fields are forwarded during login.
+ * Verify that SoftOne login/authentication payloads follow the API specification.
  */
 
 declare(strict_types=1);
@@ -56,6 +56,12 @@ if ( ! function_exists( 'wp_unslash' ) ) {
         }
 
         return $value;
+    }
+}
+
+if ( ! function_exists( 'wp_json_encode' ) ) {
+    function wp_json_encode( $data, $options = 0, $depth = 512 ) {
+        return json_encode( $data, $options, $depth );
     }
 }
 
@@ -206,27 +212,39 @@ require_once dirname( __DIR__ ) . '/includes/class-softone-api-client.php';
 
 class Softone_API_Client_Handshake_Test extends Softone_API_Client {
     /**
-     * @var array|null
+     * @var array<string,array>
      */
-    public $captured_payload = null;
+    public $captured_payloads = array();
 
     /**
-     * Capture the prepared login payload.
+     * Capture the prepared request payload.
      */
     protected function prepare_request_body( $service, array $data, $client_id = null ) {
         $body = parent::prepare_request_body( $service, $data, $client_id );
 
-        if ( 'login' === $service ) {
-            $this->captured_payload = $body;
-        }
+        $this->captured_payloads[ strtolower( (string) $service ) ] = $body;
 
         return $body;
     }
 
     /**
-     * Simulate a successful SoftOne login response.
+     * Simulate SoftOne responses, including handshake data on login.
      */
     protected function dispatch_request( array $body, $service ) {
+        if ( 'login' === $service ) {
+            return array(
+                'clientID' => 'client-xyz',
+                'objs'     => array(
+                    array(
+                        'COMPANY' => '555',
+                        'BRANCH'  => '666',
+                        'MODULE'  => '777',
+                        'REFID'   => '888',
+                    ),
+                ),
+            );
+        }
+
         return array( 'clientID' => 'client-xyz' );
     }
 }
@@ -235,6 +253,7 @@ $handshake_settings = array(
     'endpoint' => 'https://example.test/api',
     'username' => 'handshake-user',
     'password' => 'handshake-pass',
+    'app_id'   => '9000',
     'company'  => '101',
     'branch'   => '202',
     'module'   => '303',
@@ -249,43 +268,84 @@ if ( empty( $login_response['clientID'] ) ) {
     exit( 1 );
 }
 
-if ( empty( $client->captured_payload ) ) {
+$login_payload = isset( $client->captured_payloads['login'] ) ? $client->captured_payloads['login'] : null;
+
+if ( empty( $login_payload ) ) {
     fwrite( STDERR, "Login payload was not captured.\n" );
     exit( 1 );
 }
 
 foreach ( array( 'company', 'branch', 'module', 'refid' ) as $field ) {
-    if ( ! isset( $client->captured_payload[ $field ] ) ) {
-        fwrite( STDERR, sprintf( "Login payload is missing handshake field '%s'.\n", $field ) );
-        exit( 1 );
-    }
-
-    $expected = $handshake_settings[ $field ];
-    $actual   = $client->captured_payload[ $field ];
-
-    if ( (string) $expected !== (string) $actual ) {
-        fwrite( STDERR, sprintf( "Handshake field '%s' had unexpected value '%s'.\n", $field, $actual ) );
+    if ( isset( $login_payload[ $field ] ) ) {
+        fwrite( STDERR, sprintf( "Login payload unexpectedly contains handshake field '%s'.\n", $field ) );
         exit( 1 );
     }
 }
 
-$filter = static function ( $send_handshake ) {
-    return false;
-};
+if ( ! isset( $login_payload['appId'] ) || '9000' !== (string) $login_payload['appId'] ) {
+    fwrite( STDERR, "Login payload is missing the App ID.\n" );
+    exit( 1 );
+}
 
-add_filter( 'softone_wc_integration_send_login_handshake', $filter, 10, 3 );
+$auth_response = $client->authenticate( $login_response['clientID'] );
 
-$client_without_handshake = new Softone_API_Client_Handshake_Test( $handshake_settings );
-$client_without_handshake->login();
+if ( empty( $auth_response['clientID'] ) ) {
+    fwrite( STDERR, "Authenticate response did not contain a client ID.\n" );
+    exit( 1 );
+}
 
-remove_filter( 'softone_wc_integration_send_login_handshake', $filter, 10 );
+$authenticate_payload = isset( $client->captured_payloads['authenticate'] ) ? $client->captured_payloads['authenticate'] : null;
 
-foreach ( array( 'company', 'branch', 'module', 'refid' ) as $field ) {
-    if ( isset( $client_without_handshake->captured_payload[ $field ] ) ) {
-        fwrite( STDERR, sprintf( "Handshake field '%s' was not filtered out.\n", $field ) );
+if ( empty( $authenticate_payload ) ) {
+    fwrite( STDERR, "Authenticate payload was not captured.\n" );
+    exit( 1 );
+}
+
+foreach ( array( 'company' => '555', 'branch' => '666', 'module' => '777', 'refid' => '888' ) as $field => $expected ) {
+    if ( ! isset( $authenticate_payload[ $field ] ) ) {
+        fwrite( STDERR, sprintf( "Authenticate payload is missing handshake field '%s'.\n", $field ) );
+        exit( 1 );
+    }
+
+    if ( (string) $authenticate_payload[ $field ] !== (string) $expected ) {
+        fwrite( STDERR, sprintf( "Authenticate handshake field '%s' had unexpected value '%s'.\n", $field, $authenticate_payload[ $field ] ) );
         exit( 1 );
     }
 }
 
-echo "Login handshake fields were forwarded and can be disabled via filter.\n";
+if ( isset( $authenticate_payload['appId'] ) ) {
+    fwrite( STDERR, "Authenticate payload must not include the App ID.\n" );
+    exit( 1 );
+}
+
+if ( isset( $authenticate_payload['clientid'] ) ) {
+    fwrite( STDERR, "Authenticate payload must not include a lowercase client identifier.\n" );
+    exit( 1 );
+}
+
+$client->sql_data( 'GetCustomers' );
+
+$sql_payload = isset( $client->captured_payloads['sqldata'] ) ? $client->captured_payloads['sqldata'] : null;
+
+if ( empty( $sql_payload ) ) {
+    fwrite( STDERR, "SqlData payload was not captured.\n" );
+    exit( 1 );
+}
+
+if ( ! isset( $sql_payload['clientid'] ) || 'client-xyz' !== (string) $sql_payload['clientid'] ) {
+    fwrite( STDERR, "SqlData payload did not include the lowercase client identifier.\n" );
+    exit( 1 );
+}
+
+if ( isset( $sql_payload['clientID'] ) ) {
+    fwrite( STDERR, "SqlData payload must not include the uppercase client identifier.\n" );
+    exit( 1 );
+}
+
+if ( ! isset( $sql_payload['appId'] ) || '9000' !== (string) $sql_payload['appId'] ) {
+    fwrite( STDERR, "SqlData payload is missing the App ID.\n" );
+    exit( 1 );
+}
+
+echo "SoftOne login/authentication payloads comply with the specification.\n";
 exit( 0 );
