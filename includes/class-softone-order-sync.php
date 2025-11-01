@@ -104,29 +104,29 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
                     'order_id'  => $order_id,
                     'exception' => $exception,
                 ) );
-                $this->add_order_note( $order, sprintf( /* translators: %s: error message */ __( 'SoftOne customer sync failed: %s', 'softone-woocommerce-integration' ), $exception->getMessage() ) );
+                $this->add_order_note( $order, sprintf( /* translators: %s: error message */ __( '[SO-ORD-001] SoftOne customer sync failed: %s', 'softone-woocommerce-integration' ), $exception->getMessage() ) );
                 return;
             }
 
             if ( '' === $trdr ) {
-                $this->log( 'error', __( 'Unable to determine SoftOne customer (TRDR) for order.', 'softone-woocommerce-integration' ), array( 'order_id' => $order_id ) );
-                $this->add_order_note( $order, __( 'SoftOne order export skipped because a customer record could not be located.', 'softone-woocommerce-integration' ) );
+                $this->log( 'error', __( '[SO-ORD-002] Unable to determine SoftOne customer (TRDR) for order.', 'softone-woocommerce-integration' ), array( 'order_id' => $order_id ) );
+                $this->add_order_note( $order, __( '[SO-ORD-003] SoftOne order export skipped because a customer record could not be located.', 'softone-woocommerce-integration' ) );
                 return;
             }
 
             $payload = $this->build_document_payload( $order, $trdr );
 
             if ( empty( $payload['SALDOC'] ) || empty( $payload['ITELINES'] ) ) {
-                $this->log( 'error', __( 'SoftOne order payload is incomplete. Document was not created.', 'softone-woocommerce-integration' ), array( 'order_id' => $order_id ) );
-                $this->add_order_note( $order, __( 'SoftOne order export failed due to an incomplete payload.', 'softone-woocommerce-integration' ) );
+                $this->log( 'error', __( '[SO-ORD-004] SoftOne order payload is incomplete (missing SALDOC or ITELINES). Document was not created.', 'softone-woocommerce-integration' ), array( 'order_id' => $order_id ) );
+                $this->add_order_note( $order, __( '[SO-ORD-005] SoftOne order export failed due to an incomplete payload.', 'softone-woocommerce-integration' ) );
                 return;
             }
 
             $header = reset( $payload['SALDOC'] );
 
             if ( empty( $header['SERIES'] ) ) {
-                $this->log( 'error', __( 'SoftOne document series is not configured. Order export aborted.', 'softone-woocommerce-integration' ), array( 'order_id' => $order_id ) );
-                $this->add_order_note( $order, __( 'SoftOne order export failed because the document series is missing.', 'softone-woocommerce-integration' ) );
+                $this->log( 'error', __( '[SO-ORD-006] SoftOne document series is not configured. Order export aborted.', 'softone-woocommerce-integration' ), array( 'order_id' => $order_id ) );
+                $this->add_order_note( $order, __( '[SO-ORD-007] SoftOne order export failed because the document series is missing.', 'softone-woocommerce-integration' ) );
                 return;
             }
 
@@ -295,7 +295,7 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
                         'error',
                         sprintf(
                             /* translators: %s: ISO 3166-1 alpha-2 country code. */
-                            __( 'SoftOne country mapping missing for ISO code %s.', 'softone-woocommerce-integration' ),
+                            __( '[SO-CNTRY-001] SoftOne country mapping missing for ISO code %s.', 'softone-woocommerce-integration' ),
                             $billing_country
                         ),
                         array(
@@ -306,7 +306,7 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
 
                     $this->add_order_note(
                         $order,
-                        __( 'SoftOne guest customer creation skipped because the country mapping is missing.', 'softone-woocommerce-integration' )
+                        __( '[SO-ORD-011] SoftOne guest customer creation skipped because the country mapping is missing.', 'softone-woocommerce-integration' )
                     );
 
                     return '';
@@ -364,7 +364,7 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
             $warehouse = $this->api_client->get_warehouse();
             $order_id  = $order->get_id();
             if ( '' === $series ) {
-                $this->log( 'warning', __( 'SoftOne SALDOC series is not configured. Using fallback payload without series.', 'softone-woocommerce-integration' ), array( 'order_id' => $order->get_id() ) );
+                $this->log( 'warning', __( '[SO-ORD-009] SoftOne SALDOC series is not configured. Using fallback payload without series.', 'softone-woocommerce-integration' ), array( 'order_id' => $order->get_id() ) );
             }
 
             $header    = array(
@@ -473,7 +473,7 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
                 $mtrl = $this->get_product_mtrl( $product );
 
                 if ( '' === $mtrl ) {
-                    $this->log( 'warning', __( 'Order line skipped because the SoftOne item (MTRL) identifier is missing.', 'softone-woocommerce-integration' ), array(
+                    $this->log( 'warning', __( '[SO-ORD-010] Order line skipped because the SoftOne item (MTRL) identifier is missing.', 'softone-woocommerce-integration' ), array(
                         'order_id'   => $order->get_id(),
                         'item_id'    => $item->get_id(),
                         'product_id' => $product->get_id(),
@@ -558,7 +558,7 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
                         'attempt'   => $attempt,
                         'exception' => $exception,
                     ) );
-                    $this->add_order_note( $order, sprintf( /* translators: 1: attempt, 2: error message */ __( 'SoftOne order export attempt %1$d failed: %2$s', 'softone-woocommerce-integration' ), $attempt, $exception->getMessage() ) );
+                    $this->add_order_note( $order, sprintf( /* translators: 1: attempt, 2: error message */ __( '[SO-ORD-008] SoftOne order export attempt %1$d failed: %2$s', 'softone-woocommerce-integration' ), $attempt, $exception->getMessage() ) );
                     $last_response = array();
                 }
 

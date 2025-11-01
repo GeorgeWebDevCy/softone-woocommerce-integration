@@ -416,7 +416,7 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
                         'error',
                         sprintf(
                             /* translators: %s: ISO 3166-1 alpha-2 country code. */
-                            __( 'SoftOne country mapping missing for ISO code %s.', 'softone-woocommerce-integration' ),
+                            __( '[SO-CNTRY-001] SoftOne country mapping missing for ISO code %s.', 'softone-woocommerce-integration' ),
                             $country_code
                         ),
                         $country_log_attrs
