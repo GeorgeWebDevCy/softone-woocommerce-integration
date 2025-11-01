@@ -4,7 +4,7 @@ Donate link: https://www.georgenicolaou.me//
 Tags: comments, spam
 Requires at least: 3.0.1
 Tested up to: 3.4
-Stable tag: 1.8.20
+Stable tag: 1.8.21
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,9 @@ directory take precedence. For example, `/assets/screenshot-1.png` would win ove
 2. This is the second screen shot
 
 == Changelog ==
+
+= 1.8.21 =
+* Ensure product category assignments persist after saving WooCommerce products so synced items inherit the expected hierarchy.
 
 = 1.8.20 =
 * Improve the category synchronisation log viewer to detect entries across all WooCommerce log files.

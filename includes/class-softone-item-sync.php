@@ -717,6 +717,27 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 throw new Exception( __( 'Unable to save the WooCommerce product.', 'softone-woocommerce-integration' ) );
             }
 
+            if (
+                ! empty( $category_ids )
+                && function_exists( 'taxonomy_exists' )
+                && taxonomy_exists( 'product_cat' )
+                && function_exists( 'wp_set_object_terms' )
+            ) {
+                $category_assignment = wp_set_object_terms( $product_id, $category_ids, 'product_cat' );
+
+                if ( is_wp_error( $category_assignment ) ) {
+                    $this->log(
+                        'error',
+                        'SOFTONE_CAT_SYNC_009 Failed to assign product categories.',
+                        array(
+                            'product_id'    => $product_id,
+                            'category_ids'  => $category_ids,
+                            'error_message' => $category_assignment->get_error_message(),
+                        )
+                    );
+                }
+            }
+
             if ( $mtrl ) {
                 update_post_meta( $product_id, self::META_MTRL, $mtrl );
             }
