@@ -440,12 +440,13 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
          */
         public function get_client_id( $force_refresh = false ) {
             if ( ! $force_refresh ) {
+                $meta = $this->get_client_meta();
                 $client_id = get_transient( self::TRANSIENT_CLIENT_ID_KEY );
                 if ( ! empty( $client_id ) ) {
+                    $this->restore_client_ttl_from_meta( $meta );
                     return (string) $client_id;
                 }
 
-                $meta = $this->get_client_meta();
                 if ( ! empty( $meta['client_id'] ) && ! empty( $meta['expires_at'] ) && time() < (int) $meta['expires_at'] ) {
                     $remaining = (int) $meta['expires_at'] - time();
 
@@ -453,6 +454,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                         set_transient( self::TRANSIENT_CLIENT_ID_KEY, $meta['client_id'], $remaining );
                     }
 
+                    $this->restore_client_ttl_from_meta( $meta );
                     return (string) $meta['client_id'];
                 }
             }
@@ -841,6 +843,37 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
         protected function get_client_meta() {
             $meta = get_option( self::OPTION_CLIENT_ID_META_KEY, array() );
             return is_array( $meta ) ? $meta : array();
+        }
+
+        /**
+         * Restore the cached client ID TTL from stored metadata.
+         *
+         * @param array $meta Stored metadata.
+         */
+        protected function restore_client_ttl_from_meta( array $meta ) {
+            if ( empty( $meta ) ) {
+                return;
+            }
+
+            $ttl = 0;
+
+            if ( isset( $meta['ttl'] ) && is_numeric( $meta['ttl'] ) ) {
+                $ttl = (int) $meta['ttl'];
+            } elseif ( isset( $meta['expires_at'] ) && is_numeric( $meta['expires_at'] ) ) {
+                $expires_at = (int) $meta['expires_at'];
+
+                if ( isset( $meta['cached_at'] ) && is_numeric( $meta['cached_at'] ) ) {
+                    $ttl = $expires_at - (int) $meta['cached_at'];
+                }
+
+                if ( $ttl <= 0 ) {
+                    $ttl = $expires_at - time();
+                }
+            }
+
+            if ( $ttl > 0 ) {
+                $this->client_id_ttl = max( MINUTE_IN_SECONDS, (int) $ttl );
+            }
         }
 
         /**
