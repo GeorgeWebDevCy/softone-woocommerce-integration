@@ -249,14 +249,58 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 'password' => $this->password,
             );
 
+            $handshake_fields = array();
+
+            foreach ( $this->get_handshake_fields() as $key => $value ) {
+                if ( '' === $value || null === $value ) {
+                    continue;
+                }
+
+                $handshake_fields[ $key ] = $value;
+            }
+
+            if ( ! empty( $handshake_fields ) ) {
+                /**
+                 * Allow developers to adjust the handshake fields added to the login payload.
+                 *
+                 * @param array<string, string>      $handshake_fields Handshake fields to include.
+                 * @param Softone_API_Client|null   $client           API client instance.
+                 */
+                $handshake_fields = apply_filters( 'softone_wc_integration_login_handshake_fields', $handshake_fields, $this );
+
+                if ( ! is_array( $handshake_fields ) ) {
+                    $handshake_fields = array();
+                }
+            }
+
+            $send_handshake = ! empty( $handshake_fields );
+
+            /**
+             * Toggle whether the SoftOne login request should include handshake values.
+             *
+             * @param bool                     $send_handshake   Whether handshake fields should be merged into the payload.
+             * @param array<string, string>    $handshake_fields Handshake fields prepared for the request.
+             * @param Softone_API_Client|null  $client           API client instance.
+             */
+            $send_handshake = apply_filters( 'softone_wc_integration_send_login_handshake', $send_handshake, $handshake_fields, $this );
+
+            if ( $send_handshake && ! empty( $handshake_fields ) ) {
+                foreach ( $handshake_fields as $key => $value ) {
+                    if ( '' === $value || null === $value ) {
+                        unset( $handshake_fields[ $key ] );
+                    }
+                }
+
+                if ( ! empty( $handshake_fields ) ) {
+                    $payload = array_merge( $payload, $handshake_fields );
+                }
+            }
+
             /**
              * Filter the login payload before dispatching the request.
              *
-             * Historically the plugin forwarded the handshake fields (company, branch,
-             * module, refid) during the login request. SoftOne rejects those extra
-             * parameters for the PT Kids environment, so the default behaviour is to
-             * omit them. Sites that rely on the old behaviour can re-introduce the
-             * fields via this filter.
+             * Developers can adjust the handshake behaviour via the
+             * `softone_wc_integration_send_login_handshake` filter.
              *
              * @param array                   $payload Login payload.
              * @param Softone_API_Client|null $client  API client instance.

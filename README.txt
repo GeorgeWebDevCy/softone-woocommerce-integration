@@ -4,7 +4,7 @@ Donate link: https://www.georgenicolaou.me//
 Tags: comments, spam
 Requires at least: 3.0.1
 Tested up to: 3.4
-Stable tag: 1.8.10
+Stable tag: 1.8.11
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -120,6 +120,16 @@ Additional optional checks:
 
 1. Populate the **Default AREAS**, **Default SOCURRENCY**, and **Default TRDCATEGORY** fields with representative values and save the settings.
 1. Create a WooCommerce customer (or place a guest order) and confirm that the SoftOne payload now contains the configured defaults (for example `AREAS => 22`). Remove the values or adjust them to match the production environment once verified.
+
+== Login Handshake Behaviour ==
+
+The plugin now forwards the configured handshake fields (Company, Branch, Module, and Ref ID) during the SoftOne `login` request when those values are present under **Softone Integration → Settings**. Sites that must retain the legacy behaviour introduced for PT Kids can disable the additional payload parameters in code:
+
+```
+add_filter( 'softone_wc_integration_send_login_handshake', '__return_false' );
+```
+
+Developers can also adjust the specific values sent to SoftOne via the `softone_wc_integration_login_handshake_fields` filter. Both hooks run before the `softone_wc_integration_login_payload` filter so that existing integrations can continue to refine the final request body as needed.
 
 == Arbitrary section ==
 
