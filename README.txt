@@ -1,112 +1,116 @@
-=== Plugin Name ===
-Contributors: (this should be a list of wordpress.org userid's)
+=== Softone WooCommerce Integration ===
+Contributors: georgenicolaou
 Donate link: https://www.georgenicolaou.me//
-Tags: comments, spam
-Requires at least: 3.0.1
-Tested up to: 3.4
-Stable tag: 1.8.22
+Tags: softone, erp, woocommerce, integration, inventory, orders, api
+Requires at least: 6.0
+Tested up to: 6.5
+Requires PHP: 7.4
+Stable tag: 1.8.23
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
-Here is a short description of the plugin.  This should be no more than 150 characters.  No markup here.
+Softone WooCommerce Integration connects your WooCommerce storefront with your SoftOne ERP installation so stock, customers, and orders move between the two platforms without manual data entry.
 
 == Description ==
 
-This is the long description.  No limit, and you can use Markdown (as well as in the following sections).
+Softone WooCommerce Integration keeps your catalogue, shoppers, and sales aligned between WooCommerce and SoftOne. The plugin authenticates against the SoftOne Web Services API, imports item information, exports WooCommerce orders, and offers tools for quickly validating credentials and monitoring synchronisation health.
 
-For backwards compatibility, if this section is missing, the full length of the short description will be used, and
-Markdown parsed.
+= Core capabilities =
 
-A few notes about the sections above:
+* **Item synchronisation** – Imports SoftOne items on a recurring schedule, updating prices, stock, categories, and attributes in WooCommerce.
+* **Customer synchronisation** – Re-uses or creates SoftOne customer records while exporting WooCommerce orders, including guest checkout flows.
+* **Order export** – Sends WooCommerce orders to SoftOne SALDOC documents once orders reach the configured statuses and records the resulting document ID back on the order.
+* **API tester** – Provides an in-dashboard tester with sample payload presets so administrators can validate credentials, run ad-hoc calls, and inspect the raw responses returned by SoftOne.
+* **Category log viewer** – Surfaces category synchronisation entries aggregated from WooCommerce logs to make diagnosing catalogue imports easier.
+* **Menu population helpers** – Optionally extend WooCommerce menu structures to include synced SoftOne product categories, even when the site does not expose brand taxonomies.
 
-*   "Contributors" is a comma separated list of wp.org/wp-plugins.org usernames
-*   "Tags" is a comma separated list of tags that apply to the plugin
-*   "Requires at least" is the lowest version that the plugin will work on
-*   "Tested up to" is the highest version that you've *successfully used to test the plugin*. Note that it might work on
-higher versions... this is just the highest one you've verified.
-*   Stable tag should indicate the Subversion "tag" of the latest stable version, or "trunk," if you use `/trunk/` for
-stable.
+= Prerequisites =
 
-    Note that the `readme.txt` of the stable tag is the one that is considered the defining one for the plugin, so
-if the `/trunk/readme.txt` file says that the stable tag is `4.3`, then it is `/tags/4.3/readme.txt` that'll be used
-for displaying information about the plugin.  In this situation, the only thing considered from the trunk `readme.txt`
-is the stable tag pointer.  Thus, if you develop in trunk, you can update the trunk `readme.txt` to reflect changes in
-your in-development version, without having that information incorrectly disclosed about the current stable version
-that lacks those changes -- as long as the trunk's `readme.txt` points to the correct stable tag.
-
-    If no stable tag is provided, it is assumed that trunk is stable, but you should specify "trunk" if that's where
-you put the stable version, in order to eliminate any doubt.
+* A SoftOne installation with web services enabled and credentials for an API user (endpoint URL, username, password, optional App ID, company, branch, module, and reference ID).
+* WordPress 6.0 or newer with WooCommerce 7.5 or later activated.
+* PHP 7.4+ with the cURL and JSON extensions enabled.
+* WP-Cron (or a system cron alternative) for unattended catalogue imports.
 
 == Installation ==
 
-This section describes how to install the plugin and get it working.
+1. Download the plugin archive or deploy the package via Composer (`composer require georgenicolaou/softone-woocommerce-integration`).
+2. Upload the plugin to `/wp-content/plugins/` or install it from the Plugins → Add New screen.
+3. Activate **Softone WooCommerce Integration**.
+4. (Optional) Run `composer install` within the plugin directory to ensure the bundled update checker is available when developing from source.
+5. Navigate to **Softone Integration → Settings** to enter your SoftOne credentials and default configuration before running your first sync.
 
-e.g.
+== Configuration ==
 
-1. Upload `softone-woocommerce-integration.php` to the `/wp-content/plugins/` directory
-1. Activate the plugin through the 'Plugins' menu in WordPress
-1. Place `<?php do_action('plugin_name_hook'); ?>` in your templates
+The settings screen groups related options into three sections:
+
+* **Softone API Credentials** – Provide the connection details returned by SoftOne: Endpoint URL, Username, Password, App ID, Company, Branch, Module, Ref ID, Default SALDOC Series, Default Warehouse, Default AREAS, Default SOCURRENCY, Default TRDCATEGORY, and Country Mappings. All credential fields accept alphanumeric strings. The endpoint URL is normalised without trailing slashes. Passwords are stored with minimal filtering so special characters are preserved.
+* **Country Mappings** – Map WooCommerce ISO 3166-1 alpha-2 country codes to the numeric identifiers expected by SoftOne. Enter one mapping per line using the `GR:123` format; blank lines and malformed entries are ignored. Filters `softone_wc_integration_country_mappings` and `softone_wc_integration_country_id` let developers adjust mappings programmatically.
+* **Stock Behaviour** – Choose between treating zero SoftOne stock as “1” to keep items purchasable, or marking depleted items as backorderable. Only one mode can be active at a time.
+
+After saving credentials, visit the **API Tester** submenu to validate connectivity and inspect sample item and order payloads. The tester records results per user and supports retrying requests without leaving the page.
 
 == Frequently Asked Questions ==
 
-= A question that someone might have =
+= How do I trigger my first item import? =
+Use the **Run Import Now** button available under **Softone Integration → Settings**. The import will also run automatically on the schedule defined by the `softone_wc_integration_item_sync_interval` filter (hourly by default) once WP-Cron executes.
 
-An answer to that question.
+= Which WooCommerce order statuses create SoftOne documents? =
+By default orders export when they transition to `processing` or `completed`. Developers can adjust the list with the `softone_wc_integration_order_statuses` filter. Successful exports add a private order note containing the SoftOne document number.
 
-= What about foo bar? =
+= Where can I review category synchronisation activity? =
+Open **Softone Integration → Category Sync Logs** to review the latest entries gathered from WooCommerce log files. The viewer lists the source log file, severity, timestamp, and raw context for each matching entry.
 
-Answer to foo bar dilemma.
+= Can I customise the API calls before they are sent? =
+Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integration_customer_payload`, and `softone_wc_integration_login_payload` allow developers to modify payloads, override defaults, and append diagnostic metadata.
 
 == Screenshots ==
 
-1. This screen shot description corresponds to screenshot-1.(png|jpg|jpeg|gif). Note that the screenshot is taken from
-the /assets directory or the directory that contains the stable readme.txt (tags or trunk). Screenshots in the /assets
-directory take precedence. For example, `/assets/screenshot-1.png` would win over `/tags/4.3/screenshot-1.png`
-(or jpg, jpeg, gif).
-2. This is the second screen shot
+1. Softone Integration settings screen showing credential fields, stock behaviour toggles, and country mapping textarea.
+2. API Tester interface displaying the request form, preset selector, and formatted response output.
+3. Category Sync Logs list summarising recent synchronisation messages from WooCommerce logs.
+
+== Troubleshooting ==
+
+* **Authentication failures** – Recheck the endpoint URL formatting, confirm that the API user has access to the specified company/branch/module, and verify that firewalls allow outbound connections to the SoftOne server. Use the API tester to validate credentials with a simple `authenticate` request.
+* **Orders not exporting** – Ensure the Default SALDOC Series is configured, confirm that the customer synchronisation completed (look for notes on the order), and inspect the WooCommerce order notes/logs for `[SO-ORD-###]` messages indicating what failed.
+* **No categories appearing in menus** – Confirm that WooCommerce’s product categories exist and that recent item imports completed. The Category Sync Logs screen highlights any taxonomy creation issues.
+* **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Sync::schedule_event()`.
 
 == Changelog ==
 
+= 1.8.23 =
+* Refresh plugin documentation to reflect the latest synchronisation features, tools, and troubleshooting workflows.
+
 = 1.8.22 =
-* Continue populating category menu items even when the product brand taxonomy is unavailable.
+* Continue populating WooCommerce navigation menus with SoftOne categories when product brand taxonomies are unavailable so storefronts maintain complete catalogue navigation.
 
 = 1.8.21 =
-* Ensure product category assignments persist after saving WooCommerce products so synced items inherit the expected hierarchy.
+* Preserve WooCommerce product category assignments on save to ensure synced SoftOne items inherit the expected hierarchy without manual rework.
 
 = 1.8.20 =
-* Improve the category synchronisation log viewer to detect entries across all WooCommerce log files.
+* Expand the category synchronisation log viewer to aggregate entries across all WooCommerce log files, improving visibility into import issues.
 
 = 1.8.19 =
-* Added a category synchronisation log viewer in the admin menu to surface SoftOne taxonomy creation activity.
-* Keep stale products published by default while marking them out of stock.
+* Introduce the category synchronisation log viewer within the admin menu to surface SoftOne taxonomy activity.
+* Keep SoftOne-managed products published by default while marking them out of stock when inventory reaches zero.
 
 = 1.8.17 =
-* Improve logging to capture additional diagnostic details when API requests fail.
+* Capture additional diagnostic data when SoftOne API requests fail to speed up support investigations.
 
 = 1.8.16 =
-* Bump plugin version constants and readme stable tag to 1.8.16.
-
-= 1.0 =
-* A change since the previous version.
-* Another change.
-
-= 0.5 =
-* List versions from most recent at top to oldest at bottom.
+* Update internal version references in preparation for ongoing 1.8.x maintenance releases.
 
 == Upgrade Notice ==
 
-= 1.0 =
-Upgrade notices describe the reason a user should upgrade.  No more than 300 characters.
-
-= 0.5 =
-This version fixes a security related bug.  Upgrade immediately.
+= 1.8.23 =
+This update revises the plugin documentation to outline current setup, synchronisation flows, and troubleshooting tips. Review the README before onboarding new stores.
 
 == Automatic Updates ==
 
-The plugin now bundles [yahnis-elsts/plugin-update-checker](https://github.com/YahnisElsts/plugin-update-checker) via Composer so that installations can pull new releases directly from the Git repository.
+The plugin bundles [yahnis-elsts/plugin-update-checker](https://github.com/YahnisElsts/plugin-update-checker) via Composer so that installations can pull new releases directly from the Git repository.
 
-1. Run `composer install` inside the plugin directory to install dependencies.
-1. Adjust the repository URL, branch or release asset usage using the `softone_woocommerce_integration_update_url`, `softone_woocommerce_integration_update_branch` and `softone_woocommerce_integration_use_release_assets` filters if needed.
+1. Run `composer install` inside the plugin directory to install dependencies when working from source.
+1. Adjust the repository URL, branch, or release asset usage using the `softone_woocommerce_integration_update_url`, `softone_woocommerce_integration_update_branch`, and `softone_woocommerce_integration_use_release_assets` filters if needed.
 1. WordPress will automatically discover updates exposed by the configured repository and prompt you to update from the Plugins screen.
 
 == Country Mapping Configuration ==
@@ -127,52 +131,15 @@ Leave any field blank to skip sending the corresponding value. Developers can re
 
 == Manual QA ==
 
-Use the following smoke test to verify country mapping behaviour:
+Use the following smoke tests before deploying changes:
 
-1. Navigate to **Softone Integration → Settings** and populate the **Country Mappings** textarea with a sample mapping such as `GR:101`. Save the settings.
-1. Create a WooCommerce customer (or place a guest order) using Greece as the billing country.
-1. Confirm that the SoftOne payload written to the debug log or sent to the API contains `COUNTRY => 101` instead of the ISO code. If the mapping is missing, the plugin now logs an error mentioning the ISO code and skips the payload so the missing configuration can be corrected.
-
-Repeat the steps for each supported country to ensure the expected numeric IDs are emitted.
-
-Additional optional checks:
-
-1. Populate the **Default AREAS**, **Default SOCURRENCY**, and **Default TRDCATEGORY** fields with representative values and save the settings.
-1. Create a WooCommerce customer (or place a guest order) and confirm that the SoftOne payload now contains the configured defaults (for example `AREAS => 22`). Remove the values or adjust them to match the production environment once verified.
+1. Populate credentials and run the API tester with the `authenticate` preset. Confirm a success response and that the result banner appears on refresh.
+2. Run a manual item import and verify that products update stock levels and categories as expected. Check Category Sync Logs for new entries.
+3. Place a WooCommerce order that meets the configured export status. Confirm a SoftOne document ID note is added to the order and that the WooCommerce order status remains unchanged.
+4. Update the country mapping textarea with `GR:101`, place a Greek order, and confirm the SoftOne payload contains `COUNTRY => 101` instead of the ISO code.
 
 == Login Handshake Behaviour ==
 
-SoftOne now expects the login request to contain **only** the username, password, and (optionally) the App ID. Handshake details (Company, Branch, Module, and Ref ID) are supplied by the SoftOne server in the login response and are re-used automatically for the follow-up `authenticate` request. When SoftOne does not return a value the plugin falls back to the values configured under **Softone Integration → Settings**.
+SoftOne expects the login request to include only the username, password, and optional App ID. Company, Branch, Module, and Ref ID are returned in the login response and re-used automatically for the follow-up `authenticate` request. When the response omits a value the plugin falls back to the values configured under **Softone Integration → Settings**.
 
-The `softone_wc_integration_login_payload` filter remains available for integrations that need to adjust the final login payload before it is dispatched.
-
-== Arbitrary section ==
-
-You may provide arbitrary sections, in the same format as the ones above.  This may be of use for extremely complicated
-plugins where more information needs to be conveyed that doesn't fit into the categories of "description" or
-"installation."  Arbitrary sections will be shown below the built-in sections outlined above.
-
-== A brief Markdown Example ==
-
-Ordered list:
-
-1. Some feature
-1. Another feature
-1. Something else about the plugin
-
-Unordered list:
-
-* something
-* something else
-* third thing
-
-Here's a link to [WordPress](http://wordpress.org/ "Your favorite software") and one to [Markdown's Syntax Documentation][markdown syntax].
-Titles are optional, naturally.
-
-[markdown syntax]: http://daringfireball.net/projects/markdown/syntax
-            "Markdown is what the parser uses to process much of the readme file"
-
-Markdown uses email style notation for blockquotes and I've been told:
-> Asterisks for *emphasis*. Double it up  for **strong**.
-
-`<?php code(); // goes in backticks ?>`
+The `softone_wc_integration_login_payload` filter remains available for integrations that need to adjust the final login payload before dispatch.
