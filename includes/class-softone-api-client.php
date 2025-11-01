@@ -252,10 +252,11 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             /**
              * Filter the login payload before dispatching the request.
              *
-             * Handshake values are intentionally omitted from the login
-             * payload by default (matching the behaviour in version 1.8.8).
-             * Sites that need to reintroduce or adjust those handshake fields
-             * can do so via the softone_wc_integration_login_payload filter.
+             * Historically the plugin forwarded the handshake fields (company, branch,
+             * module, refid) during the login request. SoftOne rejects those extra
+             * parameters for the PT Kids environment, so the default behaviour is to
+             * omit them. Sites that rely on the old behaviour can re-introduce the
+             * fields via this filter.
              *
              * @param array                   $payload Login payload.
              * @param Softone_API_Client|null $client  API client instance.
@@ -440,13 +441,12 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
          */
         public function get_client_id( $force_refresh = false ) {
             if ( ! $force_refresh ) {
-                $meta = $this->get_client_meta();
                 $client_id = get_transient( self::TRANSIENT_CLIENT_ID_KEY );
                 if ( ! empty( $client_id ) ) {
-                    $this->restore_client_ttl_from_meta( $meta );
                     return (string) $client_id;
                 }
 
+                $meta = $this->get_client_meta();
                 if ( ! empty( $meta['client_id'] ) && ! empty( $meta['expires_at'] ) && time() < (int) $meta['expires_at'] ) {
                     $remaining = (int) $meta['expires_at'] - time();
 
@@ -454,7 +454,6 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                         set_transient( self::TRANSIENT_CLIENT_ID_KEY, $meta['client_id'], $remaining );
                     }
 
-                    $this->restore_client_ttl_from_meta( $meta );
                     return (string) $meta['client_id'];
                 }
             }
@@ -846,37 +845,6 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
         }
 
         /**
-         * Restore the cached client ID TTL from stored metadata.
-         *
-         * @param array $meta Stored metadata.
-         */
-        protected function restore_client_ttl_from_meta( array $meta ) {
-            if ( empty( $meta ) ) {
-                return;
-            }
-
-            $ttl = 0;
-
-            if ( isset( $meta['ttl'] ) && is_numeric( $meta['ttl'] ) ) {
-                $ttl = (int) $meta['ttl'];
-            } elseif ( isset( $meta['expires_at'] ) && is_numeric( $meta['expires_at'] ) ) {
-                $expires_at = (int) $meta['expires_at'];
-
-                if ( isset( $meta['cached_at'] ) && is_numeric( $meta['cached_at'] ) ) {
-                    $ttl = $expires_at - (int) $meta['cached_at'];
-                }
-
-                if ( $ttl <= 0 ) {
-                    $ttl = $expires_at - time();
-                }
-            }
-
-            if ( $ttl > 0 ) {
-                $this->client_id_ttl = max( MINUTE_IN_SECONDS, (int) $ttl );
-            }
-        }
-
-        /**
          * Retrieve the configured default SALDOC series.
          *
          * @return string
@@ -959,11 +927,9 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
         /**
          * Retrieve the SoftOne handshake fields configured in the settings.
          *
-         * @param bool $include_dynamic Whether to include handshake values derived from the last login response.
-         *
          * @return array
          */
-        protected function get_handshake_fields( $include_dynamic = true ) {
+        protected function get_handshake_fields() {
             $fields = array(
                 'company' => $this->company,
                 'branch'  => $this->branch,
@@ -981,7 +947,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 }
             }
 
-            if ( $include_dynamic && ! empty( $this->login_handshake ) ) {
+            if ( ! empty( $this->login_handshake ) ) {
                 foreach ( $this->login_handshake as $key => $value ) {
                     if ( ! array_key_exists( $key, $fields ) ) {
                         continue;
