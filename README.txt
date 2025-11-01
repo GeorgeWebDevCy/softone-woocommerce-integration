@@ -4,7 +4,7 @@ Donate link: https://www.georgenicolaou.me//
 Tags: comments, spam
 Requires at least: 3.0.1
 Tested up to: 3.4
-Stable tag: 1.8.11
+Stable tag: 1.8.12
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -67,14 +67,8 @@ directory take precedence. For example, `/assets/screenshot-1.png` would win ove
 
 == Changelog ==
 
-= 1.8.11 =
-* Prevented cached handshake data from being resent with login requests so environments that require minimal payloads can authenticate successfully again.
-
-= 1.8.10 =
-* Added the SoftOne handshake fields to login requests to prevent authentication failures when the API requires company information.
-
-= 1.8.9 =
-* Fixed product imports assigning every item to the default WooCommerce category by preserving the full SoftOne category hierarchy.
+= 1.8.12 =
+* Restore the plugin codebase from the stable 703eaca release.
 
 = 1.8.8 =
 * Added mutually exclusive stock handling options for zero-quantity imports.
