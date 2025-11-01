@@ -937,6 +937,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $category_name    = $this->get_value(
                 $data,
                 array(
+                    'commecategory_name',
                     'commercategory_name',
                     'commercategory',
                     'category_name',
