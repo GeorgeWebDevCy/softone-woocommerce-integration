@@ -194,6 +194,18 @@ class Softone_Woocommerce_Integration_Admin {
                 $this->add_text_field( 'areas', __( 'Default AREAS', 'softone-woocommerce-integration' ) );
                 $this->add_text_field( 'socurrency', __( 'Default SOCURRENCY', 'softone-woocommerce-integration' ) );
                 $this->add_text_field( 'trdcategory', __( 'Default TRDCATEGORY', 'softone-woocommerce-integration' ) );
+                $this->add_checkbox_field(
+                        'zero_stock_quantity_fallback',
+                        __( 'Treat zero stock as in-stock quantity', 'softone-woocommerce-integration' ),
+                        __( 'When SoftOne reports zero stock, WooCommerce will record a quantity of 1 instead. Cannot be combined with the backorder setting below.', 'softone-woocommerce-integration' ),
+                        'zero-stock-mode'
+                );
+                $this->add_checkbox_field(
+                        'zero_stock_backorder',
+                        __( 'Allow backorders when stock is zero', 'softone-woocommerce-integration' ),
+                        __( 'When SoftOne reports zero stock, WooCommerce will keep the quantity at zero and mark the product as available on backorder. Cannot be combined with the quantity fallback option above.', 'softone-woocommerce-integration' ),
+                        'zero-stock-mode'
+                );
                 add_settings_field(
                         'softone_wc_integration_country_mappings',
                         __( 'Country Mappings', 'softone-woocommerce-integration' ),
@@ -240,6 +252,16 @@ class Softone_Woocommerce_Integration_Admin {
                 $sanitized['socurrency']            = isset( $settings['socurrency'] ) ? $this->sanitize_text_value( $settings['socurrency'] ) : '';
                 $sanitized['trdcategory']           = isset( $settings['trdcategory'] ) ? $this->sanitize_text_value( $settings['trdcategory'] ) : '';
                 $sanitized['country_mappings']      = isset( $settings['country_mappings'] ) ? $this->sanitize_country_mappings( $settings['country_mappings'] ) : array();
+
+                $quantity_fallback = ! empty( $settings['zero_stock_quantity_fallback'] );
+                $backorder_enabled = ! empty( $settings['zero_stock_backorder'] );
+
+                if ( $quantity_fallback && $backorder_enabled ) {
+                        $backorder_enabled = false;
+                }
+
+                $sanitized['zero_stock_quantity_fallback'] = $quantity_fallback;
+                $sanitized['zero_stock_backorder']         = $backorder_enabled;
 
                 return $sanitized;
 
@@ -1420,6 +1442,96 @@ public function handle_test_connection() {
 		}
 
                 echo '<input' . $attribute_string . ' />';
+
+        }
+
+        /**
+         * Register a checkbox field with the Settings API.
+         *
+         * @param string $key         Setting key.
+         * @param string $description Field description displayed next to the checkbox.
+         * @param string $help        Optional help text displayed below the checkbox.
+         */
+        private function add_checkbox_field( $key, $description, $help = '', $group = '' ) {
+
+                add_settings_field(
+                        'softone_wc_integration_' . $key,
+                        ' ',
+                        array( $this, 'render_checkbox_field' ),
+                        'softone_wc_integration',
+                        'softone_wc_integration_api',
+                        array(
+                                'key'         => $key,
+                                'description' => $description,
+                                'help'        => $help,
+                                'group'       => $group,
+                        )
+                );
+
+        }
+
+        /**
+         * Render a checkbox field.
+         *
+         * @param array $args Field arguments.
+         */
+        public function render_checkbox_field( $args ) {
+
+                $key         = isset( $args['key'] ) ? $args['key'] : '';
+                $description = isset( $args['description'] ) ? $args['description'] : '';
+                $help        = isset( $args['help'] ) ? $args['help'] : '';
+                $group       = isset( $args['group'] ) ? $args['group'] : '';
+
+                if ( '' === $key ) {
+                        return;
+                }
+
+                $value = false;
+
+                if ( function_exists( 'softone_wc_integration_get_setting' ) ) {
+                        $value = (bool) softone_wc_integration_get_setting( $key, false );
+                }
+
+                $id    = 'softone_wc_integration_' . $key;
+                $name  = Softone_API_Client::OPTION_SETTINGS_KEY . '[' . $key . ']';
+                $class = array( 'softone-settings-checkbox' );
+
+                if ( '' !== $group ) {
+                        $class[] = 'softone-settings-checkbox--' . sanitize_html_class( $group );
+                }
+
+                $attributes = array(
+                        'type'  => 'checkbox',
+                        'id'    => $id,
+                        'name'  => $name,
+                        'value' => '1',
+                        'class' => implode( ' ', array_map( 'sanitize_html_class', $class ) ),
+                );
+
+                if ( '' !== $group ) {
+                        $attributes['data-exclusive-group'] = $group;
+                }
+
+                if ( $value ) {
+                        $attributes['checked'] = 'checked';
+                }
+
+                $attribute_string = '';
+
+                foreach ( $attributes as $attr_key => $attr_value ) {
+                        $attribute_string .= sprintf( ' %1$s="%2$s"', esc_attr( $attr_key ), esc_attr( $attr_value ) );
+                }
+
+                printf(
+                        '<label for="%1$s"><input%2$s /> %3$s</label>',
+                        esc_attr( $id ),
+                        $attribute_string,
+                        esc_html( $description )
+                );
+
+                if ( '' !== $help ) {
+                        echo '<p class="description">' . esc_html( $help ) . '</p>';
+                }
 
         }
 

@@ -16,7 +16,7 @@
  * Plugin Name:       Softone Woocommerce Integration
  * Plugin URI:        https://www.georgenicolaou.me/plugins/softone-woocommerce-integration
  * Description:       Softone Woocommerce Integration
- * Version:           1.8.7
+ * Version:           1.8.8
  * Author:            George Nicolaou
  * Author URI:        https://www.georgenicolaou.me//
  * License:           GPL-2.0+
@@ -35,7 +35,7 @@ if ( ! defined( 'WPINC' ) ) {
  * Start at version 1.0.0 and use SemVer - https://semver.org
  * Rename this for your plugin and update it as you release new versions.
  */
-define( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION', '1.8.7' );
+define( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION', '1.8.8' );
 
 // Load Composer autoloader when present (e.g. when installed via Composer).
 $softone_wc_integration_autoload = __DIR__ . '/vendor/autoload.php';
