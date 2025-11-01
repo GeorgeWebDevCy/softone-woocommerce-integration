@@ -911,7 +911,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 $body['clientid'] = $client_id;
             }
 
-            if ( $this->app_id && ! isset( $body['appId'] ) ) {
+            if ( null !== $this->app_id && '' !== $this->app_id && ! isset( $body['appId'] ) ) {
                 $body['appId'] = $this->normalize_app_id( $this->app_id );
             }
 
@@ -981,14 +981,14 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
          *
          * @param string $app_id Raw app identifier from settings.
          *
-         * @return int|string
+         * @return string
          */
         protected function normalize_app_id( $app_id ) {
-            if ( is_numeric( $app_id ) ) {
-                return (int) $app_id;
+            if ( is_string( $app_id ) ) {
+                return trim( $app_id );
             }
 
-            return (string) $app_id;
+            return trim( (string) $app_id );
         }
 
         /**

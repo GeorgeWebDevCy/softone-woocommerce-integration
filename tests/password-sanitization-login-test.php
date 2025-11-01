@@ -131,20 +131,33 @@ class Softone_API_Client_Login_Test extends Softone_API_Client {
     public $captured_payload = null;
 
     /**
-     * Capture the login payload and simulate a successful response.
+     * Capture the login payload prepared by the client.
      *
-     * @param string $service Service name.
-     * @param array  $data    Payload data.
+     * @param string     $service   Service name.
+     * @param array      $data      Payload data.
+     * @param string|nil $client_id Client ID (optional).
      *
      * @return array
      */
-    public function call_service( $service, array $data = array(), $requires_client_id = true, $retry_on_authentication = true ) {
-        if ( 'login' === $service ) {
-            $this->captured_payload = $data;
+    protected function prepare_request_body( $service, array $data, $client_id = null ) {
+        $body = parent::prepare_request_body( $service, $data, $client_id );
 
-            return array( 'clientID' => 'client-123' );
+        if ( 'login' === $service ) {
+            $this->captured_payload = $body;
         }
 
+        return $body;
+    }
+
+    /**
+     * Simulate a successful SoftOne response.
+     *
+     * @param array  $body    Request payload.
+     * @param string $service Service name.
+     *
+     * @return array
+     */
+    protected function dispatch_request( array $body, $service ) {
         return array( 'clientID' => 'client-123' );
     }
 }
@@ -158,6 +171,7 @@ $sanitized = $admin->sanitize_settings(
         'endpoint' => 'https://example.test/api',
         'username' => 'example-user',
         'password' => $password,
+        'app_id'   => '0',
     )
 );
 
@@ -176,6 +190,38 @@ if ( empty( $response['clientID'] ) ) {
 
 if ( empty( $client->captured_payload ) || $client->captured_payload['password'] !== $password ) {
     fwrite( STDERR, "Login payload did not include the expected password value.\n" );
+    exit( 1 );
+}
+
+if ( ! isset( $client->captured_payload['appId'] ) ) {
+    fwrite( STDERR, "Login payload did not include the configured appId value.\n" );
+    exit( 1 );
+}
+
+if ( '0' !== $client->captured_payload['appId'] ) {
+    fwrite( STDERR, "Login payload did not preserve an appId configured as '0'.\n" );
+    exit( 1 );
+}
+
+$padded_settings = $admin->sanitize_settings(
+    array(
+        'endpoint' => 'https://example.test/api',
+        'username' => 'example-user',
+        'password' => $password,
+        'app_id'   => '0010',
+    )
+);
+
+$padded_client = new Softone_API_Client_Login_Test( $padded_settings );
+$padded_client->login();
+
+if ( empty( $padded_client->captured_payload ) || ! isset( $padded_client->captured_payload['appId'] ) ) {
+    fwrite( STDERR, "Login payload with padded appId did not include the expected value.\n" );
+    exit( 1 );
+}
+
+if ( '0010' !== $padded_client->captured_payload['appId'] ) {
+    fwrite( STDERR, "Login payload did not preserve leading zeros in appId.\n" );
     exit( 1 );
 }
 
