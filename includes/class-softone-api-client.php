@@ -211,7 +211,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
 
             $this->endpoint = isset( $this->settings['endpoint'] ) ? trim( (string) $this->settings['endpoint'] ) : '';
             $this->username = isset( $this->settings['username'] ) ? trim( (string) $this->settings['username'] ) : '';
-            $this->password = isset( $this->settings['password'] ) ? trim( (string) $this->settings['password'] ) : '';
+            $this->password = isset( $this->settings['password'] ) ? (string) $this->settings['password'] : '';
             $this->app_id   = isset( $this->settings['app_id'] ) ? trim( (string) $this->settings['app_id'] ) : '';
             $this->company  = isset( $this->settings['company'] ) ? trim( (string) $this->settings['company'] ) : '';
             $this->branch   = isset( $this->settings['branch'] ) ? trim( (string) $this->settings['branch'] ) : '';

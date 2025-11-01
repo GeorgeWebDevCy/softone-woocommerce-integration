@@ -198,6 +198,35 @@ if ( ! isset( $client->captured_payload['appId'] ) ) {
     exit( 1 );
 }
 
+$password_with_spaces = "  spaced password  ";
+
+$sanitized_with_spaces = $admin->sanitize_settings(
+    array(
+        'endpoint' => 'https://example.test/api',
+        'username' => 'example-user',
+        'password' => $password_with_spaces,
+        'app_id'   => '0',
+    )
+);
+
+if ( ! isset( $sanitized_with_spaces['password'] ) || $sanitized_with_spaces['password'] !== $password_with_spaces ) {
+    fwrite( STDERR, "Password sanitization trimmed leading or trailing spaces.\n" );
+    exit( 1 );
+}
+
+$client_with_spaces = new Softone_API_Client_Login_Test( $sanitized_with_spaces );
+$response_with_spaces = $client_with_spaces->login();
+
+if ( empty( $response_with_spaces['clientID'] ) ) {
+    fwrite( STDERR, "Login response for spaced password did not contain a client ID.\n" );
+    exit( 1 );
+}
+
+if ( empty( $client_with_spaces->captured_payload ) || $client_with_spaces->captured_payload['password'] !== $password_with_spaces ) {
+    fwrite( STDERR, "Login payload did not preserve leading/trailing spaces in the password.\n" );
+    exit( 1 );
+}
+
 if ( '0' !== $client->captured_payload['appId'] ) {
     fwrite( STDERR, "Login payload did not preserve an appId configured as '0'.\n" );
     exit( 1 );
