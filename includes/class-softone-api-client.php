@@ -249,18 +249,13 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 'password' => $this->password,
             );
 
-            foreach ( $this->get_handshake_fields( false ) as $key => $value ) {
-                if ( '' !== $value ) {
-                    $payload[ $key ] = $value;
-                }
-            }
-
             /**
              * Filter the login payload before dispatching the request.
              *
-             * The login request now includes the configured handshake values by
-             * default. Sites that need to alter that behaviour (for example, to
-             * remove specific fields) can do so via this filter.
+             * Handshake values are intentionally omitted from the login
+             * payload by default (matching the behaviour in version 1.8.8).
+             * Sites that need to reintroduce or adjust those handshake fields
+             * can do so via the softone_wc_integration_login_payload filter.
              *
              * @param array                   $payload Login payload.
              * @param Softone_API_Client|null $client  API client instance.
