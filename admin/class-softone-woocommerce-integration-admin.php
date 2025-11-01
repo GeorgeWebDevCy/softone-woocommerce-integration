@@ -511,21 +511,11 @@ $display_time = __( 'Unknown time', 'softone-woocommerce-integration' );
                        return $result;
                }
 
-               $logger_source = 'softone-item-sync';
-               if ( class_exists( 'Softone_Item_Sync' ) ) {
-                       $logger_source = Softone_Item_Sync::LOGGER_SOURCE;
-               }
+               $files = $this->locate_category_log_files( $log_directory );
 
-               $separator = defined( 'DIRECTORY_SEPARATOR' ) ? DIRECTORY_SEPARATOR : '/';
-               $pattern   = rtrim( $log_directory, '/\\' ) . $separator . '*' . $logger_source . '*.log';
-
-               $files = glob( $pattern );
                if ( empty( $files ) ) {
                        return $result;
                }
-
-               rsort( $files );
-               $files = array_slice( $files, 0, 10 );
 
                $result['files'] = $files;
 
@@ -571,6 +561,105 @@ $display_time = __( 'Unknown time', 'softone-woocommerce-integration' );
                $result['entries'] = array_slice( $entries, 0, $this->category_log_limit );
 
                return $result;
+       }
+
+       /**
+        * Determine the most relevant WooCommerce log files to scan for category sync entries.
+        *
+        * @param string $log_directory Absolute path to the WooCommerce log directory.
+        *
+        * @return string[] Array of absolute file paths ordered by most recent first.
+        */
+       private function locate_category_log_files( $log_directory ) {
+
+               $log_directory = (string) $log_directory;
+               $files         = array();
+               $seen          = array();
+
+               if ( class_exists( 'WC_Log_Handler_File' ) && method_exists( 'WC_Log_Handler_File', 'get_log_files' ) ) {
+                       $log_files = WC_Log_Handler_File::get_log_files();
+
+                       if ( is_array( $log_files ) ) {
+                               foreach ( $log_files as $log_file ) {
+                                       $full_path = $this->join_path( $log_directory, (string) $log_file );
+
+                                       if ( '' === $full_path || isset( $seen[ $full_path ] ) ) {
+                                               continue;
+                                       }
+
+                                       $files[]             = $full_path;
+                                       $seen[ $full_path ] = true;
+                               }
+                       }
+               }
+
+               if ( empty( $files ) ) {
+                       $pattern = $this->join_path( $log_directory, '*.log' );
+                       if ( '' !== $pattern ) {
+                               $matched = glob( $pattern );
+                               if ( is_array( $matched ) ) {
+                                       foreach ( $matched as $match ) {
+                                               $match = (string) $match;
+                                               if ( '' === $match || isset( $seen[ $match ] ) ) {
+                                                       continue;
+                                               }
+
+                                               $files[]         = $match;
+                                               $seen[ $match ] = true;
+                                       }
+                               }
+                       }
+               }
+
+               if ( empty( $files ) ) {
+                       return array();
+               }
+
+               usort(
+                       $files,
+                       function ( $a, $b ) {
+                               $a_time = @filemtime( (string) $a );
+                               $b_time = @filemtime( (string) $b );
+
+                               if ( false === $a_time ) {
+                                       $a_time = 0;
+                               }
+
+                               if ( false === $b_time ) {
+                                       $b_time = 0;
+                               }
+
+                               if ( $a_time === $b_time ) {
+                                       return strnatcasecmp( (string) $b, (string) $a );
+                               }
+
+                               return $b_time <=> $a_time;
+                       }
+               );
+
+               return array_slice( $files, 0, 10 );
+       }
+
+       /**
+        * Join path segments without relying on WordPress helper functions.
+        *
+        * @param string $base Base path.
+        * @param string $path Additional path or glob pattern.
+        *
+        * @return string
+        */
+       private function join_path( $base, $path ) {
+
+               $base = (string) $base;
+               $path = (string) $path;
+
+               if ( '' === $base ) {
+                       return $path;
+               }
+
+               $separator = defined( 'DIRECTORY_SEPARATOR' ) ? DIRECTORY_SEPARATOR : '/';
+
+               return rtrim( $base, '/\\' ) . $separator . ltrim( $path, '/\\' );
        }
 
        /**
