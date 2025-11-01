@@ -170,7 +170,112 @@
                 grid-column: 2;
         }
 
-        .softone-api-card--response {
-                margin-bottom: 0;
-        }
+.softone-api-card--response {
+        margin-bottom: 0;
+}
+}
+
+.softone-category-logs .softone-log-section {
+        margin-top: 24px;
+}
+
+.softone-category-logs .softone-log-section__intro {
+        margin: 0 0 16px;
+        color: #50575e;
+}
+
+.softone-log-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 16px;
+}
+
+.softone-log-entry {
+        background: #fff;
+        border: 1px solid #dcdcde;
+        border-radius: 6px;
+        padding: 16px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.softone-log-entry__header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+}
+
+.softone-log-entry__timestamp {
+        font-weight: 600;
+        color: #1d2327;
+}
+
+.softone-log-entry__level {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        background: #dcdcde;
+        color: #1d2327;
+}
+
+.softone-log-entry--warning .softone-log-entry__level {
+        background: #f0b849;
+        color: #1d2327;
+}
+
+.softone-log-entry--error .softone-log-entry__level {
+        background: #d63638;
+        color: #fff;
+}
+
+.softone-log-entry--debug .softone-log-entry__level {
+        background: #1d2327;
+        color: #fff;
+}
+
+.softone-log-entry__message {
+        margin: 0;
+        color: #1d2327;
+        word-break: break-word;
+}
+
+.softone-log-entry__context {
+        margin: 12px 0 0;
+        background: #f6f7f7;
+        border: 1px solid #dcdcde;
+        border-radius: 4px;
+        padding: 12px;
+        overflow-x: auto;
+        font-family: Menlo, Consolas, monospace;
+        font-size: 13px;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        word-break: break-word;
+}
+
+.softone-log-entry__meta {
+        margin-top: 12px;
+        color: #50575e;
+        font-size: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+}
+
+.softone-log-footnote {
+        margin-top: 24px;
+        color: #50575e;
+}
+
+.softone-log-footnote p {
+        margin: 0 0 8px;
 }

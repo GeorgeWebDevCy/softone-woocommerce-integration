@@ -4,7 +4,7 @@ Donate link: https://www.georgenicolaou.me//
 Tags: comments, spam
 Requires at least: 3.0.1
 Tested up to: 3.4
-Stable tag: 1.8.18
+Stable tag: 1.8.19
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -67,7 +67,8 @@ directory take precedence. For example, `/assets/screenshot-1.png` would win ove
 
 == Changelog ==
 
-= 1.8.18 =
+= 1.8.19 =
+* Added a category synchronisation log viewer in the admin menu to surface SoftOne taxonomy creation activity.
 * Keep stale products published by default while marking them out of stock.
 
 = 1.8.17 =
