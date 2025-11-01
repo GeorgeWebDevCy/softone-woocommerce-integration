@@ -1501,15 +1501,15 @@ public function handle_test_connection() {
 			return '';
 		}
 
-		$value = wp_unslash( $value );
+                $value = wp_unslash( $value );
 
-		if ( is_object( $value ) && ! method_exists( $value, '__toString' ) ) {
-			return '';
-		}
+                if ( is_object( $value ) && ! method_exists( $value, '__toString' ) ) {
+                        return '';
+                }
 
-		return trim( (string) $value );
+                return (string) $value;
 
-	}
+        }
 
         /**
          * Sanitize a generic text value.
