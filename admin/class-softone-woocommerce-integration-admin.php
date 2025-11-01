@@ -205,6 +205,25 @@ class Softone_Woocommerce_Integration_Admin {
                         )
                 );
 
+                add_settings_section(
+                        'softone_wc_integration_stock_behaviour',
+                        __( 'Stock Behaviour', 'softone-woocommerce-integration' ),
+                        array( $this, 'render_stock_settings_section_intro' ),
+                        'softone_wc_integration'
+                );
+
+                $this->add_checkbox_field(
+                        'zero_stock_quantity_fallback',
+                        __( 'Treat zero Softone stock as one', 'softone-woocommerce-integration' ),
+                        __( 'When Softone reports zero quantity the product will be saved with a quantity of one.', 'softone-woocommerce-integration' )
+                );
+
+                $this->add_checkbox_field(
+                        'backorder_out_of_stock_products',
+                        __( 'Mark out of stock products as available on backorder', 'softone-woocommerce-integration' ),
+                        __( 'Products that remain out of stock after sync will allow backorders and display as pre-order/backorder.', 'softone-woocommerce-integration' )
+                );
+
         }
 
 	/**
@@ -241,6 +260,23 @@ class Softone_Woocommerce_Integration_Admin {
                 $sanitized['trdcategory']           = isset( $settings['trdcategory'] ) ? $this->sanitize_text_value( $settings['trdcategory'] ) : '';
                 $sanitized['country_mappings']      = isset( $settings['country_mappings'] ) ? $this->sanitize_country_mappings( $settings['country_mappings'] ) : array();
 
+                $zero_stock_fallback = $this->sanitize_checkbox_flag( $settings, 'zero_stock_quantity_fallback' );
+                $backorder_out_stock = $this->sanitize_checkbox_flag( $settings, 'backorder_out_of_stock_products' );
+
+                if ( 'yes' === $zero_stock_fallback && 'yes' === $backorder_out_stock ) {
+                        $backorder_out_stock = 'no';
+
+                        add_settings_error(
+                                'softone_wc_integration',
+                                'softone_wc_integration_stock_mode_conflict',
+                                __( 'Please select only one stock behaviour option at a time.', 'softone-woocommerce-integration' ),
+                                'error'
+                        );
+                }
+
+                $sanitized['zero_stock_quantity_fallback']    = $zero_stock_fallback;
+                $sanitized['backorder_out_of_stock_products'] = $backorder_out_stock;
+
                 return $sanitized;
 
         }
@@ -248,11 +284,20 @@ class Softone_Woocommerce_Integration_Admin {
 	/**
 	 * Render section introduction text.
 	 */
-	public function render_settings_section_intro() {
+        public function render_settings_section_intro() {
 
-		echo '<p>' . esc_html__( 'Configure the credentials used to communicate with Softone.', 'softone-woocommerce-integration' ) . '</p>';
+                echo '<p>' . esc_html__( 'Configure the credentials used to communicate with Softone.', 'softone-woocommerce-integration' ) . '</p>';
 
-	}
+        }
+
+        /**
+         * Render the introduction for the stock behaviour settings section.
+         */
+        public function render_stock_settings_section_intro() {
+
+                echo '<p>' . esc_html__( 'Control how products should be handled when Softone reports little or no stock.', 'softone-woocommerce-integration' ) . '</p>';
+
+        }
 
 	/**
 	 * Display the plugin settings page.
@@ -1317,6 +1362,29 @@ public function handle_test_connection() {
         }
 
         /**
+         * Register a checkbox field with the Settings API.
+         *
+         * @param string $key         Setting key.
+         * @param string $label       Field label.
+         * @param string $description Optional field description.
+         */
+        private function add_checkbox_field( $key, $label, $description = '' ) {
+
+                add_settings_field(
+                        'softone_wc_integration_' . $key,
+                        $label,
+                        array( $this, 'render_checkbox_field' ),
+                        'softone_wc_integration',
+                        'softone_wc_integration_stock_behaviour',
+                        array(
+                                'key'         => $key,
+                                'description' => $description,
+                        )
+                );
+
+        }
+
+        /**
          * Render the country mapping textarea field.
          *
          * @param array $args Field arguments.
@@ -1372,8 +1440,8 @@ public function handle_test_connection() {
          */
         public function render_text_field( $args ) {
 
-		$key  = isset( $args['key'] ) ? $args['key'] : '';
-		$type = isset( $args['type'] ) ? $args['type'] : 'text';
+                $key  = isset( $args['key'] ) ? $args['key'] : '';
+                $type = isset( $args['type'] ) ? $args['type'] : 'text';
 
 		if ( '' === $key ) {
 			return;
@@ -1420,6 +1488,66 @@ public function handle_test_connection() {
 		}
 
                 echo '<input' . $attribute_string . ' />';
+
+        }
+
+        /**
+         * Render a checkbox field.
+         *
+         * @param array $args Field arguments.
+         */
+        public function render_checkbox_field( $args ) {
+
+                $key         = isset( $args['key'] ) ? $args['key'] : '';
+                $description = isset( $args['description'] ) ? $args['description'] : '';
+
+                if ( '' === $key ) {
+                        return;
+                }
+
+                $value   = softone_wc_integration_get_setting( $key, 'no' );
+                $checked = in_array( $value, array( 'yes', '1', 1, true ), true );
+
+                printf(
+                        '<label for="%1$s"><input type="checkbox" id="%1$s" name="%2$s" value="1" %3$s /> %4$s</label>',
+                        esc_attr( 'softone_wc_integration_' . $key ),
+                        esc_attr( Softone_API_Client::OPTION_SETTINGS_KEY . '[' . $key . ']' ),
+                        checked( $checked, true, false ),
+                        esc_html__( 'Enable', 'softone-woocommerce-integration' )
+                );
+
+                if ( '' !== $description ) {
+                        printf(
+                                '<p class="description">%s</p>',
+                                esc_html( $description )
+                        );
+                }
+
+        }
+
+        /**
+         * Sanitize a checkbox style flag.
+         *
+         * @param array  $settings Raw settings array.
+         * @param string $key      Setting key.
+         *
+         * @return string
+         */
+        private function sanitize_checkbox_flag( array $settings, $key ) {
+
+                if ( ! isset( $settings[ $key ] ) ) {
+                        return 'no';
+                }
+
+                $value = $settings[ $key ];
+
+                if ( ! is_scalar( $value ) ) {
+                        return 'no';
+                }
+
+                $value = strtolower( trim( (string) wp_unslash( $value ) ) );
+
+                return in_array( $value, array( '1', 'true', 'yes', 'on' ), true ) ? 'yes' : 'no';
 
         }
 
