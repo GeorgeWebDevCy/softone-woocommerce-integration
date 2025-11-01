@@ -958,26 +958,111 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
             $category_parent = 0;
 
+            $category_slug    = function_exists( 'sanitize_title' ) ? sanitize_title( $category_name ) : '';
+            $subcategory_slug = function_exists( 'sanitize_title' ) ? sanitize_title( $subcategory_name ) : '';
+
+            $category_context = array(
+                'raw_name'       => $category_name,
+                'sanitized_slug' => $category_slug,
+                'term_id'        => 0,
+                'parent_id'      => 0,
+            );
+
             if (
                 '' !== $category_name
                 && ! $this->is_numeric_term_name( $category_name )
                 && ! $this->is_uncategorized_term( $category_name )
             ) {
+                $this->log(
+                    'debug',
+                    'SOFTONE_CAT_SYNC_002 Ensuring top-level category.',
+                    $category_context
+                );
                 $category_parent = $this->ensure_term( $category_name, 'product_cat' );
+                $this->log(
+                    'debug',
+                    'SOFTONE_CAT_SYNC_002 Result for top-level category ensure.',
+                    array_merge(
+                        $category_context,
+                        array(
+                            'term_id' => $category_parent,
+                        )
+                    )
+                );
                 if ( $category_parent ) {
                     $categories[] = $category_parent;
                 }
+            } else {
+                $reason = 'empty_name';
+
+                if ( '' !== $category_name && $this->is_numeric_term_name( $category_name ) ) {
+                    $reason = 'numeric_name';
+                } elseif ( '' !== $category_name && $this->is_uncategorized_term( $category_name ) ) {
+                    $reason = 'uncategorized';
+                }
+
+                $this->log(
+                    'debug',
+                    'SOFTONE_CAT_SYNC_001 Skipping top-level category ensure.',
+                    array_merge(
+                        $category_context,
+                        array(
+                            'reason' => $reason,
+                        )
+                    )
+                );
             }
+
+            $subcategory_context = array(
+                'raw_name'       => $subcategory_name,
+                'sanitized_slug' => $subcategory_slug,
+                'term_id'        => 0,
+                'parent_id'      => $category_parent,
+            );
 
             if (
                 '' !== $subcategory_name
                 && ! $this->is_numeric_term_name( $subcategory_name )
                 && ! $this->is_uncategorized_term( $subcategory_name )
             ) {
+                $this->log(
+                    'debug',
+                    'SOFTONE_CAT_SYNC_005 Ensuring subcategory.',
+                    $subcategory_context
+                );
                 $subcategory_id = $this->ensure_term( $subcategory_name, 'product_cat', $category_parent );
+                $this->log(
+                    'debug',
+                    'SOFTONE_CAT_SYNC_005 Result for subcategory ensure.',
+                    array_merge(
+                        $subcategory_context,
+                        array(
+                            'term_id' => $subcategory_id,
+                        )
+                    )
+                );
                 if ( $subcategory_id ) {
                     $categories[] = $subcategory_id;
                 }
+            } else {
+                $reason = 'empty_name';
+
+                if ( '' !== $subcategory_name && $this->is_numeric_term_name( $subcategory_name ) ) {
+                    $reason = 'numeric_name';
+                } elseif ( '' !== $subcategory_name && $this->is_uncategorized_term( $subcategory_name ) ) {
+                    $reason = 'uncategorized';
+                }
+
+                $this->log(
+                    'debug',
+                    'SOFTONE_CAT_SYNC_004 Skipping subcategory ensure.',
+                    array_merge(
+                        $subcategory_context,
+                        array(
+                            'reason' => $reason,
+                        )
+                    )
+                );
             }
 
             return array_values( array_unique( array_filter( $categories ) ) );
@@ -1322,20 +1407,43 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
          * @return int Term identifier.
          */
         protected function ensure_term( $name, $tax, $parent = 0 ) {
-            $name = trim( (string) $name );
-
-            if ( '' === $name ) {
-                return 0;
-            }
-
+            $name   = trim( (string) $name );
             $parent = (int) $parent;
 
             $key = $this->build_term_cache_key( $tax, $name, $parent );
 
+            if ( '' === $name ) {
+                $this->log(
+                    'debug',
+                    'SOFTONE_CAT_SYNC_006 Empty term name provided.',
+                    array(
+                        'taxonomy'  => $tax,
+                        'parent_id' => $parent,
+                        'cache_key' => $key,
+                    )
+                );
+
+                return 0;
+            }
+
             if ( array_key_exists( $key, $this->term_cache ) ) {
                 $this->cache_stats['term_cache_hits']++;
 
-                return (int) $this->term_cache[ $key ];
+                $cached = (int) $this->term_cache[ $key ];
+
+                if ( 0 === $cached ) {
+                    $this->log(
+                        'debug',
+                        'SOFTONE_CAT_SYNC_007 Term cache contained empty identifier.',
+                        array(
+                            'taxonomy'  => $tax,
+                            'parent_id' => $parent,
+                            'cache_key' => $key,
+                        )
+                    );
+                }
+
+                return $cached;
             }
 
             $this->cache_stats['term_cache_misses']++;
@@ -1383,9 +1491,27 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $result = wp_insert_term( $name, $tax, $args );
 
             if ( is_wp_error( $result ) ) {
-                $this->log( 'error', $result->get_error_message(), array( 'taxonomy' => $tax ) );
+                $this->log(
+                    'error',
+                    'SOFTONE_CAT_SYNC_003 ' . $result->get_error_message(),
+                    array(
+                        'taxonomy'  => $tax,
+                        'parent_id' => $parent,
+                        'cache_key' => $key,
+                    )
+                );
 
                 $this->term_cache[ $key ] = 0;
+
+                $this->log(
+                    'debug',
+                    'SOFTONE_CAT_SYNC_008 Term creation failed; returning empty identifier.',
+                    array(
+                        'taxonomy'  => $tax,
+                        'parent_id' => $parent,
+                        'cache_key' => $key,
+                    )
+                );
 
                 return 0;
             }
