@@ -4,7 +4,7 @@ Donate link: https://www.georgenicolaou.me//
 Tags: comments, spam
 Requires at least: 3.0.1
 Tested up to: 3.4
-Stable tag: 1.8.16
+Stable tag: 1.8.17
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,9 @@ directory take precedence. For example, `/assets/screenshot-1.png` would win ove
 2. This is the second screen shot
 
 == Changelog ==
+
+= 1.8.17 =
+* Improve logging to capture additional diagnostic details when API requests fail.
 
 = 1.8.16 =
 * Bump plugin version constants and readme stable tag to 1.8.16.
