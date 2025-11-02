@@ -1624,7 +1624,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 'colour' => array(
                     'label'    => __( 'Colour', 'softone-woocommerce-integration' ),
                     'value'    => $this->normalize_colour_value(
-                        trim( $this->get_value( $data, array( 'colour_name', 'color_name', 'colour' ) ) )
+                        trim( $this->get_value( $data, array( 'colour_name', 'color_name', 'colour', 'color' ) ) )
                     ),
                     'position' => 0,
                 ),
