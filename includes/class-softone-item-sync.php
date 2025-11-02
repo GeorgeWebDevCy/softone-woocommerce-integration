@@ -2195,11 +2195,10 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         protected function is_numeric_term_name( $name ) {
             $name = trim( (string) $name );
 
-            if ( '' === $name ) {
-                return false;
-            }
-
-            return (bool) preg_match( '/^\d+$/', $name );
+            // Historically the plugin skipped categories whose names were purely numeric.
+            // SoftOne categories are often numeric codes, so we no longer treat them
+            // as invalid. Always return false so numeric names are processed.
+            return false;
         }
 
         /**
