@@ -476,7 +476,7 @@ class Softone_Item_Sync_Test_Double extends Softone_Item_Sync {
      * @param WC_Product  $product Product instance.
      * @return array<string,array>
      */
-    protected function prepare_attribute_assignments( array $data, $product ) {
+    protected function prepare_attribute_assignments( array $data, $product, array $fallback_attributes = array() ) {
         return array(
             'attributes' => array(),
             'terms'      => array(),
