@@ -9,10 +9,21 @@ if ( ! defined( 'ABSPATH' ) ) {
         exit;
 }
 
+if ( ! class_exists( 'Softone_Sync_Activity_Logger' ) ) {
+        require_once __DIR__ . '/class-softone-sync-activity-logger.php';
+}
+
 /**
  * Populates the public navigation menu with product brands and categories.
  */
 class Softone_Menu_Populator {
+
+        /**
+         * File-based activity logger.
+         *
+         * @var Softone_Sync_Activity_Logger|null
+         */
+        private $activity_logger;
 
         /**
          * Cache for product brand terms.
@@ -36,6 +47,17 @@ class Softone_Menu_Populator {
         private $id_counter = 0;
 
         /**
+         * Constructor.
+         *
+         * @param Softone_Sync_Activity_Logger|null $activity_logger Optional activity logger instance.
+         */
+        public function __construct( ?Softone_Sync_Activity_Logger $activity_logger = null ) {
+                if ( $activity_logger && method_exists( $activity_logger, 'log' ) ) {
+                        $this->activity_logger = $activity_logger;
+                }
+        }
+
+        /**
          * Filter callback that injects product brands and categories into the navigation menu.
          *
          * @param array<int, WP_Post|object> $menu_items Existing menu items.
@@ -53,6 +75,10 @@ class Softone_Menu_Populator {
                 }
 
                 $menu_items = $this->strip_dynamic_items( $menu_items );
+
+                $menu_name            = $this->get_menu_name( $args );
+                $brand_items_added    = 0;
+                $category_items_added = 0;
 
                 $brands_menu_item   = $this->find_menu_item_by_title( $menu_items, 'Brands' );
                 $products_menu_item = $this->find_menu_item_by_title( $menu_items, 'Products' );
@@ -84,12 +110,27 @@ class Softone_Menu_Populator {
 
                                 if ( $new_item ) {
                                         $menu_items[] = $new_item;
+                                        $brand_items_added++;
                                 }
                         }
                 }
 
                 if ( $products_menu_item && ! empty( $category_groups ) ) {
-                        list( $menu_items, $max_menu_order ) = $this->append_category_items( $menu_items, $products_menu_item, $category_groups, $max_menu_order );
+                        list( $menu_items, $max_menu_order, $category_items_added ) = $this->append_category_items( $menu_items, $products_menu_item, $category_groups, $max_menu_order );
+                }
+
+                if ( $brand_items_added > 0 || $category_items_added > 0 ) {
+                        $this->log_activity(
+                                'dynamic_items_added',
+                                __( 'Injected Softone menu items into the navigation.', 'softone-woocommerce-integration' ),
+                                array(
+                                        'menu_name'              => $menu_name,
+                                        'brand_items_added'      => $brand_items_added,
+                                        'category_items_added'   => $category_items_added,
+                                        'brand_terms_available'  => is_array( $brand_terms ) ? count( $brand_terms ) : 0,
+                                        'category_groups_source' => is_array( $category_groups ) ? count( $category_groups ) : 0,
+                                )
+                        );
                 }
 
                 return $menu_items;
@@ -103,6 +144,17 @@ class Softone_Menu_Populator {
          * @return bool
          */
         private function is_main_menu( $args ) {
+                return 'Main Menu' === $this->get_menu_name( $args );
+        }
+
+        /**
+         * Determine the current menu name based on filter arguments.
+         *
+         * @param stdClass|array $args Menu arguments.
+         *
+         * @return string
+         */
+        private function get_menu_name( $args ) {
                 $menu_name = '';
 
                 if ( is_object( $args ) && isset( $args->menu ) ) {
@@ -132,7 +184,7 @@ class Softone_Menu_Populator {
                         }
                 }
 
-                return 'Main Menu' === $menu_name;
+                return $menu_name;
         }
 
         /**
@@ -163,6 +215,23 @@ class Softone_Menu_Populator {
                 }
 
                 return $filtered;
+        }
+
+        /**
+         * Record menu building activity when a logger is available.
+         *
+         * @param string               $action  Action identifier.
+         * @param string               $message Human readable message.
+         * @param array<string, mixed> $context Context data.
+         *
+         * @return void
+         */
+        private function log_activity( $action, $message, array $context = array() ) {
+                if ( ! $this->activity_logger || ! method_exists( $this->activity_logger, 'log' ) ) {
+                        return;
+                }
+
+                $this->activity_logger->log( 'menu_build', $action, $message, $context );
         }
 
         /**
@@ -302,18 +371,21 @@ class Softone_Menu_Populator {
          * @param array<int, array<int, WP_Term|object>>     $category_terms Grouped category terms.
          * @param int                                        $menu_order     Current menu order counter.
          *
-         * @return array<int, WP_Post|object>
+         * @return array{0: array<int, WP_Post|object>, 1: int, 2: int}
          */
         private function append_category_items( array $menu_items, $products_item, array $category_terms, $menu_order ) {
                 if ( empty( $category_terms ) || ! isset( $category_terms[0] ) ) {
-                        return array( $menu_items, $menu_order );
+                        return array( $menu_items, $menu_order, 0 );
                 }
+
+                $added = 0;
 
                 foreach ( $category_terms[0] as $term ) {
-                        list( $menu_items, $menu_order ) = $this->add_category_term( $menu_items, $term, $products_item, $category_terms, $menu_order );
+                        list( $menu_items, $menu_order, $child_added ) = $this->add_category_term( $menu_items, $term, $products_item, $category_terms, $menu_order );
+                        $added += (int) $child_added;
                 }
 
-                return array( $menu_items, $menu_order );
+                return array( $menu_items, $menu_order, $added );
         }
 
         /**
@@ -325,27 +397,29 @@ class Softone_Menu_Populator {
          * @param array<int, array<int, WP_Term|object>> $category_terms Grouped category terms.
          * @param int                                    $menu_order     Current menu order counter.
          *
-         * @return array{0: array<int, WP_Post|object>, 1: int}
+         * @return array{0: array<int, WP_Post|object>, 1: int, 2: int}
          */
         private function add_category_term( array $menu_items, $term, $parent_item, array $category_terms, $menu_order ) {
                 $new_item = $this->create_menu_item_from_term( $term, $parent_item, $menu_order + 1 );
 
                 if ( ! $new_item ) {
-                        return array( $menu_items, $menu_order );
+                        return array( $menu_items, $menu_order, 0 );
                 }
 
                 $menu_order++;
                 $menu_items[] = $new_item;
+                $added        = 1;
 
                 $term_id = isset( $term->term_id ) ? (int) $term->term_id : 0;
 
                 if ( $term_id && isset( $category_terms[ $term_id ] ) ) {
                         foreach ( $category_terms[ $term_id ] as $child_term ) {
-                                list( $menu_items, $menu_order ) = $this->add_category_term( $menu_items, $child_term, $new_item, $category_terms, $menu_order );
+                                list( $menu_items, $menu_order, $child_added ) = $this->add_category_term( $menu_items, $child_term, $new_item, $category_terms, $menu_order );
+                                $added += (int) $child_added;
                         }
                 }
 
-                return array( $menu_items, $menu_order );
+                return array( $menu_items, $menu_order, $added );
         }
 
         /**

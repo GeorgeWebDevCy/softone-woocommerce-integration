@@ -13,6 +13,10 @@ if ( ! class_exists( 'Softone_Category_Sync_Logger' ) ) {
     require_once __DIR__ . '/class-softone-category-sync-logger.php';
 }
 
+if ( ! class_exists( 'Softone_Sync_Activity_Logger' ) ) {
+    require_once __DIR__ . '/class-softone-sync-activity-logger.php';
+}
+
 if ( ! class_exists( 'Softone_Item_Sync' ) ) {
     /**
      * Handles importing SoftOne catalogue items into WooCommerce.
@@ -48,6 +52,13 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
          * @var Softone_Category_Sync_Logger|object|null
          */
         protected $category_logger;
+
+        /**
+         * File-based synchronisation activity logger.
+         *
+         * @var Softone_Sync_Activity_Logger|null
+         */
+        protected $activity_logger;
 
         /**
          * Cache for taxonomy terms keyed by taxonomy and term name.
@@ -90,7 +101,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
          * @param Softone_API_Client|null           $api_client API client instance.
          * @param WC_Logger|Psr\Log\LoggerInterface|null $logger Optional logger instance.
          */
-        public function __construct( ?Softone_API_Client $api_client = null, $logger = null, $category_logger = null ) {
+        public function __construct( ?Softone_API_Client $api_client = null, $logger = null, $category_logger = null, ?Softone_Sync_Activity_Logger $activity_logger = null ) {
             $this->api_client = $api_client ?: new Softone_API_Client();
             $this->logger     = $logger ?: $this->get_default_logger();
 
@@ -99,6 +110,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             } else {
                 $this->category_logger = new Softone_Category_Sync_Logger( $this->logger );
             }
+
+            $this->activity_logger = $activity_logger;
 
             $this->reset_caches();
         }
@@ -783,6 +796,19 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                             'error_message' => $category_assignment->get_error_message(),
                         )
                     );
+
+                    $this->log_activity(
+                        'product_categories',
+                        'assignment_error',
+                        'Failed to assign product categories.',
+                        array(
+                            'product_id'    => $product_id,
+                            'sku'           => $sku,
+                            'mtrl'          => $mtrl,
+                            'category_ids'  => $category_ids,
+                            'error_message' => $category_assignment->get_error_message(),
+                        )
+                    );
                 } else {
                     $term_taxonomy_ids = array();
 
@@ -799,6 +825,21 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                             'term_taxonomy_ids'      => $term_taxonomy_ids,
                             'force_taxonomy_refresh' => (bool) $this->force_taxonomy_refresh,
                             'sync_action'            => $is_new ? 'created' : 'updated',
+                        )
+                    );
+
+                    $this->log_activity(
+                        'product_categories',
+                        'assigned',
+                        'Assigned product categories to the item.',
+                        array(
+                            'product_id'            => $product_id,
+                            'sku'                   => $sku,
+                            'mtrl'                  => $mtrl,
+                            'category_ids'          => $category_ids,
+                            'term_taxonomy_ids'     => $term_taxonomy_ids,
+                            'force_taxonomy_refresh' => (bool) $this->force_taxonomy_refresh,
+                            'sync_action'           => $is_new ? 'created' : 'updated',
                         )
                     );
                 }
@@ -858,11 +899,58 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                             'error_message'   => $term_assignment->get_error_message(),
                         )
                     );
+                    $this->log_activity(
+                        'product_attributes',
+                        'assignment_error',
+                        'Failed to assign attribute terms.',
+                        array(
+                            'product_id'      => $product_id,
+                            'sku'             => $sku,
+                            'taxonomy'        => $taxonomy,
+                            'term_ids'        => $normalized_term_ids,
+                            'attribute_value' => isset( $attribute_assignments['values'][ $taxonomy ] ) ? $attribute_assignments['values'][ $taxonomy ] : '',
+                            'error_message'   => $term_assignment->get_error_message(),
+                        )
+                    );
+                }
+                if ( ! is_wp_error( $term_assignment ) ) {
+                    $this->log_activity(
+                        'product_attributes',
+                        'assigned_terms',
+                        'Assigned attribute terms to the item.',
+                        array(
+                            'product_id'      => $product_id,
+                            'sku'             => $sku,
+                            'taxonomy'        => $taxonomy,
+                            'term_ids'        => $normalized_term_ids,
+                            'attribute_value' => isset( $attribute_assignments['values'][ $taxonomy ] ) ? $attribute_assignments['values'][ $taxonomy ] : '',
+                        )
+                    );
                 }
             }
 
+            $cleared_taxonomies = array();
+
             foreach ( $attribute_assignments['clear'] as $taxonomy ) {
+                if ( '' === $taxonomy ) {
+                    continue;
+                }
+
+                $cleared_taxonomies[] = (string) $taxonomy;
                 wp_set_object_terms( $product_id, array(), $taxonomy );
+            }
+
+            if ( ! empty( $cleared_taxonomies ) ) {
+                $this->log_activity(
+                    'product_attributes',
+                    'cleared_terms',
+                    'Removed attribute term assignments from the item.',
+                    array(
+                        'product_id' => $product_id,
+                        'sku'        => $sku,
+                        'taxonomies' => $cleared_taxonomies,
+                    )
+                );
             }
 
             $this->assign_brand_term( $product_id, $brand_value );
@@ -2478,6 +2566,24 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             return rtrim( substr( $value, 0, $max_length - 1 ) ) . '…';
+        }
+
+        /**
+         * Record an activity entry in the file-based logger when available.
+         *
+         * @param string $channel Activity channel identifier.
+         * @param string $action  Action descriptor.
+         * @param string $message Human readable message.
+         * @param array  $context Additional context data.
+         *
+         * @return void
+         */
+        protected function log_activity( $channel, $action, $message, array $context = array() ) {
+            if ( ! $this->activity_logger || ! method_exists( $this->activity_logger, 'log' ) ) {
+                return;
+            }
+
+            $this->activity_logger->log( $channel, $action, $message, $context );
         }
 
         /**

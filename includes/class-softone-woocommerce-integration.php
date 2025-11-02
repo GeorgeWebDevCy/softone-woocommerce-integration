@@ -65,6 +65,13 @@ class Softone_Woocommerce_Integration {
         protected $item_sync;
 
         /**
+         * File-based activity logger instance.
+         *
+         * @var Softone_Sync_Activity_Logger
+         */
+        protected $activity_logger;
+
+        /**
          * Customer synchronisation service instance.
          *
          * @var Softone_Customer_Sync
@@ -91,7 +98,7 @@ class Softone_Woocommerce_Integration {
                 if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
                         $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
                 } else {
-                        $this->version = '1.8.34';
+                        $this->version = '1.8.35';
                 }
 		$this->plugin_name = 'softone-woocommerce-integration';
 
@@ -137,6 +144,11 @@ class Softone_Woocommerce_Integration {
                 require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-category-sync-logger.php';
 
                 /**
+                 * File-based synchronisation activity logger.
+                 */
+                require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-sync-activity-logger.php';
+
+                /**
                  * Service class for synchronising items from SoftOne into WooCommerce.
                  */
                 require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-item-sync.php';
@@ -178,10 +190,11 @@ class Softone_Woocommerce_Integration {
 		 */
 		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'public/class-softone-woocommerce-integration-public.php';
 
-                $this->loader        = new Softone_Woocommerce_Integration_Loader();
-                $this->item_sync     = new Softone_Item_Sync();
-                $this->customer_sync = new Softone_Customer_Sync();
-                $this->order_sync    = new Softone_Order_Sync( null, $this->customer_sync );
+                $this->loader          = new Softone_Woocommerce_Integration_Loader();
+                $this->activity_logger = new Softone_Sync_Activity_Logger();
+                $this->item_sync       = new Softone_Item_Sync( null, null, null, $this->activity_logger );
+                $this->customer_sync   = new Softone_Customer_Sync();
+                $this->order_sync      = new Softone_Order_Sync( null, $this->customer_sync );
 
                 $this->item_sync->register_hooks( $this->loader );
                 $this->customer_sync->register_hooks( $this->loader );
@@ -215,7 +228,7 @@ class Softone_Woocommerce_Integration {
 	 */
 	private function define_admin_hooks() {
 	
-        $plugin_admin = new Softone_Woocommerce_Integration_Admin( $this->get_plugin_name(), $this->get_version(), $this->item_sync );
+        $plugin_admin = new Softone_Woocommerce_Integration_Admin( $this->get_plugin_name(), $this->get_version(), $this->item_sync, $this->activity_logger );
 
         $this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_styles' );
         $this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts' );
@@ -224,6 +237,7 @@ class Softone_Woocommerce_Integration {
         $this->loader->add_action( 'admin_post_softone_wc_integration_api_tester', $plugin_admin, 'handle_api_tester_request' );
         $this->loader->add_action( 'admin_post_softone_wc_integration_test_connection', $plugin_admin, 'handle_test_connection' );
         $this->loader->add_action( 'admin_post_' . Softone_Item_Sync::ADMIN_ACTION, $plugin_admin, 'handle_item_import' );
+        $this->loader->add_action( 'admin_post_softone_wc_integration_clear_sync_activity', $plugin_admin, 'handle_clear_sync_activity' );
 
         }
 
@@ -237,7 +251,7 @@ class Softone_Woocommerce_Integration {
         private function define_public_hooks() {
 
                 $plugin_public = new Softone_Woocommerce_Integration_Public( $this->get_plugin_name(), $this->get_version() );
-                $menu_populator = new Softone_Menu_Populator();
+                $menu_populator = new Softone_Menu_Populator( $this->activity_logger );
 
                 $this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_styles' );
                 $this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_scripts' );
