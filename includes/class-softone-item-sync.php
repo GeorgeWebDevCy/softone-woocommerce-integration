@@ -665,9 +665,25 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 }
             }
 
-            $name = $this->get_value( $data, array( 'desc', 'description', 'code' ) );
+            $name              = $this->get_value( $data, array( 'desc', 'description', 'code' ) );
+            $derived_colour    = '';
+            $normalized_name   = '';
+            $fallback_metadata = array();
+
             if ( '' !== $name ) {
-                $product->set_name( $name );
+                list( $normalized_name, $derived_colour ) = $this->split_product_name_and_colour( $name );
+
+                if ( '' === $normalized_name ) {
+                    $normalized_name = $name;
+                }
+
+                if ( '' !== $normalized_name ) {
+                    $product->set_name( $normalized_name );
+                }
+            }
+
+            if ( '' !== $derived_colour ) {
+                $fallback_metadata['colour'] = $derived_colour;
             }
 
             $description = $this->get_value(
@@ -733,7 +749,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             $brand_value           = trim( $this->get_value( $data, array( 'brand_name', 'brand' ) ) );
-            $attribute_assignments = $this->prepare_attribute_assignments( $data, $product );
+            $attribute_assignments = $this->prepare_attribute_assignments( $data, $product, $fallback_metadata );
 
             if ( ! empty( $attribute_assignments['attributes'] ) ) {
                 $product->set_attributes( $attribute_assignments['attributes'] );
@@ -1534,8 +1550,9 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         /**
          * Prepare attribute assignments for a product.
          *
-         * @param array       $data    Normalised data.
-         * @param WC_Product  $product Product instance.
+         * @param array       $data                Normalised data.
+         * @param WC_Product  $product             Product instance.
+         * @param array       $fallback_attributes Optional attribute values keyed by slug.
          *
          * @return array{
          *     attributes: array<string, WC_Product_Attribute>,
@@ -1543,7 +1560,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
          *     clear: array<string>
          * }
          */
-        protected function prepare_attribute_assignments( array $data, $product ) {
+        protected function prepare_attribute_assignments( array $data, $product, array $fallback_attributes = array() ) {
             if ( ! function_exists( 'wc_attribute_taxonomy_name' ) || ! class_exists( 'WC_Product_Attribute' ) ) {
                 return array(
                     'attributes' => $product->get_attributes(),
@@ -1561,7 +1578,9 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $attribute_map = array(
                 'colour' => array(
                     'label'    => __( 'Colour', 'softone-woocommerce-integration' ),
-                    'value'    => trim( $this->get_value( $data, array( 'colour_name', 'color_name', 'colour' ) ) ),
+                    'value'    => $this->normalize_colour_value(
+                        trim( $this->get_value( $data, array( 'colour_name', 'color_name', 'colour' ) ) )
+                    ),
                     'position' => 0,
                 ),
                 'size'   => array(
@@ -1575,6 +1594,10 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     'position' => 2,
                 ),
             );
+
+            if ( isset( $attribute_map['colour']['value'] ) && '' === $attribute_map['colour']['value'] && isset( $fallback_attributes['colour'] ) ) {
+                $attribute_map['colour']['value'] = $this->normalize_colour_value( $fallback_attributes['colour'] );
+            }
 
             foreach ( $attribute_map as $slug => $config ) {
                 $taxonomy = wc_attribute_taxonomy_name( $slug );
@@ -1615,6 +1638,54 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             return $assignments;
+        }
+
+        /**
+         * Split a product name into the actual name and a colour suffix when present.
+         *
+         * @param string $name Product name as received from SoftOne.
+         *
+         * @return array{0: string, 1: string} Array with the cleaned name and the extracted colour value.
+         */
+        protected function split_product_name_and_colour( $name ) {
+            $name   = (string) $name;
+            $colour = '';
+
+            if ( '' === $name || false === strpos( $name, '|' ) ) {
+                return array( $name, $colour );
+            }
+
+            $parts = explode( '|', $name, 2 );
+
+            $clean_name = isset( $parts[0] ) ? trim( $parts[0] ) : '';
+            $suffix     = isset( $parts[1] ) ? trim( $parts[1] ) : '';
+
+            if ( '' !== $suffix ) {
+                $colour = $this->normalize_colour_value( $suffix );
+            }
+
+            return array( $clean_name, $colour );
+        }
+
+        /**
+         * Normalise a colour value for use within WooCommerce attributes.
+         *
+         * @param string $colour Raw colour value.
+         *
+         * @return string Normalised colour string.
+         */
+        protected function normalize_colour_value( $colour ) {
+            $colour = trim( (string) $colour );
+
+            if ( '' === $colour ) {
+                return '';
+            }
+
+            if ( function_exists( 'mb_convert_case' ) ) {
+                return mb_convert_case( $colour, MB_CASE_TITLE, 'UTF-8' );
+            }
+
+            return ucwords( strtolower( $colour ) );
         }
 
         /**
