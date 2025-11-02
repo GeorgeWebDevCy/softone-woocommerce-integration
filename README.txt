@@ -1,11 +1,11 @@
 === Softone WooCommerce Integration ===
-Contributors: georgenicolaou
+Contributors: orionaselite
 Donate link: https://www.georgenicolaou.me//
 Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.8.25
+Stable tag: 1.8.26
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -78,6 +78,9 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 
 == Changelog ==
 
+= 1.8.26 =
+* Update the listed WordPress.org contributor username.
+
 = 1.8.25 =
 * Add verbose documentation around SoftOne setting accessors and bump the plugin version number.
 
@@ -109,8 +112,8 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 
 == Upgrade Notice ==
 
-= 1.8.25 =
-This release clarifies the plugin's SoftOne setting helpers with extensive inline documentation and increments the plugin version number.
+= 1.8.26 =
+Refresh the plugin metadata to reference the updated WordPress.org contributor username.
 
 == Automatic Updates ==
 
