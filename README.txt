@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.8.34
+Stable tag: 1.8.35
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -77,6 +77,10 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Sync::schedule_event()`.
 
 == Changelog ==
+
+= 1.8.35 =
+* Introduce a file-based sync activity viewer that surfaces product category, attribute, and menu operations with a single-click option to clear the log file.
+* Capture sync activity directly to a lightweight uploads log so administrators can audit taxonomy assignments without bloating the database.
 
 = 1.8.34 =
 * Accept the SoftOne `color` field when building WooCommerce attributes so products populate the `pa_colour` taxonomy using the same logic as `pa_brand`.
