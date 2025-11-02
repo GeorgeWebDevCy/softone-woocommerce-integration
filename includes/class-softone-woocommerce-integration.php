@@ -238,6 +238,7 @@ class Softone_Woocommerce_Integration {
         $this->loader->add_action( 'admin_post_softone_wc_integration_test_connection', $plugin_admin, 'handle_test_connection' );
         $this->loader->add_action( 'admin_post_' . Softone_Item_Sync::ADMIN_ACTION, $plugin_admin, 'handle_item_import' );
         $this->loader->add_action( 'admin_post_softone_wc_integration_clear_sync_activity', $plugin_admin, 'handle_clear_sync_activity' );
+        $this->loader->add_action( 'wp_ajax_' . $plugin_admin->get_sync_activity_action(), $plugin_admin, 'handle_sync_activity_ajax' );
 
         }
 

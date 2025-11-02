@@ -104,7 +104,28 @@ class Softone_Woocommerce_Integration_Admin {
          *
          * @var string
          */
-	private $test_notice_transient = 'softone_wc_integration_test_notice_';
+        private $test_notice_transient = 'softone_wc_integration_test_notice_';
+
+        /**
+         * AJAX action used to stream sync activity updates.
+         *
+         * @var string
+         */
+        private $sync_activity_action = 'softone_wc_integration_sync_activity';
+
+        /**
+         * Default number of sync activity entries to display/fetch.
+         *
+         * @var int
+         */
+        private $sync_activity_limit = 200;
+
+        /**
+         * Polling interval (in milliseconds) for the sync activity monitor.
+         *
+         * @var int
+         */
+        private $sync_activity_poll_interval = 15000;
 
         /**
          * Base transient key for API tester responses.
@@ -487,6 +508,214 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
         }
 
         /**
+         * Retrieve the AJAX action name used for sync activity polling.
+         *
+         * @return string
+         */
+        public function get_sync_activity_action() {
+                return $this->sync_activity_action;
+        }
+
+        /**
+         * Handle capability-protected AJAX requests for sync activity updates.
+         *
+         * Expects a valid nonce (under the `nonce` key), an optional `since`
+         * Unix timestamp to support incremental updates, and an optional
+         * `limit` indicating how many records to return. Responses follow the
+         * standard WordPress JSON structure (success flag + data payload).
+         *
+         * @return void
+         */
+        public function handle_sync_activity_ajax() {
+
+                if ( ! current_user_can( $this->capability ) ) {
+                        wp_send_json_error(
+                                array(
+                                        'message' => __( 'You do not have permission to access sync activity.', 'softone-woocommerce-integration' ),
+                                ),
+                                403
+                        );
+                }
+
+                check_ajax_referer( $this->sync_activity_action, 'nonce' );
+
+                $since = 0;
+
+                if ( isset( $_REQUEST['since'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+                        $since = (int) wp_unslash( $_REQUEST['since'] ); // phpcs:ignore WordPress.Security.NonceVerification
+                }
+
+                $limit = $this->sync_activity_limit;
+
+                if ( isset( $_REQUEST['limit'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+                        $requested_limit = (int) wp_unslash( $_REQUEST['limit'] ); // phpcs:ignore WordPress.Security.NonceVerification
+
+                        if ( $requested_limit > 0 ) {
+                                $limit = min( $requested_limit, 500 );
+                        }
+                }
+
+                if ( ! $this->activity_logger ) {
+                        wp_send_json_error(
+                                array(
+                                        'message' => __( 'The sync activity logger is not available.', 'softone-woocommerce-integration' ),
+                                ),
+                                500
+                        );
+                }
+
+                $entries  = array();
+                $metadata = array();
+
+                if ( method_exists( $this->activity_logger, 'get_entries_since' ) ) {
+                        $entries = $this->activity_logger->get_entries_since( $since, $limit );
+                } elseif ( method_exists( $this->activity_logger, 'get_entries' ) ) {
+                        $entries = $this->activity_logger->get_entries( $limit );
+                }
+
+                if ( method_exists( $this->activity_logger, 'get_metadata' ) ) {
+                        $metadata = $this->activity_logger->get_metadata();
+                }
+
+                $prepared_entries = $this->prepare_activity_entries( $entries );
+                $latest_timestamp = $this->get_latest_timestamp_from_entries( $prepared_entries );
+                $metadata         = $this->enrich_activity_metadata( $metadata );
+
+                wp_send_json_success(
+                        array(
+                                'entries'          => $prepared_entries,
+                                'latestTimestamp'  => $latest_timestamp,
+                                'metadata'         => $metadata,
+                        )
+                );
+
+        }
+
+        /**
+         * Prepare entries for front-end consumption by adding formatted fields.
+         *
+         * @param array<int, array<string, mixed>> $entries Raw entries from the logger.
+         *
+         * @return array<int, array<string, mixed>>
+         */
+        private function prepare_activity_entries( array $entries ) {
+                $prepared = array();
+
+                foreach ( $entries as $entry ) {
+                        $timestamp = isset( $entry['timestamp'] ) ? (int) $entry['timestamp'] : 0;
+                        $channel   = isset( $entry['channel'] ) ? (string) $entry['channel'] : '';
+                        $action    = isset( $entry['action'] ) ? (string) $entry['action'] : '';
+                        $message   = isset( $entry['message'] ) ? (string) $entry['message'] : '';
+                        $context   = isset( $entry['context'] ) && is_array( $entry['context'] ) ? $entry['context'] : array();
+
+                        $prepared[] = array(
+                                'timestamp'       => $timestamp,
+                                'time'            => $this->format_activity_time( $timestamp ),
+                                'channel'         => $channel,
+                                'action'          => $action,
+                                'message'         => $message,
+                                'context'         => $context,
+                                'context_display' => $this->format_activity_context( $context ),
+                        );
+                }
+
+                return $prepared;
+        }
+
+        /**
+         * Format a sync activity timestamp according to site preferences.
+         *
+         * @param int $timestamp Unix timestamp.
+         *
+         * @return string
+         */
+        private function format_activity_time( $timestamp ) {
+                $timestamp = (int) $timestamp;
+
+                if ( $timestamp <= 0 ) {
+                        return __( 'Unknown time', 'softone-woocommerce-integration' );
+                }
+
+                $format = get_option( 'date_format', 'Y-m-d' ) . ' ' . get_option( 'time_format', 'H:i' );
+
+                if ( function_exists( 'wp_date' ) ) {
+                        return wp_date( $format, $timestamp );
+                }
+
+                return date_i18n( $format, $timestamp );
+        }
+
+        /**
+         * Render a JSON context payload as a formatted string for display.
+         *
+         * @param array<string, mixed> $context Structured context payload.
+         *
+         * @return string
+         */
+        private function format_activity_context( array $context ) {
+                if ( empty( $context ) ) {
+                        return '';
+                }
+
+                $encoded = wp_json_encode( $context, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+
+                if ( false === $encoded ) {
+                        $encoded = json_encode( $context, JSON_PRETTY_PRINT );
+                }
+
+                if ( false === $encoded || '' === $encoded ) {
+                        return '';
+                }
+
+                return (string) $encoded;
+        }
+
+        /**
+         * Normalise metadata output to include readable file size information.
+         *
+         * @param array<string, mixed> $metadata Raw metadata from the logger.
+         *
+         * @return array<string, mixed>
+         */
+        private function enrich_activity_metadata( array $metadata ) {
+                $file_path = isset( $metadata['file_path'] ) ? (string) $metadata['file_path'] : '';
+                $exists    = ! empty( $metadata['exists'] );
+                $size      = isset( $metadata['size'] ) ? (int) $metadata['size'] : 0;
+
+                if ( function_exists( 'size_format' ) ) {
+                        $size_display = size_format( $size );
+                } else {
+                        $size_display = sprintf( __( '%d bytes', 'softone-woocommerce-integration' ), $size );
+                }
+
+                return array(
+                        'file_path'    => $file_path,
+                        'exists'       => $exists,
+                        'size'         => $size,
+                        'size_display' => $size_display,
+                );
+        }
+
+        /**
+         * Determine the latest timestamp from a prepared entry set.
+         *
+         * @param array<int, array<string, mixed>> $entries Prepared entry payload.
+         *
+         * @return int
+         */
+        private function get_latest_timestamp_from_entries( array $entries ) {
+                $latest = 0;
+
+                foreach ( $entries as $entry ) {
+                        if ( isset( $entry['timestamp'] ) ) {
+                                $latest = max( $latest, (int) $entry['timestamp'] );
+                        }
+                }
+
+                return $latest;
+        }
+
+        /**
         * Display the category synchronisation log viewer interface.
         *
         * Outputs a paginated-style summary of recent category sync events,
@@ -608,110 +837,144 @@ $display_time = __( 'Unknown time', 'softone-woocommerce-integration' );
                 $entries     = array();
                 $metadata    = array();
                 $error_state = '';
-                $limit       = 300;
+                $limit       = $this->sync_activity_limit;
 
                 if ( $this->activity_logger && method_exists( $this->activity_logger, 'get_entries' ) ) {
-                        $entries  = $this->activity_logger->get_entries( $limit );
-                        $metadata = $this->activity_logger->get_metadata();
+                        $entries = $this->activity_logger->get_entries( $limit );
                 } else {
                         $error_state = __( 'The sync activity logger is not available.', 'softone-woocommerce-integration' );
                 }
 
-                $file_path   = isset( $metadata['file_path'] ) ? (string) $metadata['file_path'] : '';
-                $file_exists = ! empty( $metadata['exists'] );
-                $file_size   = isset( $metadata['size'] ) ? (int) $metadata['size'] : 0;
+                if ( $this->activity_logger && method_exists( $this->activity_logger, 'get_metadata' ) ) {
+                        $metadata = $this->activity_logger->get_metadata();
+                }
 
-                $file_size_display = $file_exists && function_exists( 'size_format' ) ? size_format( $file_size ) : sprintf( __( '%d bytes', 'softone-woocommerce-integration' ), $file_size );
+                $prepared_entries = $this->prepare_activity_entries( $entries );
+                $latest_timestamp = $this->get_latest_timestamp_from_entries( $prepared_entries );
+                $metadata         = $this->enrich_activity_metadata( $metadata );
+
+                $poll_interval = (int) apply_filters( 'softone_wc_integration_sync_poll_interval', $this->sync_activity_poll_interval );
+
+                if ( $poll_interval < 1000 ) {
+                        $poll_interval = 1000;
+                }
+
+                $manual_sync_enabled = ! empty( $this->item_sync );
+
+                $localised_data = array(
+                        'ajaxUrl'         => admin_url( 'admin-ajax.php' ),
+                        'action'          => $this->sync_activity_action,
+                        'nonce'           => wp_create_nonce( $this->sync_activity_action ),
+                        'pollInterval'    => $poll_interval,
+                        'limit'           => $limit,
+                        'latestTimestamp' => $latest_timestamp,
+                        'initialEntries'  => $prepared_entries,
+                        'metadata'        => $metadata,
+                        'error'           => $error_state,
+                        'strings'         => array(
+                                'entriesDisplayed'   => sprintf( __( 'Displaying up to %d recent events.', 'softone-woocommerce-integration' ), $limit ),
+                                'logFileLocation'    => __( 'Log file location: %s', 'softone-woocommerce-integration' ),
+                                'logFileSize'        => __( 'Log file size: %s', 'softone-woocommerce-integration' ),
+                                'logFileMissing'     => __( 'A log file will be created automatically when new sync events occur.', 'softone-woocommerce-integration' ),
+                                'loading'            => __( 'Loading…', 'softone-woocommerce-integration' ),
+                                'refreshing'         => __( 'Refreshing activity…', 'softone-woocommerce-integration' ),
+                                'error'              => __( 'Unable to load sync activity. Please try again.', 'softone-woocommerce-integration' ),
+                                'retry'              => __( 'Retry', 'softone-woocommerce-integration' ),
+                                'noEntries'          => __( 'No sync activity has been recorded yet.', 'softone-woocommerce-integration' ),
+                                'manualSyncStarting' => __( 'Starting manual sync…', 'softone-woocommerce-integration' ),
+                                'manualSyncQueued'   => __( 'Manual sync request sent.', 'softone-woocommerce-integration' ),
+                                'manualSyncError'    => __( 'Manual sync request failed. Please check the logs.', 'softone-woocommerce-integration' ),
+                                'pollingPaused'      => __( 'Polling has been paused after repeated errors.', 'softone-woocommerce-integration' ),
+                        ),
+                        'manualSync'      => array(
+                                'enabled'  => $manual_sync_enabled,
+                                'endpoint' => admin_url( 'admin-post.php' ),
+                                'action'   => Softone_Item_Sync::ADMIN_ACTION,
+                                'nonce'    => wp_create_nonce( Softone_Item_Sync::ADMIN_ACTION ),
+                        ),
+                );
+
+                wp_enqueue_script(
+                        'softone-sync-monitor',
+                        plugin_dir_url( __FILE__ ) . 'js/softone-sync-monitor.js',
+                        array(),
+                        $this->version,
+                        true
+                );
+
+                wp_localize_script( 'softone-sync-monitor', 'softoneSyncMonitor', $localised_data );
+
+                $entries_text = $localised_data['strings']['entriesDisplayed'];
+                $file_text    = '';
+                $size_text    = $localised_data['strings']['logFileMissing'];
+
+                if ( '' !== $metadata['file_path'] ) {
+                        $file_text = sprintf( $localised_data['strings']['logFileLocation'], $metadata['file_path'] );
+                }
+
+                if ( $metadata['exists'] ) {
+                        $size_text = sprintf( $localised_data['strings']['logFileSize'], $metadata['size_display'] );
+                }
 
                 $cleared = isset( $_GET['cleared'] ) ? (int) $_GET['cleared'] : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display notice only.
 
 ?>
 <div class="wrap softone-sync-activity">
-<h1><?php esc_html_e( 'Sync Activity', 'softone-woocommerce-integration' ); ?></h1>
-<p class="description"><?php esc_html_e( 'Review the latest product category, attribute, and menu sync operations captured by the plugin.', 'softone-woocommerce-integration' ); ?></p>
+        <h1><?php esc_html_e( 'Sync Activity', 'softone-woocommerce-integration' ); ?></h1>
+        <p class="description"><?php esc_html_e( 'Review the latest product category, attribute, and menu sync operations captured by the plugin.', 'softone-woocommerce-integration' ); ?></p>
 
-<?php if ( $cleared ) : ?>
-<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'The sync activity log has been cleared.', 'softone-woocommerce-integration' ); ?></p></div>
-<?php endif; ?>
+        <?php if ( $cleared ) : ?>
+        <div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'The sync activity log has been cleared.', 'softone-woocommerce-integration' ); ?></p></div>
+        <?php endif; ?>
 
-<?php if ( '' !== $error_state ) : ?>
-<div class="notice notice-error"><p><?php echo esc_html( $error_state ); ?></p></div>
-<?php endif; ?>
+        <?php if ( '' !== $error_state ) : ?>
+        <div class="notice notice-error"><p><?php echo esc_html( $error_state ); ?></p></div>
+        <?php endif; ?>
 
-<section class="softone-sync-activity__meta" aria-label="<?php esc_attr_e( 'Log file details', 'softone-woocommerce-integration' ); ?>">
-<p><?php echo esc_html( sprintf( __( 'Entries displayed: up to %d most recent events.', 'softone-woocommerce-integration' ), $limit ) ); ?></p>
-<?php if ( '' !== $file_path ) : ?>
-<p><?php echo esc_html( sprintf( __( 'Log file location: %s', 'softone-woocommerce-integration' ), $file_path ) ); ?></p>
-<?php endif; ?>
-<?php if ( $file_exists ) : ?>
-<p><?php echo esc_html( sprintf( __( 'Log file size: %s', 'softone-woocommerce-integration' ), $file_size_display ) ); ?></p>
-<?php else : ?>
-<p><?php esc_html_e( 'A log file will be created automatically when new sync events occur.', 'softone-woocommerce-integration' ); ?></p>
-<?php endif; ?>
-</section>
+        <div class="softone-sync-monitor" data-softone-sync-monitor>
+                <div class="softone-sync-monitor__status" data-sync-status role="status" aria-live="polite"></div>
+                <div class="softone-sync-monitor__status softone-sync-monitor__status--error" data-sync-error role="alert" hidden="hidden"></div>
 
-<?php if ( empty( $entries ) ) : ?>
-<p><?php esc_html_e( 'No sync activity has been recorded yet.', 'softone-woocommerce-integration' ); ?></p>
-<?php else : ?>
-<table class="widefat fixed striped softone-sync-activity__table">
-<thead>
-<tr>
-<th scope="col"><?php esc_html_e( 'Time', 'softone-woocommerce-integration' ); ?></th>
-<th scope="col"><?php esc_html_e( 'Channel', 'softone-woocommerce-integration' ); ?></th>
-<th scope="col"><?php esc_html_e( 'Action', 'softone-woocommerce-integration' ); ?></th>
-<th scope="col"><?php esc_html_e( 'Message', 'softone-woocommerce-integration' ); ?></th>
-<th scope="col"><?php esc_html_e( 'Context', 'softone-woocommerce-integration' ); ?></th>
-</tr>
-</thead>
-<tbody>
-<?php foreach ( $entries as $entry ) :
-$timestamp = isset( $entry['timestamp'] ) ? (int) $entry['timestamp'] : 0;
-$channel   = isset( $entry['channel'] ) ? (string) $entry['channel'] : '';
-$action    = isset( $entry['action'] ) ? (string) $entry['action'] : '';
-$message   = isset( $entry['message'] ) ? (string) $entry['message'] : '';
-$context   = isset( $entry['context'] ) && is_array( $entry['context'] ) ? $entry['context'] : array();
+                <div class="softone-sync-monitor__controls">
+                        <button type="button" class="button" data-sync-refresh><?php esc_html_e( 'Refresh now', 'softone-woocommerce-integration' ); ?></button>
+                        <?php if ( $manual_sync_enabled ) : ?>
+                        <button type="button" class="button button-primary" data-sync-manual><?php esc_html_e( 'Run Manual Sync', 'softone-woocommerce-integration' ); ?></button>
+                        <?php endif; ?>
+                </div>
 
-$display_time = '';
-if ( $timestamp > 0 ) {
-        $format = get_option( 'date_format', 'Y-m-d' ) . ' ' . get_option( 'time_format', 'H:i' );
-        if ( function_exists( 'wp_date' ) ) {
-                $display_time = wp_date( $format, $timestamp );
-        } else {
-                $display_time = date_i18n( $format, $timestamp );
-        }
-} else {
-        $display_time = __( 'Unknown time', 'softone-woocommerce-integration' );
-}
+                <div class="softone-sync-monitor__meta" aria-label="<?php esc_attr_e( 'Log file details', 'softone-woocommerce-integration' ); ?>">
+                        <p data-sync-meta="entries"><?php echo esc_html( $entries_text ); ?></p>
+                        <p data-sync-meta="file"><?php echo esc_html( $file_text ); ?></p>
+                        <p data-sync-meta="size"><?php echo esc_html( $size_text ); ?></p>
+                </div>
 
-$context_output = '';
-if ( ! empty( $context ) ) {
-        $encoded_context = wp_json_encode( $context, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
-        if ( false === $encoded_context ) {
-                $encoded_context = json_encode( $context, JSON_PRETTY_PRINT );
-        }
+                <table class="widefat fixed striped softone-sync-monitor__table">
+                        <thead>
+                        <tr>
+                                <th scope="col"><?php esc_html_e( 'Time', 'softone-woocommerce-integration' ); ?></th>
+                                <th scope="col"><?php esc_html_e( 'Channel', 'softone-woocommerce-integration' ); ?></th>
+                                <th scope="col"><?php esc_html_e( 'Action', 'softone-woocommerce-integration' ); ?></th>
+                                <th scope="col"><?php esc_html_e( 'Message', 'softone-woocommerce-integration' ); ?></th>
+                                <th scope="col"><?php esc_html_e( 'Context', 'softone-woocommerce-integration' ); ?></th>
+                        </tr>
+                        </thead>
+                        <tbody data-sync-body>
+                        <tr class="softone-sync-monitor__empty">
+                                <td colspan="5"><?php esc_html_e( 'No sync activity has been recorded yet.', 'softone-woocommerce-integration' ); ?></td>
+                        </tr>
+                        </tbody>
+                </table>
+        </div>
 
-        if ( false !== $encoded_context ) {
-                $context_output = $encoded_context;
-        }
-}
-?>
-<tr>
-<td><?php echo esc_html( $display_time ); ?></td>
-<td><?php echo esc_html( $channel ); ?></td>
-<td><?php echo esc_html( $action ); ?></td>
-<td><?php echo esc_html( $message ); ?></td>
-<td><?php if ( '' !== $context_output ) : ?><pre><?php echo esc_html( $context_output ); ?></pre><?php endif; ?></td>
-</tr>
-<?php endforeach; ?>
-</tbody>
-</table>
-<?php endif; ?>
+        <noscript>
+                <p><?php esc_html_e( 'JavaScript is required to view live sync activity updates.', 'softone-woocommerce-integration' ); ?></p>
+        </noscript>
 
-<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" style="margin-top:1.5em;">
-<?php wp_nonce_field( $this->clear_activity_action ); ?>
-<input type="hidden" name="action" value="<?php echo esc_attr( $this->clear_activity_action ); ?>" />
-<?php submit_button( __( 'Delete Sync Activity Log', 'softone-woocommerce-integration' ), 'delete', 'softone_wc_integration_delete_sync_activity', false ); ?>
-</form>
+        <form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" style="margin-top:1.5em;">
+                <?php wp_nonce_field( $this->clear_activity_action ); ?>
+                <input type="hidden" name="action" value="<?php echo esc_attr( $this->clear_activity_action ); ?>" />
+                <?php submit_button( __( 'Delete Sync Activity Log', 'softone-woocommerce-integration' ), 'delete', 'softone_wc_integration_delete_sync_activity', false ); ?>
+        </form>
 </div>
 <?php
 

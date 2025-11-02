@@ -115,6 +115,66 @@ if ( ! class_exists( 'Softone_Sync_Activity_Logger' ) ) {
         }
 
         /**
+         * Retrieve log entries recorded after a given timestamp.
+         *
+         * @param int $timestamp Unix timestamp boundary.
+         * @param int $limit     Maximum number of entries to return.
+         *
+         * @return array<int, array<string, mixed>>
+         */
+        public function get_entries_since( $timestamp, $limit = 200 ) {
+            $file_path = $this->get_log_file_path();
+
+            if ( '' === $file_path || ! file_exists( $file_path ) || ! is_readable( $file_path ) ) {
+                return array();
+            }
+
+            $timestamp = (int) $timestamp;
+            $limit     = (int) $limit;
+
+            if ( $limit <= 0 ) {
+                $limit = 1;
+            }
+
+            $lines = @file( $file_path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+
+            if ( false === $lines || empty( $lines ) ) {
+                return array();
+            }
+
+            $lines   = array_reverse( $lines );
+            $entries = array();
+
+            foreach ( $lines as $line ) {
+                $decoded = json_decode( $line, true );
+
+                if ( ! is_array( $decoded ) ) {
+                    continue;
+                }
+
+                $entry_timestamp = isset( $decoded['timestamp'] ) ? (int) $decoded['timestamp'] : 0;
+
+                if ( $entry_timestamp <= $timestamp ) {
+                    continue;
+                }
+
+                $entries[] = array(
+                    'timestamp' => $entry_timestamp,
+                    'channel'   => isset( $decoded['channel'] ) ? (string) $decoded['channel'] : '',
+                    'action'    => isset( $decoded['action'] ) ? (string) $decoded['action'] : '',
+                    'message'   => isset( $decoded['message'] ) ? (string) $decoded['message'] : '',
+                    'context'   => isset( $decoded['context'] ) && is_array( $decoded['context'] ) ? $decoded['context'] : array(),
+                );
+
+                if ( count( $entries ) >= $limit ) {
+                    break;
+                }
+            }
+
+            return $entries;
+        }
+
+        /**
          * Remove the log file.
          *
          * @return bool True on success, false otherwise.
