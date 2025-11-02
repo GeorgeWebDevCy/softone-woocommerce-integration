@@ -2469,6 +2469,48 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     }
                 }
 
+                if ( $term_id <= 0 ) {
+                    $term     = term_exists( $name, $tax, $parent );
+                    $term_id  = $this->normalize_term_identifier( $term );
+                    $fallback = null;
+
+                    if ( $term_id <= 0 && '' !== $sanitized_name ) {
+                        $term    = term_exists( $sanitized_name, $tax, $parent );
+                        $term_id = $this->normalize_term_identifier( $term );
+                    }
+
+                    if ( $term_id <= 0 && '' !== $sanitized_name ) {
+                        $fallback = get_term_by( 'slug', $sanitized_name, $tax );
+                    }
+
+                    if ( ! ( $fallback instanceof WP_Term ) ) {
+                        $fallback = get_term_by( 'name', $name, $tax );
+                    }
+
+                    if ( $fallback instanceof WP_Term ) {
+                        $term_id = $this->maybe_update_term_parent( $fallback, $tax, $parent );
+                    }
+
+                    if ( $term_id > 0 ) {
+                        $this->term_cache[ $key ] = $term_id;
+
+                        $this->log(
+                            'debug',
+                            'SOFTONE_CAT_SYNC_014 Recovered term after creation error.',
+                            array(
+                                'taxonomy'   => $tax,
+                                'parent_id'  => $parent,
+                                'cache_key'  => $key,
+                                'term_id'    => $term_id,
+                                'error_code' => $error_code,
+                                'error_data' => $error_data,
+                            )
+                        );
+
+                        return $term_id;
+                    }
+                }
+
                 $this->log(
                     'error',
                     'SOFTONE_CAT_SYNC_003 ' . $result->get_error_message(),
