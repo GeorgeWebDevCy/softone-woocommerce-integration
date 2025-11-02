@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
+if ( ! class_exists( 'Softone_Category_Sync_Logger' ) ) {
+    require_once __DIR__ . '/class-softone-category-sync-logger.php';
+}
+
 if ( ! class_exists( 'Softone_Item_Sync' ) ) {
     /**
      * Handles importing SoftOne catalogue items into WooCommerce.
@@ -37,6 +41,13 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
          * @var WC_Logger|Psr\Log\LoggerInterface|null
          */
         protected $logger;
+
+        /**
+         * Category synchronisation logger instance.
+         *
+         * @var Softone_Category_Sync_Logger|object|null
+         */
+        protected $category_logger;
 
         /**
          * Cache for taxonomy terms keyed by taxonomy and term name.
@@ -79,9 +90,15 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
          * @param Softone_API_Client|null           $api_client API client instance.
          * @param WC_Logger|Psr\Log\LoggerInterface|null $logger Optional logger instance.
          */
-        public function __construct( ?Softone_API_Client $api_client = null, $logger = null ) {
+        public function __construct( ?Softone_API_Client $api_client = null, $logger = null, $category_logger = null ) {
             $this->api_client = $api_client ?: new Softone_API_Client();
             $this->logger     = $logger ?: $this->get_default_logger();
+
+            if ( null !== $category_logger && method_exists( $category_logger, 'log_assignment' ) ) {
+                $this->category_logger = $category_logger;
+            } else {
+                $this->category_logger = new Softone_Category_Sync_Logger( $this->logger );
+            }
 
             $this->reset_caches();
         }
@@ -746,6 +763,24 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                             'product_id'    => $product_id,
                             'category_ids'  => $category_ids,
                             'error_message' => $category_assignment->get_error_message(),
+                        )
+                    );
+                } else {
+                    $term_taxonomy_ids = array();
+
+                    if ( null !== $category_assignment ) {
+                        $term_taxonomy_ids = array_map( 'intval', (array) $category_assignment );
+                    }
+
+                    $this->log_category_assignment(
+                        $product_id,
+                        $category_ids,
+                        array(
+                            'sku'                    => $sku,
+                            'mtrl'                   => $mtrl,
+                            'term_taxonomy_ids'      => $term_taxonomy_ids,
+                            'force_taxonomy_refresh' => (bool) $this->force_taxonomy_refresh,
+                            'sync_action'            => $is_new ? 'created' : 'updated',
                         )
                     );
                 }
@@ -1963,6 +1998,23 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             $this->logger->log( $level, $message, $context );
+        }
+
+        /**
+         * Record a category assignment event using the category logger.
+         *
+         * @param int   $product_id   Product identifier.
+         * @param array $category_ids Assigned category identifiers.
+         * @param array $context      Additional context to include in the log entry.
+         *
+         * @return void
+         */
+        protected function log_category_assignment( $product_id, array $category_ids, array $context = array() ) {
+            if ( ! $this->category_logger || ! method_exists( $this->category_logger, 'log_assignment' ) ) {
+                return;
+            }
+
+            $this->category_logger->log_assignment( $product_id, $category_ids, $context );
         }
     }
 }

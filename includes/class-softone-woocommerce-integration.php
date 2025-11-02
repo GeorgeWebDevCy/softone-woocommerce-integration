@@ -91,7 +91,7 @@ class Softone_Woocommerce_Integration {
                 if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
                         $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
                 } else {
-                        $this->version = '1.8.28';
+                        $this->version = '1.8.29';
                 }
 		$this->plugin_name = 'softone-woocommerce-integration';
 
@@ -130,6 +130,11 @@ class Softone_Woocommerce_Integration {
                  * Service class for performing SoftOne API requests.
                  */
                 require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-api-client.php';
+
+                /**
+                 * Helper for writing category synchronisation log entries.
+                 */
+                require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-category-sync-logger.php';
 
                 /**
                  * Service class for synchronising items from SoftOne into WooCommerce.
