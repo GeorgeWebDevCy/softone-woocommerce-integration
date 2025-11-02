@@ -398,6 +398,15 @@ esc_html( sprintf( __( 'Last import completed on %s.', 'softone-woocommerce-inte
 submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'secondary', 'softone_wc_integration_run_item_import', false );
 ?>
 </form>
+
+<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" style="margin-top: 1.5em;">
+<?php wp_nonce_field( Softone_Item_Sync::ADMIN_ACTION ); ?>
+<input type="hidden" name="action" value="<?php echo esc_attr( Softone_Item_Sync::ADMIN_ACTION ); ?>" />
+<input type="hidden" name="softone_wc_integration_force_full" value="1" />
+<input type="hidden" name="softone_wc_integration_force_taxonomy_refresh" value="1" />
+<p class="description"><?php esc_html_e( 'Force a full item import and refresh category and menu assignments for every product.', 'softone-woocommerce-integration' ); ?></p>
+<?php submit_button( __( 'Re-sync Categories & Menus', 'softone-woocommerce-integration' ), 'secondary', 'softone_wc_integration_resync_taxonomies', false ); ?>
+</form>
 </div>
 <?php
 
@@ -1450,14 +1459,19 @@ $display_time = __( 'Unknown time', 'softone-woocommerce-integration' );
 
         check_admin_referer( Softone_Item_Sync::ADMIN_ACTION );
 
-        $force_full_import = null;
+        $force_full_import        = null;
+        $force_taxonomy_refresh   = false;
 
         if ( isset( $_POST['softone_wc_integration_force_full'] ) ) {
                 $force_full_import = (bool) absint( wp_unslash( $_POST['softone_wc_integration_force_full'] ) );
         }
 
+        if ( isset( $_POST['softone_wc_integration_force_taxonomy_refresh'] ) ) {
+                $force_taxonomy_refresh = (bool) absint( wp_unslash( $_POST['softone_wc_integration_force_taxonomy_refresh'] ) );
+        }
+
         try {
-                $result = $this->item_sync->sync( $force_full_import );
+                $result = $this->item_sync->sync( $force_full_import, $force_taxonomy_refresh );
 
                 if ( isset( $result['started_at'] ) ) {
                         update_option( Softone_Item_Sync::OPTION_LAST_RUN, (int) $result['started_at'] );
@@ -1483,6 +1497,10 @@ $display_time = __( 'Unknown time', 'softone-woocommerce-integration' );
                                 __( 'Marked %d stale products.', 'softone-woocommerce-integration' ),
                                 (int) $result['stale_processed']
                         );
+                }
+
+                if ( $force_taxonomy_refresh ) {
+                        $message .= ' ' . __( 'Category and menu assignments were refreshed.', 'softone-woocommerce-integration' );
                 }
 
                 $this->store_import_notice( 'success', $message );

@@ -67,6 +67,13 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         protected $cache_stats = array();
 
         /**
+         * Whether taxonomy assignments should be refreshed regardless of payload hash matches.
+         *
+         * @var bool
+         */
+        protected $force_taxonomy_refresh = false;
+
+        /**
          * Constructor.
          *
          * @param Softone_API_Client|null           $api_client API client instance.
@@ -160,7 +167,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
          * @throws Softone_API_Client_Exception When API requests fail.
          * @throws Exception                     When WooCommerce is not available.
          *
-         * @param bool|null $force_full_import Whether to force a full import.
+         * @param bool|null $force_full_import        Whether to force a full import.
+         * @param bool      $force_taxonomy_refresh Whether to refresh taxonomy assignments even when the payload hash matches.
          *
          * @return array{
          *     processed:int,
@@ -171,7 +179,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
          *     stale_processed?:int
          * }
          */
-        public function sync( $force_full_import = null ) {
+        public function sync( $force_full_import = null, $force_taxonomy_refresh = false ) {
             if ( ! class_exists( 'WC_Product' ) ) {
                 throw new Exception( __( 'WooCommerce is required to sync items.', 'softone-woocommerce-integration' ) );
             }
@@ -245,6 +253,9 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 'started_at' => $started_at,
             );
 
+            $previous_force_taxonomy_refresh = $this->force_taxonomy_refresh;
+            $this->force_taxonomy_refresh    = (bool) $force_taxonomy_refresh;
+
             try {
                 foreach ( $this->yield_item_rows( $extra ) as $row ) {
                     $stats['processed']++;
@@ -291,6 +302,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 if ( function_exists( 'wp_defer_comment_counting' ) && null !== $comment_count_previous_state ) {
                     wp_defer_comment_counting( $comment_count_previous_state );
                 }
+
+                $this->force_taxonomy_refresh = $previous_force_taxonomy_refresh;
             }
         }
 
@@ -618,7 +631,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             if ( ! $is_new ) {
                 $existing_hash = (string) get_post_meta( $product_id, self::META_PAYLOAD_HASH, true );
 
-                if ( '' !== $existing_hash && $existing_hash === $payload_hash ) {
+                if ( ! $this->force_taxonomy_refresh && '' !== $existing_hash && $existing_hash === $payload_hash ) {
                     $this->log(
                         'debug',
                         'Skipping product import because the payload hash matches the existing product.',
