@@ -1084,5 +1084,37 @@ if ( ! $cache_refreshed ) {
     throw new RuntimeException( 'Expected the attribute term cache to be refreshed when reusing an existing term.' );
 }
 
+$alias_product = new WC_Product_Simple();
+$alias_product->set_attributes( array() );
+
+$alias_assignments = $attribute_sync->prepare_attribute_assignments_public(
+    array(
+        'color' => ' blue ',
+    ),
+    $alias_product
+);
+
+if ( ! isset( $alias_assignments['terms'][ $colour_taxonomy ] ) ) {
+    throw new RuntimeException( 'Colour attribute terms should be prepared when using the `color` key alias.' );
+}
+
+$alias_term_ids = $alias_assignments['terms'][ $colour_taxonomy ];
+if ( $alias_term_ids !== array( $expected_term_id ) ) {
+    throw new RuntimeException( 'Expected the colour alias to reuse the existing term identifier.' );
+}
+
+if ( ! isset( $alias_assignments['attributes'][ $colour_taxonomy ] ) ) {
+    throw new RuntimeException( 'Colour attribute metadata should be prepared when using the alias key.' );
+}
+
+$alias_attribute = $alias_assignments['attributes'][ $colour_taxonomy ];
+if ( ! $alias_attribute instanceof WC_Product_Attribute ) {
+    throw new RuntimeException( 'Expected a WC_Product_Attribute instance for the colour alias assignment.' );
+}
+
+if ( $alias_attribute->get_options() !== array( $expected_term_id ) ) {
+    throw new RuntimeException( 'Colour alias attribute options should contain the reused term identifier.' );
+}
+
 echo "Taxonomy refresh regression test passed." . PHP_EOL;
 echo "Attribute term normalisation regression test passed." . PHP_EOL;
