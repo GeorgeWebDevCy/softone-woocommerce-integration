@@ -986,6 +986,12 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $category_slug    = function_exists( 'sanitize_title' ) ? sanitize_title( $category_name ) : '';
             $subcategory_slug = function_exists( 'sanitize_title' ) ? sanitize_title( $subcategory_name ) : '';
 
+            $category_uncategorized    = $this->evaluate_uncategorized_term( $category_name );
+            $subcategory_uncategorized = $this->evaluate_uncategorized_term( $subcategory_name );
+
+            $category_is_uncategorized    = $category_uncategorized['is_uncategorized'];
+            $subcategory_is_uncategorized = $subcategory_uncategorized['is_uncategorized'];
+
             $item_log_context = $this->get_item_log_context( $data );
 
             $category_context = array(
@@ -1000,7 +1006,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             if (
                 '' !== $category_name
                 && ! $this->is_numeric_term_name( $category_name )
-                && ! $this->is_uncategorized_term( $category_name )
+                && ! $category_is_uncategorized
             ) {
                 $this->log(
                     'debug',
@@ -1029,20 +1035,24 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
                 if ( '' !== $category_name && $this->is_numeric_term_name( $category_name ) ) {
                     $reason = 'numeric_name';
-                } elseif ( '' !== $category_name && $this->is_uncategorized_term( $category_name ) ) {
+                } elseif ( '' !== $category_name && $category_is_uncategorized ) {
                     $reason = 'uncategorized';
                 }
+
+                $skip_context = array_merge(
+                    $category_context,
+                    array(
+                        'reason'    => $reason,
+                        'term_role' => 'category',
+                    ),
+                    $this->build_uncategorized_log_fields( $category_uncategorized )
+                );
 
                 $this->log(
                     'debug',
                     'SOFTONE_CAT_SYNC_001 Skipping top-level category ensure.',
                     $this->extend_log_context_with_item(
-                        array_merge(
-                            $category_context,
-                            array(
-                                'reason' => $reason,
-                            )
-                        ),
+                        $skip_context,
                         $item_log_context
                     )
                 );
@@ -1060,7 +1070,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             if (
                 '' !== $subcategory_name
                 && ! $this->is_numeric_term_name( $subcategory_name )
-                && ! $this->is_uncategorized_term( $subcategory_name )
+                && ! $subcategory_is_uncategorized
             ) {
                 $this->log(
                     'debug',
@@ -1089,19 +1099,53 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
                 if ( '' !== $subcategory_name && $this->is_numeric_term_name( $subcategory_name ) ) {
                     $reason = 'numeric_name';
-                } elseif ( '' !== $subcategory_name && $this->is_uncategorized_term( $subcategory_name ) ) {
+                } elseif ( '' !== $subcategory_name && $subcategory_is_uncategorized ) {
                     $reason = 'uncategorized';
                 }
+
+                $skip_context = array_merge(
+                    $subcategory_context,
+                    array(
+                        'reason'    => $reason,
+                        'term_role' => 'subcategory',
+                    ),
+                    $this->build_uncategorized_log_fields( $subcategory_uncategorized )
+                );
 
                 $this->log(
                     'debug',
                     'SOFTONE_CAT_SYNC_004 Skipping subcategory ensure.',
                     $this->extend_log_context_with_item(
+                        $skip_context,
+                        $item_log_context
+                    )
+                );
+            }
+
+            if ( $category_is_uncategorized ) {
+                $this->log(
+                    'debug',
+                    'SOFTONE_CAT_SYNC_010 Term matched default uncategorized category.',
+                    $this->extend_log_context_with_item(
+                        array_merge(
+                            $category_context,
+                            array( 'term_role' => 'category' ),
+                            $this->build_uncategorized_log_fields( $category_uncategorized )
+                        ),
+                        $item_log_context
+                    )
+                );
+            }
+
+            if ( $subcategory_is_uncategorized ) {
+                $this->log(
+                    'debug',
+                    'SOFTONE_CAT_SYNC_010 Term matched default uncategorized category.',
+                    $this->extend_log_context_with_item(
                         array_merge(
                             $subcategory_context,
-                            array(
-                                'reason' => $reason,
-                            )
+                            array( 'term_role' => 'subcategory' ),
+                            $this->build_uncategorized_log_fields( $subcategory_uncategorized )
                         ),
                         $item_log_context
                     )
@@ -1403,41 +1447,126 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
          * @return bool
          */
         protected function is_uncategorized_term( $name ) {
+            $analysis = $this->evaluate_uncategorized_term( $name );
+
+            return $analysis['is_uncategorized'];
+        }
+
+        /**
+         * Evaluate whether a term name refers to the default uncategorised product category.
+         *
+         * @param string $name Term name.
+         *
+         * @return array{
+         *     is_uncategorized: bool,
+         *     match_type: string,
+         *     sanitized_name: string,
+         *     default_category_id: int,
+         *     default_category_slug: string,
+         *     default_category_name: string,
+         * }
+         */
+        protected function evaluate_uncategorized_term( $name ) {
             $name = trim( (string) $name );
 
+            $analysis = array(
+                'is_uncategorized'      => false,
+                'match_type'            => '',
+                'sanitized_name'        => '',
+                'default_category_id'   => 0,
+                'default_category_slug' => '',
+                'default_category_name' => '',
+            );
+
             if ( '' === $name ) {
-                return false;
+                return $analysis;
             }
 
-            $sanitized_name = function_exists( 'sanitize_title' ) ? sanitize_title( $name ) : '';
+            $analysis['sanitized_name'] = function_exists( 'sanitize_title' ) ? sanitize_title( $name ) : '';
 
-            if ( 'uncategorized' === $sanitized_name ) {
-                return true;
+            if ( 'uncategorized' === $analysis['sanitized_name'] ) {
+                $analysis['is_uncategorized'] = true;
+                $analysis['match_type']       = 'sanitized_name';
+
+                return $analysis;
             }
 
             $default_category_id = (int) get_option( 'default_product_cat', 0 );
             if ( $default_category_id <= 0 ) {
-                return false;
+                return $analysis;
             }
+
+            $analysis['default_category_id'] = $default_category_id;
 
             $default_category = get_term( $default_category_id, 'product_cat' );
             if ( $default_category instanceof WP_Term ) {
+                $analysis['default_category_slug'] = $default_category->slug;
+                $analysis['default_category_name'] = $default_category->name;
+
                 if ( 'uncategorized' === $default_category->slug ) {
-                    return true;
+                    $analysis['is_uncategorized'] = true;
+                    $analysis['match_type']       = 'default_slug';
+
+                    return $analysis;
                 }
 
-                if ( '' !== $sanitized_name && $sanitized_name === $default_category->slug ) {
-                    return true;
+                if ( '' !== $analysis['sanitized_name'] && $analysis['sanitized_name'] === $default_category->slug ) {
+                    $analysis['is_uncategorized'] = true;
+                    $analysis['match_type']       = 'slug_match';
+
+                    return $analysis;
                 }
 
-                return 0 === strcasecmp( $name, $default_category->name );
+                if ( 0 === strcasecmp( $name, $default_category->name ) ) {
+                    $analysis['is_uncategorized'] = true;
+                    $analysis['match_type']       = 'name_match';
+
+                    return $analysis;
+                }
+
+                return $analysis;
             }
 
             if ( is_wp_error( $default_category ) ) {
                 $this->log( 'debug', 'Failed to fetch default product category.', array( 'error' => $default_category ) );
             }
 
-            return false;
+            return $analysis;
+        }
+
+        /**
+         * Prepare log fields describing why a term was considered uncategorized.
+         *
+         * @param array $analysis Result from evaluate_uncategorized_term().
+         *
+         * @return array<string, mixed>
+         */
+        protected function build_uncategorized_log_fields( array $analysis ) {
+            if ( empty( $analysis['is_uncategorized'] ) ) {
+                return array();
+            }
+
+            $fields = array(
+                'uncategorized_match_type' => $analysis['match_type'],
+            );
+
+            if ( '' !== $analysis['sanitized_name'] ) {
+                $fields['uncategorized_sanitized_name'] = $analysis['sanitized_name'];
+            }
+
+            if ( ! empty( $analysis['default_category_id'] ) ) {
+                $fields['default_category_id'] = (int) $analysis['default_category_id'];
+            }
+
+            if ( '' !== $analysis['default_category_slug'] ) {
+                $fields['default_category_slug'] = $analysis['default_category_slug'];
+            }
+
+            if ( '' !== $analysis['default_category_name'] ) {
+                $fields['default_category_name'] = $analysis['default_category_name'];
+            }
+
+            return $fields;
         }
 
         /**

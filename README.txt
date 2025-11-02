@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.8.26
+Stable tag: 1.8.27
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -78,6 +78,9 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 
 == Changelog ==
 
+= 1.8.27 =
+* Log detailed context whenever categories map to WooCommerce's default uncategorized term to simplify debugging taxonomy imports.
+
 = 1.8.26 =
 * Update the listed WordPress.org contributor username.
 
@@ -112,8 +115,8 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 
 == Upgrade Notice ==
 
-= 1.8.26 =
-Refresh the plugin metadata to reference the updated WordPress.org contributor username.
+= 1.8.27 =
+Capture detailed uncategorized category diagnostics to investigate why SoftOne categories are not being assigned as expected.
 
 == Automatic Updates ==
 
