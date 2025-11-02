@@ -815,7 +815,50 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             foreach ( $attribute_assignments['terms'] as $taxonomy => $term_ids ) {
-                wp_set_object_terms( $product_id, $term_ids, $taxonomy );
+                $normalized_term_ids = array();
+
+                foreach ( (array) $term_ids as $term_id ) {
+                    $term_id = (int) $term_id;
+
+                    if ( $term_id > 0 ) {
+                        $normalized_term_ids[] = $term_id;
+                    }
+                }
+
+                if ( empty( $normalized_term_ids ) ) {
+                    continue;
+                }
+
+                if ( function_exists( 'taxonomy_exists' ) && ! taxonomy_exists( $taxonomy ) ) {
+                    $this->log(
+                        'error',
+                        'SOFTONE_ATTR_SYNC_000 Missing attribute taxonomy before assignment.',
+                        array(
+                            'product_id'      => $product_id,
+                            'taxonomy'        => $taxonomy,
+                            'term_ids'        => $normalized_term_ids,
+                            'attribute_value' => isset( $attribute_assignments['values'][ $taxonomy ] ) ? $attribute_assignments['values'][ $taxonomy ] : '',
+                        )
+                    );
+
+                    continue;
+                }
+
+                $term_assignment = wp_set_object_terms( $product_id, $normalized_term_ids, $taxonomy );
+
+                if ( is_wp_error( $term_assignment ) ) {
+                    $this->log(
+                        'error',
+                        'SOFTONE_ATTR_SYNC_001 Failed to assign attribute terms.',
+                        array(
+                            'product_id'      => $product_id,
+                            'taxonomy'        => $taxonomy,
+                            'term_ids'        => $normalized_term_ids,
+                            'attribute_value' => isset( $attribute_assignments['values'][ $taxonomy ] ) ? $attribute_assignments['values'][ $taxonomy ] : '',
+                            'error_message'   => $term_assignment->get_error_message(),
+                        )
+                    );
+                }
             }
 
             foreach ( $attribute_assignments['clear'] as $taxonomy ) {
@@ -1557,6 +1600,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
          * @return array{
          *     attributes: array<string, WC_Product_Attribute>,
          *     terms: array<string, array<int>>,
+         *     values: array<string, string>,
          *     clear: array<string>
          * }
          */
@@ -1572,6 +1616,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $assignments = array(
                 'attributes' => $product->get_attributes(),
                 'terms'      => array(),
+                'values'     => array(),
                 'clear'      => array(),
             );
 
@@ -1635,6 +1680,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
                 $assignments['attributes'][ $taxonomy ] = $attribute;
                 $assignments['terms'][ $taxonomy ]      = array( (int) $term_id );
+                $assignments['values'][ $taxonomy ]     = $config['value'];
             }
 
             return $assignments;
@@ -1706,7 +1752,15 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             if ( array_key_exists( $key, $this->attribute_taxonomy_cache ) ) {
                 $this->cache_stats['attribute_taxonomy_cache_hits']++;
 
-                return (int) $this->attribute_taxonomy_cache[ $key ];
+                $attribute_id = (int) $this->attribute_taxonomy_cache[ $key ];
+
+                if ( $attribute_id > 0 && ! $this->ensure_attribute_taxonomy_is_registered( $slug, $label ) ) {
+                    unset( $this->attribute_taxonomy_cache[ $key ] );
+
+                    return 0;
+                }
+
+                return $attribute_id;
             }
 
             $this->cache_stats['attribute_taxonomy_cache_misses']++;
@@ -1716,6 +1770,12 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             if ( $attribute_id ) {
                 $attribute_id = (int) $attribute_id;
                 $this->attribute_taxonomy_cache[ $key ] = $attribute_id;
+
+                if ( ! $this->ensure_attribute_taxonomy_is_registered( $slug, $label ) ) {
+                    unset( $this->attribute_taxonomy_cache[ $key ] );
+
+                    return 0;
+                }
 
                 return $attribute_id;
             }
@@ -1749,28 +1809,82 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 wc_get_attribute_taxonomies();
             }
 
-            $taxonomy = wc_attribute_taxonomy_name( $slug );
-
-            if ( ! taxonomy_exists( $taxonomy ) ) {
-                register_taxonomy(
-                    $taxonomy,
-                    apply_filters( 'woocommerce_taxonomy_objects_' . $taxonomy, array( 'product' ) ),
-                    apply_filters(
-                        'woocommerce_taxonomy_args_' . $taxonomy,
-                        array(
-                            'labels'       => array( 'name' => $label ),
-                            'hierarchical' => false,
-                            'show_ui'      => false,
-                            'query_var'    => true,
-                            'rewrite'      => false,
-                        )
-                    )
-                );
-            }
-
             $this->attribute_taxonomy_cache[ $key ] = $attribute_id;
 
+            if ( ! $this->ensure_attribute_taxonomy_is_registered( $slug, $label ) ) {
+                unset( $this->attribute_taxonomy_cache[ $key ] );
+
+                return 0;
+            }
+
             return $attribute_id;
+        }
+
+        /**
+         * Ensure an attribute taxonomy is registered with WordPress.
+         *
+         * @param string $slug  Attribute slug.
+         * @param string $label Attribute label.
+         *
+         * @return bool
+         */
+        protected function ensure_attribute_taxonomy_is_registered( $slug, $label ) {
+            if ( ! function_exists( 'wc_attribute_taxonomy_name' ) ) {
+                return false;
+            }
+
+            $taxonomy = wc_attribute_taxonomy_name( $slug );
+
+            if ( '' === $taxonomy ) {
+                return false;
+            }
+
+            if ( function_exists( 'taxonomy_exists' ) && taxonomy_exists( $taxonomy ) ) {
+                return true;
+            }
+
+            if ( ! function_exists( 'register_taxonomy' ) ) {
+                $this->log(
+                    'error',
+                    'Unable to register attribute taxonomy because register_taxonomy() is unavailable.',
+                    array(
+                        'slug'     => $slug,
+                        'taxonomy' => $taxonomy,
+                    )
+                );
+
+                return false;
+            }
+
+            register_taxonomy(
+                $taxonomy,
+                apply_filters( 'woocommerce_taxonomy_objects_' . $taxonomy, array( 'product' ) ),
+                apply_filters(
+                    'woocommerce_taxonomy_args_' . $taxonomy,
+                    array(
+                        'labels'       => array( 'name' => $label ),
+                        'hierarchical' => false,
+                        'show_ui'      => false,
+                        'query_var'    => true,
+                        'rewrite'      => false,
+                    )
+                )
+            );
+
+            if ( function_exists( 'taxonomy_exists' ) && taxonomy_exists( $taxonomy ) ) {
+                return true;
+            }
+
+            $this->log(
+                'error',
+                'Failed to register attribute taxonomy for assignment.',
+                array(
+                    'slug'     => $slug,
+                    'taxonomy' => $taxonomy,
+                )
+            );
+
+            return false;
         }
 
         /**
