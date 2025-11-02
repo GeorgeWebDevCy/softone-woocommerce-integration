@@ -463,6 +463,20 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 $response = $this->api_client->sql_data( 'getItems', array(), $page_extra );
                 $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
 
+                $this->log_activity(
+                    'api_requests',
+                    'payload_received',
+                    'Received payload from Softone API for getItems request.',
+                    array(
+                        'endpoint'  => 'getItems',
+                        'page'      => $page,
+                        'page_size' => $page_size,
+                        'row_count' => count( $rows ),
+                        'request'   => $page_extra,
+                        'payload'   => $this->prepare_api_payload_for_logging( $response ),
+                    )
+                );
+
                 if ( empty( $rows ) ) {
                     break;
                 }
@@ -2566,6 +2580,53 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             return rtrim( substr( $value, 0, $max_length - 1 ) ) . '…';
+        }
+
+        /**
+         * Prepare API payload data for sync activity logging.
+         *
+         * @param mixed $payload Raw payload from the API.
+         * @param int   $depth   Current recursion depth.
+         *
+         * @return mixed
+         */
+        protected function prepare_api_payload_for_logging( $payload, $depth = 0 ) {
+            if ( $depth >= 4 ) {
+                return '[payload truncated due to depth limits]';
+            }
+
+            if ( is_object( $payload ) ) {
+                $payload = (array) $payload;
+            }
+
+            if ( is_array( $payload ) ) {
+                $normalized = array();
+                $count      = 0;
+                $total      = count( $payload );
+
+                foreach ( $payload as $key => $value ) {
+                    if ( $count >= 50 ) {
+                        $remaining = $total - $count;
+
+                        if ( $remaining > 0 ) {
+                            $normalized['__truncated__'] = sprintf( '%d additional entries truncated.', $remaining );
+                        }
+
+                        break;
+                    }
+
+                    $normalized[ $key ] = $this->prepare_api_payload_for_logging( $value, $depth + 1 );
+                    $count++;
+                }
+
+                return $normalized;
+            }
+
+            if ( is_string( $payload ) ) {
+                return $this->truncate_log_value( $payload, 800 );
+            }
+
+            return $payload;
         }
 
         /**
