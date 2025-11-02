@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.8.29
+Stable tag: 1.8.30
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -78,6 +78,9 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 
 == Changelog ==
 
+= 1.8.30 =
+* Automatically assign featured and gallery images from the media library when filenames share the product SKU and numeric suffixes.
+
 = 1.8.29 =
 * Introduce a dedicated category synchronisation logger that records the category names and identifiers applied to each product refresh.
 * Log category assignments after resync operations so the Category Sync Logs screen surfaces the updated taxonomy mappings.
@@ -121,6 +124,9 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * Update internal version references in preparation for ongoing 1.8.x maintenance releases.
 
 == Upgrade Notice ==
+
+= 1.8.30 =
+Automatically populate product images from media library assets that follow the SKU-number naming convention for faster catalogue updates.
 
 = 1.8.29 =
 Capture the categories applied during re-syncs with the new dedicated logger so administrators can audit taxonomy updates from the dashboard.
