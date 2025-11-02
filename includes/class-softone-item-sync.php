@@ -741,6 +741,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 $product->set_attributes( array() );
             }
 
+            $this->assign_media_library_images( $product, $sku );
+
             $product_id = $product->save();
 
             if ( ! $product_id ) {
@@ -1201,6 +1203,287 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             return array_values( array_unique( array_filter( $categories ) ) );
+        }
+
+        /**
+         * Assign images from the media library to a product based on its SKU.
+         *
+         * @param WC_Product $product Product instance.
+         * @param string     $sku     Product SKU.
+         *
+         * @return void
+         */
+        protected function assign_media_library_images( $product, $sku ) {
+            if ( ! $product instanceof WC_Product ) {
+                return;
+            }
+
+            $allow_assignment = apply_filters(
+                'softone_wc_integration_assign_media_library_images',
+                true,
+                $product,
+                $sku
+            );
+
+            if ( ! $allow_assignment ) {
+                return;
+            }
+
+            $attachment_ids = $this->locate_media_library_images_for_sku( $sku );
+
+            if ( empty( $attachment_ids ) ) {
+                return;
+            }
+
+            $primary_id = (int) array_shift( $attachment_ids );
+
+            if ( $primary_id > 0 ) {
+                $product->set_image_id( $primary_id );
+            }
+
+            $gallery_ids = array_values( array_filter( array_map( 'intval', $attachment_ids ) ) );
+
+            $product->set_gallery_image_ids( $gallery_ids );
+        }
+
+        /**
+         * Locate media library images that correspond to the provided SKU.
+         *
+         * @param string $sku Product SKU.
+         *
+         * @return int[] Attachment identifiers ordered for assignment.
+         */
+        protected function locate_media_library_images_for_sku( $sku ) {
+            $sku = trim( (string) $sku );
+
+            if ( '' === $sku ) {
+                return array();
+            }
+
+            if ( ! class_exists( 'WP_Query' ) ) {
+                return array();
+            }
+
+            $normalized_sku = $this->normalize_media_library_token( $sku );
+
+            if ( '' === $normalized_sku ) {
+                return array();
+            }
+
+            $attachment_ids = array();
+
+            $search_queries = array(
+                array(
+                    'post_type'      => 'attachment',
+                    'post_status'    => 'inherit',
+                    'posts_per_page' => -1,
+                    'orderby'        => 'ID',
+                    'order'          => 'ASC',
+                    'fields'         => 'ids',
+                    's'              => $sku,
+                ),
+            );
+
+            $meta_terms = array_unique(
+                array_filter(
+                    array(
+                        $sku,
+                        function_exists( 'sanitize_title' ) ? sanitize_title( $sku ) : '',
+                        $normalized_sku,
+                    )
+                )
+            );
+
+            if ( ! empty( $meta_terms ) ) {
+                $meta_query = array( 'relation' => 'OR' );
+
+                foreach ( $meta_terms as $term ) {
+                    $meta_query[] = array(
+                        'key'     => '_wp_attached_file',
+                        'value'   => $term,
+                        'compare' => 'LIKE',
+                    );
+                }
+
+                $search_queries[] = array(
+                    'post_type'      => 'attachment',
+                    'post_status'    => 'inherit',
+                    'posts_per_page' => -1,
+                    'orderby'        => 'ID',
+                    'order'          => 'ASC',
+                    'fields'         => 'ids',
+                    'meta_query'     => $meta_query,
+                );
+            }
+
+            foreach ( $search_queries as $query_args ) {
+                $query = new WP_Query( $query_args );
+
+                if ( $query->have_posts() ) {
+                    $attachment_ids = array_merge(
+                        $attachment_ids,
+                        array_map( 'intval', (array) $query->posts )
+                    );
+                }
+
+                wp_reset_postdata();
+            }
+
+            $attachment_ids = array_values( array_unique( array_map( 'intval', $attachment_ids ) ) );
+
+            if ( empty( $attachment_ids ) ) {
+                return array();
+            }
+
+            $attachments = array();
+
+            foreach ( $attachment_ids as $attachment_id ) {
+                if ( $attachment_id <= 0 ) {
+                    continue;
+                }
+
+                if ( function_exists( 'wp_attachment_is_image' ) && ! wp_attachment_is_image( $attachment_id ) ) {
+                    continue;
+                }
+
+                $sequence = $this->determine_attachment_sequence_index( $attachment_id, $normalized_sku );
+
+                if ( null === $sequence ) {
+                    continue;
+                }
+
+                $attachments[] = array(
+                    'id'       => (int) $attachment_id,
+                    'sequence' => $sequence,
+                );
+            }
+
+            if ( empty( $attachments ) ) {
+                return array();
+            }
+
+            usort(
+                $attachments,
+                function ( $left, $right ) {
+                    if ( $left['sequence'] === $right['sequence'] ) {
+                        return $left['id'] <=> $right['id'];
+                    }
+
+                    return $left['sequence'] <=> $right['sequence'];
+                }
+            );
+
+            $pluck_source = function_exists( 'wp_list_pluck' )
+                ? wp_list_pluck( $attachments, 'id' )
+                : array_map(
+                    function ( $attachment ) {
+                        return isset( $attachment['id'] ) ? $attachment['id'] : 0;
+                    },
+                    $attachments
+                );
+
+            $ordered_ids = array_values( array_map( 'intval', $pluck_source ) );
+
+            /**
+             * Filter the media library image IDs detected for a SKU.
+             *
+             * @param int[]      $ordered_ids    Attachment identifiers.
+             * @param string     $sku            Product SKU.
+             * @param string     $normalized_sku Normalized SKU for comparison.
+             */
+            $ordered_ids = apply_filters( 'softone_wc_integration_media_library_image_ids', $ordered_ids, $sku, $normalized_sku );
+
+            return array_values( array_unique( array_filter( array_map( 'intval', $ordered_ids ) ) ) );
+        }
+
+        /**
+         * Determine the display sequence for a media library attachment.
+         *
+         * @param int    $attachment_id Attachment identifier.
+         * @param string $normalized_sku Normalized SKU used for comparisons.
+         *
+         * @return int|null
+         */
+        protected function determine_attachment_sequence_index( $attachment_id, $normalized_sku ) {
+            $normalized_sku = (string) $normalized_sku;
+
+            if ( '' === $normalized_sku ) {
+                return null;
+            }
+
+            $candidates = array();
+
+            $file_reference = get_post_meta( $attachment_id, '_wp_attached_file', true );
+
+            if ( is_string( $file_reference ) && '' !== $file_reference ) {
+                $candidates[] = pathinfo( $file_reference, PATHINFO_FILENAME );
+            }
+
+            $candidates[] = get_post_field( 'post_name', $attachment_id );
+            $candidates[] = get_the_title( $attachment_id );
+
+            $best_sequence = null;
+
+            foreach ( $candidates as $candidate ) {
+                $candidate = (string) $candidate;
+
+                if ( '' === $candidate ) {
+                    continue;
+                }
+
+                $normalized_candidate = $this->normalize_media_library_token( $candidate );
+
+                if ( '' === $normalized_candidate ) {
+                    continue;
+                }
+
+                if ( 0 !== strpos( $normalized_candidate, $normalized_sku ) ) {
+                    continue;
+                }
+
+                $suffix = substr( $normalized_candidate, strlen( $normalized_sku ) );
+
+                if ( '' === $suffix ) {
+                    $sequence = 1000;
+                } elseif ( preg_match( '/^(\d+)/', $suffix, $matches ) ) {
+                    $sequence = (int) ltrim( $matches[1], '0' );
+
+                    if ( $sequence <= 0 ) {
+                        $sequence = 1000;
+                    }
+                } else {
+                    $sequence = 1000;
+                }
+
+                if ( null === $best_sequence || $sequence < $best_sequence ) {
+                    $best_sequence = $sequence;
+                }
+            }
+
+            if ( null === $best_sequence ) {
+                return null;
+            }
+
+            return (int) $best_sequence;
+        }
+
+        /**
+         * Normalise strings for media library comparisons.
+         *
+         * @param string $value Raw string value.
+         *
+         * @return string
+         */
+        protected function normalize_media_library_token( $value ) {
+            $value = strtolower( (string) $value );
+
+            $value = preg_replace( '/[^a-z0-9]+/', '', $value );
+
+            if ( ! is_string( $value ) ) {
+                $value = '';
+            }
+
+            return $value;
         }
 
         /**
