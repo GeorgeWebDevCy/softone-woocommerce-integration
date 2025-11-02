@@ -2426,13 +2426,59 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $result = wp_insert_term( $name, $tax, $args );
 
             if ( is_wp_error( $result ) ) {
+                $term_id   = 0;
+                $error_code = method_exists( $result, 'get_error_code' ) ? $result->get_error_code() : '';
+                $error_data = null;
+
+                if ( method_exists( $result, 'get_error_data' ) ) {
+                    $error_data = $result->get_error_data( 'term_exists' );
+
+                    if ( null === $error_data ) {
+                        $error_data = $result->get_error_data();
+                    }
+                }
+
+                if ( 'term_exists' === $error_code ) {
+                    if ( is_array( $error_data ) && isset( $error_data['term_id'] ) ) {
+                        $term_id = (int) $error_data['term_id'];
+                    } elseif ( is_numeric( $error_data ) ) {
+                        $term_id = (int) $error_data;
+                    }
+
+                    if ( $term_id > 0 && function_exists( 'get_term' ) ) {
+                        $existing_term = get_term( $term_id, $tax );
+
+                        if ( $existing_term instanceof WP_Term && ! is_wp_error( $existing_term ) ) {
+                            $term_id = $this->maybe_update_term_parent( $existing_term, $tax, $parent );
+
+                            $this->term_cache[ $key ] = $term_id;
+
+                            $this->log(
+                                'debug',
+                                'SOFTONE_CAT_SYNC_013 Re-used existing term after concurrent creation.',
+                                array(
+                                    'taxonomy'   => $tax,
+                                    'parent_id'  => $parent,
+                                    'cache_key'  => $key,
+                                    'term_id'    => $term_id,
+                                    'error_code' => $error_code,
+                                )
+                            );
+
+                            return $term_id;
+                        }
+                    }
+                }
+
                 $this->log(
                     'error',
                     'SOFTONE_CAT_SYNC_003 ' . $result->get_error_message(),
                     array(
-                        'taxonomy'  => $tax,
-                        'parent_id' => $parent,
-                        'cache_key' => $key,
+                        'taxonomy'   => $tax,
+                        'parent_id'  => $parent,
+                        'cache_key'  => $key,
+                        'error_code' => $error_code,
+                        'error_data' => $error_data,
                     )
                 );
 
@@ -2442,9 +2488,11 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     'debug',
                     'SOFTONE_CAT_SYNC_008 Term creation failed; returning empty identifier.',
                     array(
-                        'taxonomy'  => $tax,
-                        'parent_id' => $parent,
-                        'cache_key' => $key,
+                        'taxonomy'   => $tax,
+                        'parent_id'  => $parent,
+                        'cache_key'  => $key,
+                        'error_code' => $error_code,
+                        'error_data' => $error_data,
                     )
                 );
 
