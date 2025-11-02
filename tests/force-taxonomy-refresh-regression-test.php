@@ -127,23 +127,292 @@ if ( ! function_exists( 'taxonomy_exists' ) ) {
     }
 }
 
+if ( ! class_exists( 'WP_Error' ) ) {
+    /**
+     * Lightweight WP_Error stand-in for tests.
+     */
+    class WP_Error {
+        /**
+         * @var string
+         */
+        protected $code;
+
+        /**
+         * @var string
+         */
+        protected $message;
+
+        /**
+         * @var mixed
+         */
+        protected $data;
+
+        /**
+         * Constructor.
+         *
+         * @param string $code    Error code.
+         * @param string $message Error message.
+         * @param mixed  $data    Optional data payload.
+         */
+        public function __construct( $code, $message = '', $data = null ) {
+            $this->code    = (string) $code;
+            $this->message = (string) $message;
+            $this->data    = $data;
+        }
+
+        /**
+         * Retrieve the error code.
+         *
+         * @return string
+         */
+        public function get_error_code() {
+            return $this->code;
+        }
+
+        /**
+         * Retrieve the error message.
+         *
+         * @return string
+         */
+        public function get_error_message() {
+            return $this->message;
+        }
+
+        /**
+         * Retrieve the error data payload.
+         *
+         * @return mixed
+         */
+        public function get_error_data() {
+            return $this->data;
+        }
+    }
+}
+
 if ( ! function_exists( 'is_wp_error' ) ) {
     /**
-     * Minimal WP_Error detection shim.
+     * Determine whether a value is a WP_Error instance.
      *
      * @param mixed $thing Value to test.
      * @return bool
      */
     function is_wp_error( $thing ) {
+        return $thing instanceof WP_Error;
+    }
+}
+
+$GLOBALS['softone_products']                     = array();
+$GLOBALS['softone_next_product_id']               = 1;
+$GLOBALS['softone_post_meta']                     = array();
+$GLOBALS['softone_term_calls']                    = array();
+$GLOBALS['softone_object_terms']                  = array();
+$GLOBALS['softone_attribute_taxonomies']          = array();
+$GLOBALS['softone_next_attribute_taxonomy_id']    = 1;
+$GLOBALS['softone_terms']                         = array();
+$GLOBALS['softone_next_term_id']                  = 1;
+$GLOBALS['softone_clean_term_cache_invocations']  = array();
+
+if ( ! function_exists( 'wc_attribute_taxonomy_name' ) ) {
+    /**
+     * Build the taxonomy name for a given attribute slug.
+     *
+     * @param string $slug Attribute slug.
+     * @return string
+     */
+    function wc_attribute_taxonomy_name( $slug ) {
+        return 'pa_' . sanitize_title( $slug );
+    }
+}
+
+if ( ! function_exists( 'wc_attribute_taxonomy_id_by_name' ) ) {
+    /**
+     * Retrieve an attribute taxonomy identifier by slug.
+     *
+     * @param string $slug Attribute slug.
+     * @return int
+     */
+    function wc_attribute_taxonomy_id_by_name( $slug ) {
+        $slug = sanitize_title( $slug );
+
+        if ( isset( $GLOBALS['softone_attribute_taxonomies'][ $slug ] ) ) {
+            return (int) $GLOBALS['softone_attribute_taxonomies'][ $slug ]['attribute_id'];
+        }
+
+        return 0;
+    }
+}
+
+if ( ! function_exists( 'wc_create_attribute' ) ) {
+    /**
+     * Register an attribute taxonomy in the in-memory store.
+     *
+     * @param array $args Attribute arguments.
+     * @return int|WP_Error
+     */
+    function wc_create_attribute( array $args ) {
+        $defaults = array(
+            'slug' => '',
+            'name' => '',
+        );
+
+        $args = array_merge( $defaults, $args );
+        $slug = sanitize_title( $args['slug'] );
+
+        if ( '' === $slug ) {
+            return new WP_Error( 'invalid_slug', 'Attribute slug cannot be empty.' );
+        }
+
+        if ( isset( $GLOBALS['softone_attribute_taxonomies'][ $slug ] ) ) {
+            return (int) $GLOBALS['softone_attribute_taxonomies'][ $slug ]['attribute_id'];
+        }
+
+        $attribute_id = (int) $GLOBALS['softone_next_attribute_taxonomy_id'];
+        $GLOBALS['softone_next_attribute_taxonomy_id']++;
+
+        $GLOBALS['softone_attribute_taxonomies'][ $slug ] = array(
+            'attribute_id' => $attribute_id,
+            'slug'         => $slug,
+            'name'         => (string) $args['name'],
+        );
+
+        return $attribute_id;
+    }
+}
+
+if ( ! function_exists( 'get_term_by' ) ) {
+    /**
+     * Locate a term in the in-memory store.
+     *
+     * @param string $field    Field to match (name or slug).
+     * @param string $value    Value to match.
+     * @param string $taxonomy Taxonomy name.
+     * @return object|false
+     */
+    function get_term_by( $field, $value, $taxonomy ) {
+        $taxonomy = (string) $taxonomy;
+        $value    = (string) $value;
+
+        if ( ! isset( $GLOBALS['softone_terms'][ $taxonomy ] ) ) {
+            return false;
+        }
+
+        foreach ( $GLOBALS['softone_terms'][ $taxonomy ] as $term ) {
+            if ( 'name' === $field && isset( $term['name'] ) && $term['name'] === $value ) {
+                return (object) $term;
+            }
+
+            if ( 'slug' === $field && isset( $term['slug'] ) && $term['slug'] === $value ) {
+                return (object) $term;
+            }
+        }
+
         return false;
     }
 }
 
-$GLOBALS['softone_products']            = array();
-$GLOBALS['softone_next_product_id']      = 1;
-$GLOBALS['softone_post_meta']            = array();
-$GLOBALS['softone_term_calls']           = array();
-$GLOBALS['softone_object_terms']         = array();
+if ( ! function_exists( 'get_term' ) ) {
+    /**
+     * Retrieve a term by identifier.
+     *
+     * @param int    $term_id  Term identifier.
+     * @param string $taxonomy Taxonomy name.
+     * @return object|false
+     */
+    function get_term( $term_id, $taxonomy ) {
+        $taxonomy = (string) $taxonomy;
+        $term_id  = (int) $term_id;
+
+        if ( isset( $GLOBALS['softone_terms'][ $taxonomy ][ $term_id ] ) ) {
+            return (object) $GLOBALS['softone_terms'][ $taxonomy ][ $term_id ];
+        }
+
+        return false;
+    }
+}
+
+if ( ! function_exists( 'wp_insert_term' ) ) {
+    /**
+     * Insert a term into the in-memory store.
+     *
+     * @param string $term     Term name.
+     * @param string $taxonomy Taxonomy name.
+     * @return array|WP_Error
+     */
+    function wp_insert_term( $term, $taxonomy ) {
+        $taxonomy = (string) $taxonomy;
+        $name     = (string) $term;
+        $slug     = sanitize_title( $name );
+
+        if ( ! isset( $GLOBALS['softone_terms'][ $taxonomy ] ) ) {
+            $GLOBALS['softone_terms'][ $taxonomy ] = array();
+        }
+
+        foreach ( $GLOBALS['softone_terms'][ $taxonomy ] as $existing_term ) {
+            if ( isset( $existing_term['slug'] ) && $existing_term['slug'] === $slug ) {
+                return new WP_Error( 'term_exists', 'Term already exists.', (int) $existing_term['term_id'] );
+            }
+        }
+
+        $term_id = (int) $GLOBALS['softone_next_term_id'];
+        $GLOBALS['softone_next_term_id']++;
+
+        $GLOBALS['softone_terms'][ $taxonomy ][ $term_id ] = array(
+            'term_id' => $term_id,
+            'name'    => $name,
+            'slug'    => $slug,
+        );
+
+        return array(
+            'term_id'          => $term_id,
+            'term_taxonomy_id' => $term_id,
+        );
+    }
+}
+
+if ( ! function_exists( 'wp_update_term' ) ) {
+    /**
+     * Update a term in the in-memory store.
+     *
+     * @param int    $term_id  Term identifier.
+     * @param string $taxonomy Taxonomy name.
+     * @param array  $args     Arguments to update.
+     * @return array|WP_Error
+     */
+    function wp_update_term( $term_id, $taxonomy, array $args ) {
+        $taxonomy = (string) $taxonomy;
+        $term_id  = (int) $term_id;
+
+        if ( ! isset( $GLOBALS['softone_terms'][ $taxonomy ][ $term_id ] ) ) {
+            return new WP_Error( 'term_not_found', 'Term not found.' );
+        }
+
+        if ( isset( $args['name'] ) ) {
+            $GLOBALS['softone_terms'][ $taxonomy ][ $term_id ]['name'] = (string) $args['name'];
+            $GLOBALS['softone_terms'][ $taxonomy ][ $term_id ]['slug'] = sanitize_title( $args['name'] );
+        }
+
+        return array(
+            'term_id'          => $term_id,
+            'term_taxonomy_id' => $term_id,
+        );
+    }
+}
+
+if ( ! function_exists( 'clean_term_cache' ) ) {
+    /**
+     * Track cache refreshes triggered during tests.
+     *
+     * @param array<int> $term_ids Term identifiers.
+     * @param string     $taxonomy Taxonomy name.
+     * @return void
+     */
+    function clean_term_cache( $term_ids, $taxonomy ) {
+        $GLOBALS['softone_clean_term_cache_invocations'][] = array(
+            'term_ids' => array_map( 'intval', (array) $term_ids ),
+            'taxonomy' => (string) $taxonomy,
+        );
+    }
+}
 
 if ( ! function_exists( 'wp_set_object_terms' ) ) {
     /**
@@ -401,6 +670,121 @@ if ( ! class_exists( 'WC_Product' ) ) {
         public function set_attributes( $attributes ) {
             $this->data['attributes'] = $attributes;
         }
+
+        /**
+         * Retrieve assigned attributes.
+         *
+         * @return array<int|string,mixed>
+         */
+        public function get_attributes() {
+            return $this->data['attributes'];
+        }
+    }
+}
+
+if ( ! class_exists( 'WC_Product_Attribute' ) ) {
+    /**
+     * Minimal WC_Product_Attribute replacement for tests.
+     */
+    class WC_Product_Attribute {
+        /**
+         * @var int
+         */
+        protected $id = 0;
+
+        /**
+         * @var string
+         */
+        protected $name = '';
+
+        /**
+         * @var array<int>
+         */
+        protected $options = array();
+
+        /**
+         * @var int
+         */
+        protected $position = 0;
+
+        /**
+         * @var bool
+         */
+        protected $visible = false;
+
+        /**
+         * @var bool
+         */
+        protected $variation = false;
+
+        /**
+         * Assign the attribute identifier.
+         *
+         * @param int $id Attribute identifier.
+         * @return void
+         */
+        public function set_id( $id ) {
+            $this->id = (int) $id;
+        }
+
+        /**
+         * Set the taxonomy name.
+         *
+         * @param string $name Taxonomy name.
+         * @return void
+         */
+        public function set_name( $name ) {
+            $this->name = (string) $name;
+        }
+
+        /**
+         * Assign attribute term options.
+         *
+         * @param array<int> $options Term identifiers.
+         * @return void
+         */
+        public function set_options( array $options ) {
+            $this->options = array_map( 'intval', $options );
+        }
+
+        /**
+         * Update the attribute position.
+         *
+         * @param int $position Attribute position.
+         * @return void
+         */
+        public function set_position( $position ) {
+            $this->position = (int) $position;
+        }
+
+        /**
+         * Toggle visibility.
+         *
+         * @param bool $visible Whether visible.
+         * @return void
+         */
+        public function set_visible( $visible ) {
+            $this->visible = (bool) $visible;
+        }
+
+        /**
+         * Toggle variation usage.
+         *
+         * @param bool $variation Whether used for variations.
+         * @return void
+         */
+        public function set_variation( $variation ) {
+            $this->variation = (bool) $variation;
+        }
+
+        /**
+         * Retrieve the configured options.
+         *
+         * @return array<int>
+         */
+        public function get_options() {
+            return $this->options;
+        }
     }
 }
 
@@ -531,6 +915,44 @@ class Softone_Item_Sync_Test_Double extends Softone_Item_Sync {
     }
 }
 
+/**
+ * Test double exposing attribute assignment helper.
+ */
+class Softone_Item_Sync_Attribute_Test_Double extends Softone_Item_Sync {
+    /**
+     * Expose prepare_attribute_assignments() for testing.
+     *
+     * @param array      $data                Row data.
+     * @param WC_Product $product             Product instance.
+     * @param array      $fallback_attributes Optional fallback attribute values.
+     * @return array
+     */
+    public function prepare_attribute_assignments_public( array $data, $product, array $fallback_attributes = array() ) {
+        return $this->prepare_attribute_assignments( $data, $product, $fallback_attributes );
+    }
+
+    /**
+     * Silence logging.
+     *
+     * @param string $level   Log level.
+     * @param string $message Message text.
+     * @param array  $context Context data.
+     * @return void
+     */
+    protected function log( $level, $message, array $context = array() ) {
+    }
+
+    /**
+     * Avoid brand term assignment side effects.
+     *
+     * @param int    $product_id Product identifier.
+     * @param string $brand_value Brand value.
+     * @return void
+     */
+    protected function assign_brand_term( $product_id, $brand_value ) {
+    }
+}
+
 $sync = new Softone_Item_Sync_Test_Double();
 
 $row = array(
@@ -581,4 +1003,86 @@ if ( $assignment['terms'] !== array( 11, 22 ) ) {
     throw new RuntimeException( 'Forced refresh should reapply the stored category IDs.' );
 }
 
+$GLOBALS['softone_attribute_taxonomies']         = array();
+$GLOBALS['softone_next_attribute_taxonomy_id']   = 1;
+$GLOBALS['softone_terms']                        = array();
+$GLOBALS['softone_next_term_id']                 = 1;
+$GLOBALS['softone_clean_term_cache_invocations'] = array();
+
+$attribute_sync = new Softone_Item_Sync_Attribute_Test_Double();
+
+$colour_slug     = 'colour';
+$colour_taxonomy = wc_attribute_taxonomy_name( $colour_slug );
+$attribute_id    = wc_create_attribute(
+    array(
+        'slug' => $colour_slug,
+        'name' => 'Colour',
+    )
+);
+
+if ( is_wp_error( $attribute_id ) ) {
+    throw new RuntimeException( 'Failed to register the colour attribute taxonomy for testing.' );
+}
+
+$seed_term = wp_insert_term( 'Blue ', $colour_taxonomy );
+if ( is_wp_error( $seed_term ) ) {
+    throw new RuntimeException( 'Failed to seed the colour attribute term.' );
+}
+
+$expected_term_id = (int) $seed_term['term_id'];
+
+$product = new WC_Product_Simple();
+$product->set_attributes( array() );
+
+$assignments = $attribute_sync->prepare_attribute_assignments_public(
+    array(
+        'colour_name' => ' blue ',
+    ),
+    $product
+);
+
+if ( ! isset( $assignments['terms'][ $colour_taxonomy ] ) ) {
+    throw new RuntimeException( 'Colour attribute terms should be scheduled for assignment.' );
+}
+
+$assigned_terms = $assignments['terms'][ $colour_taxonomy ];
+if ( $assigned_terms !== array( $expected_term_id ) ) {
+    throw new RuntimeException( 'Expected the normalised colour value to reuse the existing term identifier.' );
+}
+
+if ( ! isset( $assignments['attributes'][ $colour_taxonomy ] ) ) {
+    throw new RuntimeException( 'Colour attribute metadata should be prepared for the product.' );
+}
+
+$attribute_object = $assignments['attributes'][ $colour_taxonomy ];
+if ( ! $attribute_object instanceof WC_Product_Attribute ) {
+    throw new RuntimeException( 'Expected a WC_Product_Attribute instance for the colour taxonomy.' );
+}
+
+if ( $attribute_object->get_options() !== array( $expected_term_id ) ) {
+    throw new RuntimeException( 'Prepared attribute options should include the reused colour term identifier.' );
+}
+
+$term = get_term( $expected_term_id, $colour_taxonomy );
+if ( ! $term || is_wp_error( $term ) ) {
+    throw new RuntimeException( 'Failed to retrieve the colour term after ensuring it exists.' );
+}
+
+if ( 'Blue' !== $term->name ) {
+    throw new RuntimeException( 'The colour term name should be updated to match the normalised value.' );
+}
+
+$cache_refreshed = false;
+foreach ( $GLOBALS['softone_clean_term_cache_invocations'] as $invocation ) {
+    if ( $invocation['taxonomy'] === $colour_taxonomy && in_array( $expected_term_id, $invocation['term_ids'], true ) ) {
+        $cache_refreshed = true;
+        break;
+    }
+}
+
+if ( ! $cache_refreshed ) {
+    throw new RuntimeException( 'Expected the attribute term cache to be refreshed when reusing an existing term.' );
+}
+
 echo "Taxonomy refresh regression test passed." . PHP_EOL;
+echo "Attribute term normalisation regression test passed." . PHP_EOL;

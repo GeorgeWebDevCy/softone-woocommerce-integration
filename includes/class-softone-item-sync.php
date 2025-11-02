@@ -1810,6 +1810,52 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $result = wp_insert_term( $value, $taxonomy );
 
             if ( is_wp_error( $result ) ) {
+                if ( 'term_exists' === $result->get_error_code() ) {
+                    $existing_term_id = $result->get_error_data();
+
+                    if ( is_array( $existing_term_id ) && isset( $existing_term_id['term_id'] ) ) {
+                        $existing_term_id = $existing_term_id['term_id'];
+                    }
+
+                    $existing_term_id = (int) $existing_term_id;
+
+                    if ( $existing_term_id > 0 ) {
+                        if ( function_exists( 'clean_term_cache' ) ) {
+                            clean_term_cache( array( $existing_term_id ), $taxonomy );
+                        }
+
+                        $term_object = function_exists( 'get_term' ) ? get_term( $existing_term_id, $taxonomy ) : null;
+                        $term_name   = '';
+
+                        if ( $term_object && ! is_wp_error( $term_object ) && isset( $term_object->name ) ) {
+                            $term_name = (string) $term_object->name;
+                        }
+
+                        if ( $term_name !== $value && function_exists( 'wp_update_term' ) ) {
+                            $update_result = wp_update_term(
+                                $existing_term_id,
+                                $taxonomy,
+                                array( 'name' => $value )
+                            );
+
+                            if ( is_wp_error( $update_result ) ) {
+                                $this->log(
+                                    'error',
+                                    $update_result->get_error_message(),
+                                    array(
+                                        'taxonomy' => $taxonomy,
+                                        'term_id'  => $existing_term_id,
+                                    )
+                                );
+                            }
+                        }
+
+                        $this->attribute_term_cache[ $key ] = $existing_term_id;
+
+                        return $existing_term_id;
+                    }
+                }
+
                 $this->log( 'error', $result->get_error_message(), array( 'taxonomy' => $taxonomy ) );
 
                 $this->attribute_term_cache[ $key ] = 0;
