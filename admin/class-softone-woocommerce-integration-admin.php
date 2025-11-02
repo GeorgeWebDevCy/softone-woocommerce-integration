@@ -313,27 +313,51 @@ class Softone_Woocommerce_Integration_Admin {
 
         }
 
-	/**
-	 * Render section introduction text.
-	 */
+        /**
+        * Output introductory copy for the API credential settings section.
+        *
+        * This helper is registered with the Settings API to precede the
+        * Softone connection fields, giving administrators context about the
+        * credentials the integration requires.
+        *
+        * @return void
+        */
         public function render_settings_section_intro() {
 
-                echo '<p>' . esc_html__( 'Configure the credentials used to communicate with Softone.', 'softone-woocommerce-integration' ) . '</p>';
+               echo '<p>' . esc_html__( 'Configure the credentials used to communicate with Softone.', 'softone-woocommerce-integration' ) . '</p>';
 
         }
 
         /**
-         * Render the introduction for the stock behaviour settings section.
-         */
+        * Print the lead-in text for the stock behaviour settings section.
+        *
+        * Registered as the section callback so the WooCommerce stock handling
+        * controls are framed before the individual checkboxes and options are
+        * displayed.
+        *
+        * @return void
+        */
         public function render_stock_settings_section_intro() {
 
-                echo '<p>' . esc_html__( 'Control how products should be handled when Softone reports little or no stock.', 'softone-woocommerce-integration' ) . '</p>';
+               echo '<p>' . esc_html__( 'Control how products should be handled when Softone reports little or no stock.', 'softone-woocommerce-integration' ) . '</p>';
 
         }
 
         /**
-         * Display the plugin settings page.
-         */
+        * Render the main Softone settings screen within the WordPress admin.
+        *
+        * The page contains the Settings API form for saving credentials,
+        * connection tests, and manual import tools, and it surfaces transient
+        * notices about recent operations before the forms. Access is guarded by
+        * the `$capability` property and the layout relies on private helpers for
+        * connection/import notices and {@see Softone_Item_Sync::ADMIN_ACTION} to
+        * trigger imports.
+        *
+        * @see self::maybe_render_connection_notice()
+        * @see self::maybe_render_import_notice()
+        *
+        * @return void
+        */
         public function render_settings_page() {
 
                 if ( ! current_user_can( $this->capability ) ) {
@@ -380,8 +404,16 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
         }
 
         /**
-         * Display the category synchronisation log viewer.
-         */
+        * Display the category synchronisation log viewer interface.
+        *
+        * Outputs a paginated-style summary of recent category sync events,
+        * including contextual details about log files scanned and any issues
+        * accessing WooCommerce logs. Access checks rely on the `$capability`
+        * property and entries are sourced through {@see self::get_category_log_entries()},
+        * honouring the `$category_log_limit` display cap.
+        *
+        * @return void
+        */
         public function render_category_logs_page() {
 
                 if ( ! current_user_can( $this->capability ) ) {
@@ -479,7 +511,7 @@ $display_time = __( 'Unknown time', 'softone-woocommerce-integration' );
 
 }
 
-       /**
+        /**
         * Retrieve category synchronisation log entries from WooCommerce logs.
         *
         * @return array<string,mixed> {
@@ -760,10 +792,21 @@ $display_time = __( 'Unknown time', 'softone-woocommerce-integration' );
                return array( $clean_message, $context );
        }
 
-/**
- * Render the API tester page.
- */
-public function render_api_tester_page() {
+       /**
+        * Output the interactive API tester workspace for administrators.
+        *
+        * Presents the credential summary, request builder form (with preset
+        * helpers), and response viewer so store managers can trial Softone API
+        * calls directly from the dashboard. Availability is guarded by the
+        * `$capability` property and the layout is populated using
+        * {@see self::get_api_tester_result()}, {@see self::prepare_api_tester_form_data()}
+        * and {@see self::get_api_tester_presets()}. The response panel formats
+        * payloads with {@see self::format_api_tester_output()} and submissions
+        * post back via the `$api_tester_action` hook.
+        *
+        * @return void
+        */
+        public function render_api_tester_page() {
 
                 if ( ! current_user_can( $this->capability ) ) {
                         return;
@@ -1798,9 +1841,16 @@ public function handle_test_connection() {
         }
 
         /**
-         * Render the country mapping textarea field.
+         * Render the textarea used to manage country-to-SoftOne mapping values.
          *
-         * @param array $args Field arguments.
+         * Populates a newline-separated ISO and identifier list from the saved
+         * options and prints helper copy explaining the expected format. Values
+         * are retrieved through {@see softone_wc_integration_get_setting()} and
+         * stored under {@see Softone_API_Client::OPTION_SETTINGS_KEY}.
+         *
+         * @param array $args Field arguments supplied by the Settings API.
+         *
+         * @return void
          */
         public function render_country_mapping_field( $args ) {
 
@@ -1847,9 +1897,16 @@ public function handle_test_connection() {
         }
 
         /**
-         * Render a generic text field.
+         * Render a single-line text input for a Softone configuration value.
          *
-         * @param array $args Field arguments.
+         * Determines the appropriate getter helper for the requested key,
+         * outputs the matching input element, and keeps values grouped under
+         * {@see Softone_API_Client::OPTION_SETTINGS_KEY}. Password fields adjust
+         * autocomplete hints to prevent browsers from autofilling.
+         *
+         * @param array $args Field arguments provided when registering the field.
+         *
+         * @return void
          */
         public function render_text_field( $args ) {
 
@@ -1905,9 +1962,16 @@ public function handle_test_connection() {
         }
 
         /**
-         * Render a checkbox field.
+         * Render a labelled checkbox used for boolean Softone settings.
          *
-         * @param array $args Field arguments.
+         * Reads the stored flag via {@see softone_wc_integration_get_setting()},
+         * prints a standardised checkbox bound to
+         * {@see Softone_API_Client::OPTION_SETTINGS_KEY}, and optionally
+         * displays descriptive help text beneath the control.
+         *
+         * @param array $args Field arguments passed by the Settings API.
+         *
+         * @return void
          */
         public function render_checkbox_field( $args ) {
 
