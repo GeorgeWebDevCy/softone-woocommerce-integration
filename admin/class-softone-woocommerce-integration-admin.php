@@ -541,42 +541,11 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
                 check_admin_referer( $this->delete_main_menu_action );
 
                 $menu_name = 'Main Menu';
-                $menu      = function_exists( 'wp_get_nav_menu_object' ) ? wp_get_nav_menu_object( $menu_name ) : null;
 
-                if ( ! $menu ) {
-                        $this->store_menu_notice(
-                                'error',
-                                sprintf(
-                                        /* translators: %s: menu name */
-                                        __( '[SO-ADM-008] Could not find a menu named %s.', 'softone-woocommerce-integration' ),
-                                        $menu_name
-                                )
-                        );
-                        wp_safe_redirect( $this->get_settings_page_url() );
-                        exit;
-                }
-
-                $result = function_exists( 'wp_delete_nav_menu' ) ? wp_delete_nav_menu( $menu->term_id ) : false;
+                $result = $this->delete_nav_menu_by_name( $menu_name );
 
                 if ( is_wp_error( $result ) ) {
-                        $this->store_menu_notice(
-                                'error',
-                                sprintf(
-                                        /* translators: 1: menu name, 2: error message */
-                                        __( '[SO-ADM-009] Failed to delete %1$s: %2$s', 'softone-woocommerce-integration' ),
-                                        $menu_name,
-                                        $result->get_error_message()
-                                )
-                        );
-                } elseif ( false === $result ) {
-                        $this->store_menu_notice(
-                                'error',
-                                sprintf(
-                                        /* translators: %s: menu name */
-                                        __( '[SO-ADM-010] Failed to delete %s due to an unexpected error.', 'softone-woocommerce-integration' ),
-                                        $menu_name
-                                )
-                        );
+                        $this->store_menu_notice( 'error', $result->get_error_message() );
                 } else {
                         $this->store_menu_notice(
                                 'success',
@@ -2330,6 +2299,68 @@ public function handle_test_connection() {
                         ),
                         MINUTE_IN_SECONDS
                 );
+
+        }
+
+        /**
+         * Delete a WordPress navigation menu by name.
+         *
+         * Mirrors the expected behaviour of deleting the "Main Menu" manually
+         * through the WordPress admin interface: locate the menu object and
+         * remove it (including all related items) when present.
+         *
+         * @param string $menu_name Menu name, slug or ID.
+         *
+         * @return true|WP_Error True on success, WP_Error on failure.
+         */
+        private function delete_nav_menu_by_name( $menu_name ) {
+
+                if ( ! function_exists( 'wp_get_nav_menu_object' ) || ! function_exists( 'wp_delete_nav_menu' ) ) {
+                        return new WP_Error(
+                                'softone_missing_menu_functions',
+                                __( '[SO-ADM-011] Required WordPress menu functions are unavailable.', 'softone-woocommerce-integration' )
+                        );
+                }
+
+                $menu = wp_get_nav_menu_object( $menu_name );
+
+                if ( ! $menu ) {
+                        return new WP_Error(
+                                'softone_menu_not_found',
+                                sprintf(
+                                        /* translators: %s: menu name */
+                                        __( '[SO-ADM-008] Could not find a menu named %s.', 'softone-woocommerce-integration' ),
+                                        $menu_name
+                                )
+                        );
+                }
+
+                $result = wp_delete_nav_menu( $menu );
+
+                if ( is_wp_error( $result ) ) {
+                        return new WP_Error(
+                                $result->get_error_code(),
+                                sprintf(
+                                        /* translators: 1: menu name, 2: error message */
+                                        __( '[SO-ADM-009] Failed to delete %1$s: %2$s', 'softone-woocommerce-integration' ),
+                                        $menu_name,
+                                        $result->get_error_message()
+                                )
+                        );
+                }
+
+                if ( false === $result ) {
+                        return new WP_Error(
+                                'softone_menu_delete_failed',
+                                sprintf(
+                                        /* translators: %s: menu name */
+                                        __( '[SO-ADM-010] Failed to delete %s due to an unexpected error.', 'softone-woocommerce-integration' ),
+                                        $menu_name
+                                )
+                        );
+                }
+
+                return true;
 
         }
 
