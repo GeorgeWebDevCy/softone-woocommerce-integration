@@ -99,12 +99,47 @@ class Softone_Woocommerce_Integration_Admin {
          */
         private $clear_activity_action = 'softone_wc_integration_clear_sync_activity';
 
-        /**
-         * Action name for deleting the Main Menu navigation menu.
-         *
-         * @var string
-         */
-        private $delete_main_menu_action = 'softone_wc_integration_delete_main_menu';
+/**
+ * Action name for deleting the Main Menu navigation menu.
+ *
+ * @var string
+ */
+private $delete_main_menu_action = 'softone_wc_integration_delete_main_menu';
+
+/**
+ * AJAX action name for batched Main Menu deletion.
+ *
+ * @var string
+ */
+private $delete_main_menu_ajax_action = 'softone_wc_integration_delete_main_menu_batch';
+
+/**
+ * Name of the primary navigation menu managed by the plugin.
+ *
+ * @var string
+ */
+private $main_menu_name = 'Main Menu';
+
+/**
+ * Base transient key for storing batched menu deletion state.
+ *
+ * @var string
+ */
+private $menu_delete_state_transient = 'softone_wc_integration_menu_delete_state_';
+
+/**
+ * Default number of menu items to delete per AJAX batch.
+ *
+ * @var int
+ */
+private $menu_delete_default_batch_size = 20;
+
+/**
+ * Lifetime (in seconds) for the menu deletion state transient.
+ *
+ * @var int
+ */
+private $menu_delete_state_lifetime = HOUR_IN_SECONDS;
 
         /**
          * Base transient key for connection test notices.
@@ -488,11 +523,25 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
 <?php submit_button( __( 'Re-sync Categories & Menus', 'softone-woocommerce-integration' ), 'secondary', 'softone_wc_integration_resync_taxonomies', false ); ?>
 </form>
 
-<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" style="margin-top: 1.5em;">
+<form
+id="softone-delete-main-menu-form"
+class="softone-delete-menu-form"
+action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"
+method="post"
+style="margin-top: 1.5em;"
+data-softone-menu-delete="1"
+>
 <?php wp_nonce_field( $this->delete_main_menu_action ); ?>
 <input type="hidden" name="action" value="<?php echo esc_attr( $this->delete_main_menu_action ); ?>" />
-<p class="description"><?php esc_html_e( 'Permanently delete the WordPress navigation menu named "Main Menu". This cannot be undone.', 'softone-woocommerce-integration' ); ?></p>
+<p class="description"><?php printf( esc_html__( 'Permanently delete the WordPress navigation menu named "%s". This cannot be undone.', 'softone-woocommerce-integration' ), esc_html( $this->main_menu_name ) ); ?></p>
 <?php submit_button( __( 'Delete Main Menu', 'softone-woocommerce-integration' ), 'delete', 'softone_wc_integration_delete_main_menu', false ); ?>
+<div class="softone-delete-menu-progress" id="softone-delete-main-menu-progress" hidden>
+<div class="softone-delete-menu-progress__bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+<div class="softone-delete-menu-progress__bar-fill"></div>
+</div>
+<p class="softone-delete-menu-progress__text" id="softone-delete-main-menu-progress-text"></p>
+</div>
+<div class="softone-delete-menu-status notice" id="softone-delete-main-menu-status" hidden></div>
 </form>
 </div>
 <?php
@@ -540,9 +589,9 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
 
                 check_admin_referer( $this->delete_main_menu_action );
 
-                $menu_name = 'Main Menu';
+$menu_name = $this->main_menu_name;
 
-                $result = $this->delete_nav_menu_by_name( $menu_name );
+$result = $this->delete_nav_menu_by_name( $menu_name );
 
                 if ( is_wp_error( $result ) ) {
                         $this->store_menu_notice( 'error', $result->get_error_message() );
@@ -581,6 +630,15 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
         }
 
         /**
+         * Retrieve the AJAX action name used to batch-delete the Main Menu.
+         *
+         * @return string
+         */
+        public function get_delete_main_menu_ajax_action() {
+                return $this->delete_main_menu_ajax_action;
+        }
+
+        /**
          * Handle capability-protected AJAX requests for sync activity updates.
          *
          * Expects a valid nonce (under the `nonce` key), an optional `since`
@@ -590,11 +648,11 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
          *
          * @return void
          */
-        public function handle_sync_activity_ajax() {
+public function handle_sync_activity_ajax() {
 
-                if ( ! current_user_can( $this->capability ) ) {
-                        wp_send_json_error(
-                                array(
+if ( ! current_user_can( $this->capability ) ) {
+wp_send_json_error(
+array(
                                         'message' => __( 'You do not have permission to access sync activity.', 'softone-woocommerce-integration' ),
                                 ),
                                 403
@@ -650,10 +708,288 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
                                 'entries'          => $prepared_entries,
                                 'latestTimestamp'  => $latest_timestamp,
                                 'metadata'         => $metadata,
-                        )
-                );
+)
+);
 
+}
+
+        /**
+         * Handle AJAX requests that batch-delete the Main Menu.
+         */
+        public function handle_delete_main_menu_ajax() {
+
+        if ( ! current_user_can( $this->capability ) ) {
+        wp_send_json_error(
+        array(
+                                                'message' => __( 'You do not have permission to delete menus.', 'softone-woocommerce-integration' ),
+                                        ),
+                                        403
+                                );
+                        }
+
+                        check_ajax_referer( $this->delete_main_menu_ajax_action, 'nonce' );
+
+                        $step = 'init';
+
+                        if ( isset( $_REQUEST['step'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+                                $step = sanitize_key( wp_unslash( $_REQUEST['step'] ) ); // phpcs:ignore WordPress.Security.NonceVerification
+                        }
+
+                        switch ( $step ) {
+                                case 'batch':
+                                        $this->process_delete_main_menu_batch_ajax();
+                                        break;
+                                case 'init':
+                                        $this->process_delete_main_menu_init_ajax();
+                                        break;
+                                default:
+                                        wp_send_json_error(
+                                                array(
+                                                        'message' => __( 'Invalid menu deletion request.', 'softone-woocommerce-integration' ),
+                                                ),
+                                                400
+                                        );
+                }
+
+}
+
+        /**
+         * Initialise a batched menu deletion request.
+         */
+        private function process_delete_main_menu_init_ajax() {
+
+        $menu = wp_get_nav_menu_object( $this->main_menu_name );
+
+        if ( ! $menu ) {
+        wp_send_json_error(
+        array(
+        'message' => sprintf(
+        /* translators: %s: menu name */
+        __( 'Could not find the %s menu.', 'softone-woocommerce-integration' ),
+        $this->main_menu_name
+        ),
+        ),
+        404
+        );
         }
+
+        $items = wp_get_nav_menu_items(
+        $menu->term_id,
+        array(
+        'post_status' => 'any',
+        )
+        );
+
+        $total_items = is_array( $items ) ? count( $items ) : 0;
+
+        if ( 0 === $total_items ) {
+        $delete_result = wp_delete_nav_menu( $menu );
+
+        if ( is_wp_error( $delete_result ) ) {
+        wp_send_json_error(
+        array(
+        'message' => $delete_result->get_error_message(),
+        ),
+        500
+        );
+        }
+
+        if ( false === $delete_result ) {
+        wp_send_json_error(
+        array(
+        'message' => sprintf(
+        /* translators: %s: menu name */
+        __( '[SO-ADM-010] Failed to delete %s due to an unexpected error.', 'softone-woocommerce-integration' ),
+        $this->main_menu_name
+        ),
+        ),
+        500
+        );
+        }
+
+        wp_send_json_success(
+        array(
+        'complete'      => true,
+        'process_id'    => '',
+        'total_items'   => 0,
+        'deleted_items' => 0,
+        'message'       => sprintf(
+        /* translators: %s: menu name */
+        __( 'Successfully deleted the %s menu.', 'softone-woocommerce-integration' ),
+        $this->main_menu_name
+        ),
+        )
+        );
+        }
+
+        list( $process_id, $state ) = $this->create_menu_delete_state( $menu, $total_items );
+
+        wp_send_json_success(
+        array(
+        'process_id'    => $process_id,
+        'total_items'   => (int) $state['total_items'],
+        'deleted_items' => (int) $state['deleted_items'],
+        'message'       => __( 'Starting menu deletion…', 'softone-woocommerce-integration' ),
+        )
+        );
+
+}
+
+        /**
+         * Delete the next batch of menu items for the active deletion session.
+         */
+        private function process_delete_main_menu_batch_ajax() {
+
+        if ( ! isset( $_REQUEST['process_id'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+        wp_send_json_error(
+        array(
+        'message' => __( 'Missing menu deletion session identifier.', 'softone-woocommerce-integration' ),
+        ),
+        400
+        );
+        }
+
+        $process_id = sanitize_text_field( wp_unslash( $_REQUEST['process_id'] ) ); // phpcs:ignore WordPress.Security.NonceVerification
+
+        if ( '' === $process_id ) {
+        wp_send_json_error(
+        array(
+        'message' => __( 'Invalid menu deletion session.', 'softone-woocommerce-integration' ),
+        ),
+        400
+        );
+        }
+
+        $state = $this->get_menu_delete_state( $process_id );
+
+        if ( is_wp_error( $state ) ) {
+        wp_send_json_error(
+        array(
+        'message' => $state->get_error_message(),
+        ),
+        400
+        );
+        }
+
+        $batch_size = $this->menu_delete_default_batch_size;
+
+        if ( isset( $_REQUEST['batch_size'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+        $batch_size = (int) wp_unslash( $_REQUEST['batch_size'] ); // phpcs:ignore WordPress.Security.NonceVerification
+        }
+
+        $batch_size = $this->normalize_menu_delete_batch_size( $batch_size );
+
+        $query = $this->query_menu_items_for_batch( $state['menu_id'], $batch_size );
+
+        $item_ids    = $query->posts;
+        $found_posts = (int) $query->found_posts;
+
+        if ( empty( $item_ids ) ) {
+        $completed_state = $this->complete_menu_delete_process( $process_id, $state );
+
+        if ( is_wp_error( $completed_state ) ) {
+        wp_send_json_error(
+        array(
+        'message' => $completed_state->get_error_message(),
+        ),
+        500
+        );
+        }
+
+        wp_send_json_success(
+        array(
+        'process_id'      => $process_id,
+        'total_items'     => (int) $completed_state['total_items'],
+        'deleted_items'   => (int) $completed_state['deleted_items'],
+        'remaining_items' => 0,
+        'complete'        => true,
+        'message'         => sprintf(
+        /* translators: %s: menu name */
+        __( 'Successfully deleted the %s menu.', 'softone-woocommerce-integration' ),
+        $this->main_menu_name
+        ),
+        )
+        );
+        }
+
+        $deleted_this_round = 0;
+
+        foreach ( $item_ids as $item_id ) {
+        $deleted = wp_delete_post( (int) $item_id, true );
+
+        if ( is_wp_error( $deleted ) ) {
+        wp_send_json_error(
+        array(
+        'message' => $deleted->get_error_message(),
+        ),
+        500
+        );
+        }
+
+        if ( false === $deleted ) {
+        wp_send_json_error(
+        array(
+        'message' => sprintf(
+        /* translators: %d: menu item ID */
+        __( '[SO-ADM-012] Failed to delete menu item %d.', 'softone-woocommerce-integration' ),
+        (int) $item_id
+        ),
+        ),
+        500
+        );
+        }
+
+        $deleted_this_round++; // phpcs:ignore Squiz.PHP.IncrementDecrementUsage
+        }
+
+        $state['deleted_items'] += $deleted_this_round;
+        $state['last_activity']  = time();
+
+        $remaining_after      = max( 0, $found_posts - $deleted_this_round );
+        $state['total_items'] = max( (int) $state['total_items'], (int) ( $state['deleted_items'] + $remaining_after ) );
+
+        if ( $remaining_after <= 0 ) {
+        $completed_state = $this->complete_menu_delete_process( $process_id, $state );
+
+        if ( is_wp_error( $completed_state ) ) {
+        wp_send_json_error(
+        array(
+        'message' => $completed_state->get_error_message(),
+        ),
+        500
+        );
+        }
+
+        wp_send_json_success(
+        array(
+        'process_id'      => $process_id,
+        'total_items'     => (int) $completed_state['total_items'],
+        'deleted_items'   => (int) $completed_state['deleted_items'],
+        'remaining_items' => 0,
+        'complete'        => true,
+        'message'         => sprintf(
+        /* translators: %s: menu name */
+        __( 'Successfully deleted the %s menu.', 'softone-woocommerce-integration' ),
+        $this->main_menu_name
+        ),
+        )
+        );
+        }
+
+        $this->persist_menu_delete_state( $process_id, $state );
+
+        wp_send_json_success(
+        array(
+        'process_id'      => $process_id,
+        'total_items'     => (int) $state['total_items'],
+        'deleted_items'   => (int) $state['deleted_items'],
+        'remaining_items' => $remaining_after,
+        'complete'        => false,
+        'message'         => __( 'Deleted a batch of menu items.', 'softone-woocommerce-integration' ),
+        )
+        );
+
+}
 
         /**
          * Prepare entries for front-end consumption by adding formatted fields.
@@ -2313,10 +2649,10 @@ public function handle_test_connection() {
          *
          * @return true|WP_Error True on success, WP_Error on failure.
          */
-        private function delete_nav_menu_by_name( $menu_name ) {
+private function delete_nav_menu_by_name( $menu_name ) {
 
-                if ( ! function_exists( 'wp_get_nav_menu_object' ) || ! function_exists( 'wp_delete_nav_menu' ) ) {
-                        return new WP_Error(
+if ( ! function_exists( 'wp_get_nav_menu_object' ) || ! function_exists( 'wp_delete_nav_menu' ) ) {
+return new WP_Error(
                                 'softone_missing_menu_functions',
                                 __( '[SO-ADM-011] Required WordPress menu functions are unavailable.', 'softone-woocommerce-integration' )
                         );
@@ -2360,9 +2696,199 @@ public function handle_test_connection() {
                         );
                 }
 
-                return true;
+return true;
 
-        }
+}
+
+/**
+ * Create and store the state used to track an in-progress menu deletion.
+ *
+ * @param WP_Term $menu        Menu term object.
+ * @param int     $total_items Total number of menu items detected.
+ *
+ * @return array{0:string,1:array} Tuple containing the process ID and state array.
+ */
+private function create_menu_delete_state( $menu, $total_items ) {
+
+$process_id = wp_generate_uuid4();
+$user_id    = get_current_user_id();
+
+$state = array(
+'menu_id'       => (int) $menu->term_id,
+'menu_name'     => (string) $menu->name,
+'total_items'   => (int) $total_items,
+'deleted_items' => 0,
+'user_id'       => $user_id,
+'started_at'    => time(),
+'last_activity' => time(),
+);
+
+$this->persist_menu_delete_state( $process_id, $state );
+
+return array( $process_id, $state );
+
+}
+
+/**
+ * Persist the menu deletion state to a transient for future batches.
+ *
+ * @param string $process_id Unique process identifier.
+ * @param array  $state      State to store.
+ */
+private function persist_menu_delete_state( $process_id, array $state ) {
+
+$user_id = isset( $state['user_id'] ) ? (int) $state['user_id'] : get_current_user_id();
+$key     = $this->get_menu_delete_state_key( $process_id, $user_id );
+
+set_transient( $key, $state, $this->menu_delete_state_lifetime );
+
+}
+
+/**
+ * Retrieve the state for an active menu deletion process.
+ *
+ * @param string $process_id Unique process identifier.
+ *
+ * @return array|WP_Error
+ */
+private function get_menu_delete_state( $process_id ) {
+
+$user_id = get_current_user_id();
+$key     = $this->get_menu_delete_state_key( $process_id, $user_id );
+$state   = get_transient( $key );
+
+if ( ! is_array( $state ) ) {
+return new WP_Error(
+'softone_menu_delete_state_missing',
+__( 'The menu deletion session has expired. Please start again.', 'softone-woocommerce-integration' )
+);
+}
+
+if ( ! isset( $state['user_id'] ) || (int) $state['user_id'] !== $user_id ) {
+return new WP_Error(
+'softone_menu_delete_state_mismatch',
+__( 'You are not allowed to continue this deletion session.', 'softone-woocommerce-integration' )
+);
+}
+
+return $state;
+
+}
+
+/**
+ * Remove any stored state for a menu deletion session.
+ *
+ * @param string $process_id Unique process identifier.
+ * @param int    $user_id    User identifier.
+ */
+private function delete_menu_delete_state( $process_id, $user_id ) {
+
+delete_transient( $this->get_menu_delete_state_key( $process_id, $user_id ) );
+
+}
+
+/**
+ * Generate the transient key used to store menu deletion state data.
+ *
+ * @param string $process_id Unique process identifier.
+ * @param int    $user_id    User identifier.
+ *
+ * @return string
+ */
+private function get_menu_delete_state_key( $process_id, $user_id ) {
+
+return $this->menu_delete_state_transient . (int) $user_id . '_' . $process_id;
+
+}
+
+/**
+ * Complete a menu deletion by removing the menu term and clearing stored state.
+ *
+ * @param string $process_id Process identifier.
+ * @param array  $state      State data.
+ *
+ * @return array|WP_Error Updated state on success, error otherwise.
+ */
+private function complete_menu_delete_process( $process_id, array $state ) {
+
+$menu = wp_get_nav_menu_object( (int) $state['menu_id'] );
+
+if ( $menu ) {
+$result = wp_delete_nav_menu( $menu );
+
+if ( is_wp_error( $result ) ) {
+return $result;
+}
+
+if ( false === $result ) {
+return new WP_Error(
+'softone_menu_delete_failed',
+sprintf(
+/* translators: %s: menu name */
+__( '[SO-ADM-010] Failed to delete %s due to an unexpected error.', 'softone-woocommerce-integration' ),
+$state['menu_name']
+)
+);
+}
+}
+
+$state['deleted_items'] = max( (int) $state['deleted_items'], (int) $state['total_items'] );
+$this->delete_menu_delete_state( $process_id, (int) $state['user_id'] );
+
+return $state;
+
+}
+
+/**
+ * Normalise the requested batch size for menu item deletions.
+ *
+ * @param int $requested_size Requested batch size.
+ *
+ * @return int
+ */
+private function normalize_menu_delete_batch_size( $requested_size ) {
+
+$size = (int) $requested_size;
+
+if ( $size < 1 ) {
+$size = $this->menu_delete_default_batch_size;
+}
+
+return min( $size, 100 );
+
+}
+
+/**
+ * Retrieve a batch of menu item IDs for deletion.
+ *
+ * @param int $menu_id    Menu term ID.
+ * @param int $batch_size Number of menu items to fetch.
+ *
+ * @return WP_Query
+ */
+private function query_menu_items_for_batch( $menu_id, $batch_size ) {
+
+$query_args = array(
+'post_type'      => 'nav_menu_item',
+'posts_per_page' => (int) $batch_size,
+'fields'         => 'ids',
+'no_found_rows'  => false,
+'orderby'        => 'ID',
+'order'          => 'ASC',
+'post_status'    => 'any',
+'tax_query'      => array(
+array(
+'taxonomy'         => 'nav_menu',
+'field'            => 'term_id',
+'terms'            => (int) $menu_id,
+'include_children' => false,
+),
+),
+);
+
+return new WP_Query( $query_args );
+
+}
 
         /**
          * Generate the transient key for import notices for the current user.
@@ -2859,16 +3385,40 @@ public function handle_test_connection() {
 
 		wp_enqueue_script( $this->plugin_name, plugin_dir_url( __FILE__ ) . 'js/softone-woocommerce-integration-admin.js', array( 'jquery' ), $this->version, false );
 
-                wp_localize_script(
-                        $this->plugin_name,
-                        'softoneApiTester',
-                        array(
-                                'presets'            => $this->get_api_tester_presets_for_script(),
-                                'defaultDescription' => __( 'Choose a preset to automatically populate the form fields.', 'softone-woocommerce-integration' ),
-                        )
-                );
+wp_localize_script(
+$this->plugin_name,
+'softoneApiTester',
+array(
+'presets'            => $this->get_api_tester_presets_for_script(),
+'defaultDescription' => __( 'Choose a preset to automatically populate the form fields.', 'softone-woocommerce-integration' ),
+)
+);
 
-	}
+wp_localize_script(
+$this->plugin_name,
+'softoneMenuDeletion',
+array(
+'ajaxUrl'     => admin_url( 'admin-ajax.php' ),
+'action'      => $this->get_delete_main_menu_ajax_action(),
+'nonce'       => wp_create_nonce( $this->get_delete_main_menu_ajax_action() ),
+'formSelector'=> '#softone-delete-main-menu-form',
+'batchSize'   => $this->menu_delete_default_batch_size,
+'menuName'    => $this->main_menu_name,
+'i18n'        => array(
+'preparingText'    => __( 'Preparing to delete the menu…', 'softone-woocommerce-integration' ),
+'progressTemplate' => __( '%1$s of %2$s items deleted (%3$s%%).', 'softone-woocommerce-integration' ),
+'completeText'     => __( 'Menu deleted successfully.', 'softone-woocommerce-integration' ),
+'genericError'     => __( 'An unexpected error occurred while deleting the menu.', 'softone-woocommerce-integration' ),
+'menuDeletedMessage'=> sprintf(
+/* translators: %s: menu name */
+__( 'Successfully deleted the %s menu.', 'softone-woocommerce-integration' ),
+$this->main_menu_name
+),
+),
+)
+);
+
+}
 
 }
 

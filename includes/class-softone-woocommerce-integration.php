@@ -95,11 +95,11 @@ class Softone_Woocommerce_Integration {
          * @since    1.0.0
          */
         public function __construct() {
-                if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
-                        $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
-                } else {
-                        $this->version = '1.8.42';
-                }
+if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
+$this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
+} else {
+$this->version = '1.8.43';
+}
 		$this->plugin_name = 'softone-woocommerce-integration';
 
                 $this->load_dependencies();
@@ -238,10 +238,11 @@ class Softone_Woocommerce_Integration {
         $this->loader->add_action( 'admin_post_softone_wc_integration_test_connection', $plugin_admin, 'handle_test_connection' );
         $this->loader->add_action( 'admin_post_' . Softone_Item_Sync::ADMIN_ACTION, $plugin_admin, 'handle_item_import' );
         $this->loader->add_action( 'admin_post_softone_wc_integration_clear_sync_activity', $plugin_admin, 'handle_clear_sync_activity' );
-        $this->loader->add_action( 'admin_post_' . $plugin_admin->get_delete_main_menu_action(), $plugin_admin, 'handle_delete_main_menu' );
-        $this->loader->add_action( 'wp_ajax_' . $plugin_admin->get_sync_activity_action(), $plugin_admin, 'handle_sync_activity_ajax' );
+$this->loader->add_action( 'admin_post_' . $plugin_admin->get_delete_main_menu_action(), $plugin_admin, 'handle_delete_main_menu' );
+$this->loader->add_action( 'wp_ajax_' . $plugin_admin->get_sync_activity_action(), $plugin_admin, 'handle_sync_activity_ajax' );
+$this->loader->add_action( 'wp_ajax_' . $plugin_admin->get_delete_main_menu_ajax_action(), $plugin_admin, 'handle_delete_main_menu_ajax' );
 
-        }
+}
 
 	/**
 	 * Register all of the hooks related to the public-facing functionality
