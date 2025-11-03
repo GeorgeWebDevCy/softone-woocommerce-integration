@@ -299,28 +299,41 @@ $this->loader->add_action( 'wp_ajax_' . $plugin_admin->get_delete_main_menu_ajax
 			'menu_name'                  => __( 'Brands', 'softone-woocommerce-integration' ),
 		);
 
-		$args = array(
-			'hierarchical'          => false,
-			'labels'                => $labels,
-			'show_ui'               => true,
-			'show_admin_column'     => true,
-			'query_var'             => true,
-			'rewrite'               => array( 'slug' => 'brand' ),
-			'show_in_rest'          => true,
-			'show_in_nav_menus'     => true,
-			'public'                => true,
-			'show_tagcloud'         => false,
-		);
+               $default_capabilities = array(
+                       'manage_terms' => 'manage_product_terms',
+                       'edit_terms'   => 'edit_product_terms',
+                       'delete_terms' => 'delete_product_terms',
+                       'assign_terms' => 'assign_product_terms',
+               );
+
+               $args = array(
+                       'hierarchical'          => false,
+                       'labels'                => $labels,
+                       'show_ui'               => true,
+                       'show_admin_column'     => true,
+                       'query_var'             => true,
+                       'rewrite'               => array( 'slug' => 'brand' ),
+                       'show_in_rest'          => true,
+                       'show_in_nav_menus'     => true,
+                       'public'                => true,
+                       'show_tagcloud'         => false,
+                       'capabilities'          => $default_capabilities,
+                );
 
 		$objects = apply_filters( 'softone_product_brand_taxonomy_objects', array( 'product' ) );
 		if ( empty( $objects ) ) {
 			$objects = array( 'product' );
 		}
 
-		$args = apply_filters( 'softone_product_brand_taxonomy_args', $args );
+               $args = apply_filters( 'softone_product_brand_taxonomy_args', $args );
 
-		register_taxonomy( 'product_brand', $objects, $args );
-	}
+               $args['capabilities'] = wp_parse_args(
+                       isset( $args['capabilities'] ) ? $args['capabilities'] : array(),
+                       $default_capabilities
+               );
+
+               register_taxonomy( 'product_brand', $objects, $args );
+       }
 
 	/**
 	 * Run the loader to execute all of the hooks with WordPress.
