@@ -94,19 +94,28 @@ class Softone_Woocommerce_Integration {
          *
          * @since    1.0.0
          */
-        public function __construct() {
-if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
-$this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
-} else {
-$this->version = '1.8.43';
-}
+	public function __construct() {
+		if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
+			$this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
+		} else {
+			$this->version = '1.8.44';
+		}
 		$this->plugin_name = 'softone-woocommerce-integration';
 
-                $this->load_dependencies();
-                $this->set_locale();
+		$this->load_dependencies();
+		$this->set_locale();
 		$this->define_admin_hooks();
 		$this->define_public_hooks();
+		$this->define_shared_hooks();
+	}
 
+	/**
+	 * Register hooks that run on both the public and admin sides.
+	 *
+	 * @return void
+	 */
+	private function define_shared_hooks() {
+		$this->loader->add_action( 'init', $this, 'maybe_register_brand_taxonomy' );
 	}
 
 	/**
@@ -251,16 +260,67 @@ $this->loader->add_action( 'wp_ajax_' . $plugin_admin->get_delete_main_menu_ajax
 	 * @since    1.0.0
 	 * @access   private
 	 */
-        private function define_public_hooks() {
+	private function define_public_hooks() {
 
-                $plugin_public = new Softone_Woocommerce_Integration_Public( $this->get_plugin_name(), $this->get_version() );
-                $menu_populator = new Softone_Menu_Populator( $this->activity_logger );
+		$plugin_public = new Softone_Woocommerce_Integration_Public( $this->get_plugin_name(), $this->get_version() );
+		$menu_populator = new Softone_Menu_Populator( $this->activity_logger );
 
-                $this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_styles' );
-                $this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_scripts' );
-                $this->loader->add_filter( 'wp_nav_menu_objects', $menu_populator, 'filter_menu_items', 10, 2 );
+		$this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_styles' );
+		$this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_scripts' );
+		$this->loader->add_filter( 'wp_nav_menu_objects', $menu_populator, 'filter_menu_items', 10, 2 );
 
-        }
+	}
+
+	/**
+	 * Ensure the product brand taxonomy is registered.
+	 *
+	 * @return void
+	 */
+	public function maybe_register_brand_taxonomy() {
+		if ( function_exists( 'taxonomy_exists' ) && taxonomy_exists( 'product_brand' ) ) {
+			return;
+		}
+
+		if ( ! function_exists( 'register_taxonomy' ) ) {
+			return;
+		}
+
+		$labels = array(
+			'name'                       => _x( 'Brands', 'taxonomy general name', 'softone-woocommerce-integration' ),
+			'singular_name'              => _x( 'Brand', 'taxonomy singular name', 'softone-woocommerce-integration' ),
+			'search_items'               => __( 'Search Brands', 'softone-woocommerce-integration' ),
+			'all_items'                  => __( 'All Brands', 'softone-woocommerce-integration' ),
+			'parent_item'                => __( 'Parent Brand', 'softone-woocommerce-integration' ),
+			'parent_item_colon'          => __( 'Parent Brand:', 'softone-woocommerce-integration' ),
+			'edit_item'                  => __( 'Edit Brand', 'softone-woocommerce-integration' ),
+			'update_item'                => __( 'Update Brand', 'softone-woocommerce-integration' ),
+			'add_new_item'               => __( 'Add New Brand', 'softone-woocommerce-integration' ),
+			'new_item_name'              => __( 'New Brand Name', 'softone-woocommerce-integration' ),
+			'menu_name'                  => __( 'Brands', 'softone-woocommerce-integration' ),
+		);
+
+		$args = array(
+			'hierarchical'          => false,
+			'labels'                => $labels,
+			'show_ui'               => true,
+			'show_admin_column'     => true,
+			'query_var'             => true,
+			'rewrite'               => array( 'slug' => 'brand' ),
+			'show_in_rest'          => true,
+			'show_in_nav_menus'     => true,
+			'public'                => true,
+			'show_tagcloud'         => false,
+		);
+
+		$objects = apply_filters( 'softone_product_brand_taxonomy_objects', array( 'product' ) );
+		if ( empty( $objects ) ) {
+			$objects = array( 'product' );
+		}
+
+		$args = apply_filters( 'softone_product_brand_taxonomy_args', $args );
+
+		register_taxonomy( 'product_brand', $objects, $args );
+	}
 
 	/**
 	 * Run the loader to execute all of the hooks with WordPress.
