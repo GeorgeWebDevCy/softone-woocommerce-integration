@@ -672,23 +672,46 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 throw new Exception( __( 'Failed to load the matching WooCommerce product.', 'softone-woocommerce-integration' ) );
             }
 
+            $category_ids = $this->prepare_category_ids( $data );
+
             if ( ! $is_new ) {
                 $existing_hash = (string) get_post_meta( $product_id, self::META_PAYLOAD_HASH, true );
+                $categories_match = $this->product_categories_match( $product_id, $category_ids );
 
                 if ( ! $this->force_taxonomy_refresh && '' !== $existing_hash && $existing_hash === $payload_hash ) {
+                    if ( $categories_match ) {
+                        $this->log(
+                            'debug',
+                            'Skipping product import because the payload hash matches the existing product.',
+                            array(
+                                'product_id'          => $product_id,
+                                'sku'                 => $sku,
+                                'mtrl'                => $mtrl,
+                                'payload_hash'        => $payload_hash,
+                                'existing_hash'       => $existing_hash,
+                                'category_ids'        => $category_ids,
+                                'categories_match'    => true,
+                                'force_taxonomy_refresh' => (bool) $this->force_taxonomy_refresh,
+                            )
+                        );
+
+                        return 'skipped';
+                    }
+
                     $this->log(
                         'debug',
-                        'Skipping product import because the payload hash matches the existing product.',
+                        'Continuing product import to refresh mismatched category assignments despite a matching payload hash.',
                         array(
-                            'product_id'    => $product_id,
-                            'sku'           => $sku,
-                            'mtrl'          => $mtrl,
-                            'payload_hash'  => $payload_hash,
-                            'existing_hash' => $existing_hash,
+                            'product_id'          => $product_id,
+                            'sku'                 => $sku,
+                            'mtrl'                => $mtrl,
+                            'payload_hash'        => $payload_hash,
+                            'existing_hash'       => $existing_hash,
+                            'category_ids'        => $category_ids,
+                            'categories_match'    => false,
+                            'force_taxonomy_refresh' => (bool) $this->force_taxonomy_refresh,
                         )
                     );
-
-                    return 'skipped';
                 }
             }
 
@@ -770,7 +793,6 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 }
             }
 
-            $category_ids = $this->prepare_category_ids( $data );
             if ( ! empty( $category_ids ) ) {
                 $product->set_category_ids( $category_ids );
             }
@@ -1158,6 +1180,68 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             return 0;
+        }
+
+        /**
+         * Determine whether the WooCommerce product already uses the provided category IDs.
+         *
+         * @param int   $product_id   Product identifier.
+         * @param array $category_ids Target category identifiers.
+         *
+         * @return bool
+         */
+        protected function product_categories_match( $product_id, array $category_ids ) {
+            $normalized_target_ids = array();
+
+            foreach ( (array) $category_ids as $category_id ) {
+                $category_id = (int) $category_id;
+
+                if ( $category_id > 0 ) {
+                    $normalized_target_ids[] = $category_id;
+                }
+            }
+
+            sort( $normalized_target_ids );
+            $normalized_target_ids = array_values( array_unique( $normalized_target_ids ) );
+
+            if ( $product_id <= 0 ) {
+                return false;
+            }
+
+            if ( ! function_exists( 'taxonomy_exists' ) || ! taxonomy_exists( 'product_cat' ) ) {
+                return false;
+            }
+
+            if ( ! function_exists( 'wp_get_object_terms' ) ) {
+                return false;
+            }
+
+            $existing_terms = wp_get_object_terms(
+                $product_id,
+                'product_cat',
+                array(
+                    'fields' => 'ids',
+                )
+            );
+
+            if ( is_wp_error( $existing_terms ) ) {
+                return false;
+            }
+
+            $normalized_existing_ids = array();
+
+            foreach ( (array) $existing_terms as $existing_term_id ) {
+                $existing_term_id = (int) $existing_term_id;
+
+                if ( $existing_term_id > 0 ) {
+                    $normalized_existing_ids[] = $existing_term_id;
+                }
+            }
+
+            sort( $normalized_existing_ids );
+            $normalized_existing_ids = array_values( array_unique( $normalized_existing_ids ) );
+
+            return $normalized_existing_ids === $normalized_target_ids;
         }
 
         /**
