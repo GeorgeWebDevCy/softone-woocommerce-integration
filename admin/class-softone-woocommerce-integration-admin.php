@@ -100,6 +100,13 @@ class Softone_Woocommerce_Integration_Admin {
         private $clear_activity_action = 'softone_wc_integration_clear_sync_activity';
 
         /**
+         * Action name for deleting the Main Menu navigation menu.
+         *
+         * @var string
+         */
+        private $delete_main_menu_action = 'softone_wc_integration_delete_main_menu';
+
+        /**
          * Base transient key for connection test notices.
          *
          * @var string
@@ -139,7 +146,14 @@ class Softone_Woocommerce_Integration_Admin {
          *
          * @var string
          */
-	private $import_notice_transient = 'softone_wc_integration_import_notice_';
+        private $import_notice_transient = 'softone_wc_integration_import_notice_';
+
+        /**
+         * Base transient key for menu management notices.
+         *
+         * @var string
+         */
+        private $menu_notice_transient = 'softone_wc_integration_menu_notice_';
 
         /**
          * Item synchronisation service.
@@ -434,6 +448,7 @@ class Softone_Woocommerce_Integration_Admin {
 <h1><?php esc_html_e( 'Softone Integration', 'softone-woocommerce-integration' ); ?></h1>
 <?php $this->maybe_render_connection_notice(); ?>
 <?php $this->maybe_render_import_notice(); ?>
+<?php $this->maybe_render_menu_notice(); ?>
 <?php settings_errors( 'softone_wc_integration' ); ?>
 <form action="<?php echo esc_url( admin_url( 'options.php' ) ); ?>" method="post">
 <?php
@@ -472,6 +487,13 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
 <p class="description"><?php esc_html_e( 'Force a full item import and refresh category and menu assignments for every product.', 'softone-woocommerce-integration' ); ?></p>
 <?php submit_button( __( 'Re-sync Categories & Menus', 'softone-woocommerce-integration' ), 'secondary', 'softone_wc_integration_resync_taxonomies', false ); ?>
 </form>
+
+<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" style="margin-top: 1.5em;">
+<?php wp_nonce_field( $this->delete_main_menu_action ); ?>
+<input type="hidden" name="action" value="<?php echo esc_attr( $this->delete_main_menu_action ); ?>" />
+<p class="description"><?php esc_html_e( 'Permanently delete the WordPress navigation menu named "Main Menu". This cannot be undone.', 'softone-woocommerce-integration' ); ?></p>
+<?php submit_button( __( 'Delete Main Menu', 'softone-woocommerce-integration' ), 'delete', 'softone_wc_integration_delete_main_menu', false ); ?>
+</form>
 </div>
 <?php
 
@@ -508,12 +530,85 @@ submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'seco
         }
 
         /**
+         * Handle requests to delete the "Main Menu" navigation menu.
+         */
+        public function handle_delete_main_menu() {
+
+                if ( ! current_user_can( $this->capability ) ) {
+                        wp_die( esc_html__( 'You do not have permission to manage this plugin.', 'softone-woocommerce-integration' ) );
+                }
+
+                check_admin_referer( $this->delete_main_menu_action );
+
+                $menu_name = 'Main Menu';
+                $menu      = function_exists( 'wp_get_nav_menu_object' ) ? wp_get_nav_menu_object( $menu_name ) : null;
+
+                if ( ! $menu ) {
+                        $this->store_menu_notice(
+                                'error',
+                                sprintf(
+                                        /* translators: %s: menu name */
+                                        __( '[SO-ADM-008] Could not find a menu named %s.', 'softone-woocommerce-integration' ),
+                                        $menu_name
+                                )
+                        );
+                        wp_safe_redirect( $this->get_settings_page_url() );
+                        exit;
+                }
+
+                $result = function_exists( 'wp_delete_nav_menu' ) ? wp_delete_nav_menu( $menu->term_id ) : false;
+
+                if ( is_wp_error( $result ) ) {
+                        $this->store_menu_notice(
+                                'error',
+                                sprintf(
+                                        /* translators: 1: menu name, 2: error message */
+                                        __( '[SO-ADM-009] Failed to delete %1$s: %2$s', 'softone-woocommerce-integration' ),
+                                        $menu_name,
+                                        $result->get_error_message()
+                                )
+                        );
+                } elseif ( false === $result ) {
+                        $this->store_menu_notice(
+                                'error',
+                                sprintf(
+                                        /* translators: %s: menu name */
+                                        __( '[SO-ADM-010] Failed to delete %s due to an unexpected error.', 'softone-woocommerce-integration' ),
+                                        $menu_name
+                                )
+                        );
+                } else {
+                        $this->store_menu_notice(
+                                'success',
+                                sprintf(
+                                        /* translators: %s: menu name */
+                                        __( 'Successfully deleted the %s menu.', 'softone-woocommerce-integration' ),
+                                        $menu_name
+                                )
+                        );
+                }
+
+                wp_safe_redirect( $this->get_settings_page_url() );
+                exit;
+
+        }
+
+        /**
          * Retrieve the AJAX action name used for sync activity polling.
          *
          * @return string
          */
         public function get_sync_activity_action() {
                 return $this->sync_activity_action;
+        }
+
+        /**
+         * Retrieve the action name used to delete the Main Menu.
+         *
+         * @return string
+         */
+        public function get_delete_main_menu_action() {
+                return $this->delete_main_menu_action;
         }
 
         /**
@@ -2177,6 +2272,30 @@ public function handle_test_connection() {
         }
 
         /**
+         * Render a stored menu management notice when available.
+         */
+        private function maybe_render_menu_notice() {
+
+                $notice = get_transient( $this->get_menu_notice_key() );
+
+                if ( empty( $notice['message'] ) ) {
+                        return;
+                }
+
+                delete_transient( $this->get_menu_notice_key() );
+
+                $type    = isset( $notice['type'] ) && 'error' === $notice['type'] ? 'error' : 'success';
+                $classes = array( 'notice', 'notice-' . $type );
+
+                printf(
+                        '<div class="%1$s"><p>%2$s</p></div>',
+                        esc_attr( implode( ' ', $classes ) ),
+                        esc_html( $notice['message'] )
+                );
+
+        }
+
+        /**
          * Store an import notice for the current user.
          *
          * @param string $type    Notice type.
@@ -2196,6 +2315,25 @@ public function handle_test_connection() {
         }
 
         /**
+         * Store a menu management notice for the current user.
+         *
+         * @param string $type    Notice type.
+         * @param string $message Notice message.
+         */
+        private function store_menu_notice( $type, $message ) {
+
+                set_transient(
+                        $this->get_menu_notice_key(),
+                        array(
+                                'type'    => $type,
+                                'message' => $message,
+                        ),
+                        MINUTE_IN_SECONDS
+                );
+
+        }
+
+        /**
          * Generate the transient key for import notices for the current user.
          *
          * @return string
@@ -2205,6 +2343,19 @@ public function handle_test_connection() {
                 $user_id = get_current_user_id();
 
                 return $this->import_notice_transient . ( $user_id ? $user_id : 'guest' );
+
+        }
+
+        /**
+         * Generate the transient key for menu management notices for the current user.
+         *
+         * @return string
+         */
+        private function get_menu_notice_key() {
+
+                $user_id = get_current_user_id();
+
+                return $this->menu_notice_transient . ( $user_id ? $user_id : 'guest' );
 
         }
 
