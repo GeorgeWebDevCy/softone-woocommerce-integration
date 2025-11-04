@@ -735,6 +735,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             if ( '' !== $derived_colour ) {
                 $fallback_metadata['colour'] = $derived_colour;
             }
+698190406
 
             $description = $this->get_value(
                 $data,
