@@ -715,7 +715,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 }
             }
 
-            $name              = $this->get_value( $data, array( 'VARCHAR02'.'desc', 'description', 'code' ) );
+            $name              = $this->get_value( $data, array( 'desc', 'description', 'code' ) );
             $derived_colour    = '';
             $normalized_name   = '';
             $fallback_metadata = array();
