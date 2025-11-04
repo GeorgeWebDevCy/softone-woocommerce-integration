@@ -1390,79 +1390,130 @@ $display_time = __( 'Unknown time', 'softone-woocommerce-integration' );
         *     @type string $error    Error message when logs are unavailable.
         * }
         */
-       private function get_category_log_entries() {
+    private function get_category_log_entries() {
 
-               $result = array(
-                       'entries'   => array(),
-                       'files'     => array(),
-                       'directory' => '',
-                       'error'     => '',
-               );
+        $result = array(
+                'entries'   => array(),
+                'files'     => array(),
+                'directory' => '',
+                'error'     => '',
+        );
 
-               if ( ! defined( 'WC_LOG_DIR' ) ) {
-                       $result['error'] = __( 'WooCommerce logging is not available on this site.', 'softone-woocommerce-integration' );
-                       return $result;
-               }
+        if ( ! defined( 'WC_LOG_DIR' ) ) {
+                $result['error'] = __( 'WooCommerce logging directory is not available on this site.', 'softone-woocommerce-integration' );
+                return $result;
+        }
 
-               $log_directory          = (string) WC_LOG_DIR;
-               $result['directory'] = $log_directory;
+        $log_directory        = (string) WC_LOG_DIR;
+        $result['directory']  = $log_directory;
 
-               if ( ! is_dir( $log_directory ) || ! is_readable( $log_directory ) ) {
-                       $result['error'] = __( 'The WooCommerce log directory could not be accessed.', 'softone-woocommerce-integration' );
-                       return $result;
-               }
+        $files = $this->locate_category_log_files( $log_directory );
+        if ( empty( $files ) ) {
+                $result['files'] = array();
+                return $result;
+        }
 
-               $files = $this->locate_category_log_files( $log_directory );
+        $result['files'] = $files;
 
-               if ( empty( $files ) ) {
-                       return $result;
-               }
+        $entries       = array();
+        $order         = 0;
+        $limit         = (int) $this->category_log_limit;
+        $limit         = $limit > 0 ? $limit : 400;
 
-               $result['files'] = $files;
+        // Helper: iterate lines for plain or gz logs.
+        $read_lines = function( $path ) {
+                $lines = array();
+                if ( substr( $path, -3 ) === '.gz' ) {
+                        $h = @gzopen( $path, 'rb' );
+                        if ( ! $h ) {
+                                return $lines;
+                        }
+                        while ( false === gzeof( $h ) ) {
+                                $line = gzgets( $h );
+                                if ( false === $line ) {
+                                        break;
+                                }
+                                $lines[] = $line;
+                        }
+                        gzclose( $h );
+                        return $lines;
+                }
 
-               $entries = array();
-               $order   = 0;
+                $h = @fopen( $path, 'rb' );
+                if ( ! $h ) {
+                        return $lines;
+                }
+                while ( ! feof( $h ) ) {
+                        $line = fgets( $h );
+                        if ( false === $line ) {
+                                break;
+                        }
+                        $lines[] = $line;
+                }
+                fclose( $h );
+                return $lines;
+        };
 
-               foreach ( $files as $file_path ) {
-                       if ( ! is_readable( $file_path ) ) {
-                               continue;
-                       }
+        foreach ( $files as $file_path ) {
+                if ( count( $entries ) >= $limit ) {
+                        break;
+                }
 
-                       $lines = @file( $file_path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Avoid warnings when log files are not readable.
+                $lines = $read_lines( $file_path );
+                if ( empty( $lines ) ) {
+                        continue;
+                }
 
-                       if ( false === $lines ) {
-                               continue;
-                       }
+                // Read newest-looking lines first (logs usually append).
+                // Reversing makes us hit the limit faster with recent entries.
+                $lines = array_reverse( $lines );
 
-                       foreach ( $lines as $line ) {
-                               if ( false === strpos( (string) $line, 'SOFTONE_CAT_SYNC' ) ) {
-                                       continue;
-                               }
+                foreach ( $lines as $line ) {
+                        if ( count( $entries ) >= $limit ) {
+                                break;
+                        }
+                        $line = (string) $line;
+                        if ( '' === trim( $line ) ) {
+                                continue;
+                        }
 
-                               $order++;
-                               $entries[] = $this->parse_category_log_line( (string) $line, (string) $file_path, $order );
-                       }
-               }
+                        $order++;
+                        $entry = $this->parse_category_log_line( $line, (string) $file_path, $order );
 
-               if ( empty( $entries ) ) {
-                       return $result;
-               }
+                        // Optional: filter by our source to keep this page clean.
+                        if ( isset( $entry['source'] ) && $entry['source'] !== '' ) {
+                                // Only show SoftOne category sync log entries.
+                                // Woo usually writes with the "source" we pass in logger context.
+                                if ( 0 !== strcasecmp( $entry['source'], 'softone-category-sync' ) ) {
+                                        continue;
+                                }
+                        }
 
-               usort(
-                       $entries,
-                       function ( $a, $b ) {
-                               if ( $a['timestamp'] === $b['timestamp'] ) {
-                                       return $b['order'] <=> $a['order'];
-                               }
+                        $entries[] = $entry;
+                }
+        }
 
-                               return $b['timestamp'] <=> $a['timestamp'];
-                       }
-               );
+        if ( empty( $entries ) ) {
+                return $result;
+        }
 
-               $result['entries'] = array_slice( $entries, 0, $this->category_log_limit );
+        // Already reversed per-file; keep the global most-recent-first ordering by timestamp.
+        usort(
+                $entries,
+                function( $a, $b ) {
+                        $ta = isset( $a['timestamp'] ) ? (int) $a['timestamp'] : 0;
+                        $tb = isset( $b['timestamp'] ) ? (int) $b['timestamp'] : 0;
+                        if ( $ta === $tb ) {
+                                // fallback to order for stability (newer first).
+                                return ( ( $b['order'] ?? 0 ) <=> ( $a['order'] ?? 0 ) );
+                        }
+                        return ( $tb <=> $ta );
+                }
+        );
 
-               return $result;
-       }
+        $result['entries'] = $entries;
+        return $result;
+}
 
        /**
         * Determine the most relevant WooCommerce log files to scan for category sync entries.
@@ -1471,75 +1522,92 @@ $display_time = __( 'Unknown time', 'softone-woocommerce-integration' );
         *
         * @return string[] Array of absolute file paths ordered by most recent first.
         */
+    
        private function locate_category_log_files( $log_directory ) {
+        $log_directory = (string) $log_directory;
+        $files         = array();
+        $seen          = array();
 
-               $log_directory = (string) $log_directory;
-               $files         = array();
-               $seen          = array();
+        // Helper to join a path safely without WP helper reliance.
+        $join = function( $base, $path ) {
+                $base = (string) $base;
+                $path = (string) $path;
+                if ( '' === $base ) {
+                        return $path;
+                }
+                $sep = defined( 'DIRECTORY_SEPARATOR' ) ? DIRECTORY_SEPARATOR : '/';
+                return rtrim( $base, '/\\' ) . $sep . ltrim( $path, '/\\' );
+        };
 
-               if ( class_exists( 'WC_Log_Handler_File' ) && method_exists( 'WC_Log_Handler_File', 'get_log_files' ) ) {
-                       $log_files = WC_Log_Handler_File::get_log_files();
+        // First try WooCommerce API if available (these return basenames).
+        if ( class_exists( 'WC_Log_Handler_File' ) && method_exists( 'WC_Log_Handler_File', 'get_log_files' ) ) {
+                $log_files = WC_Log_Handler_File::get_log_files();
+                if ( is_array( $log_files ) ) {
+                        foreach ( $log_files as $log_file ) {
+                                $full_path = $join( $log_directory, (string) $log_file );
+                                if ( '' === $full_path || isset( $seen[ $full_path ] ) ) {
+                                        continue;
+                                }
+                                $files[]            = $full_path;
+                                $seen[ $full_path ] = true;
+                        }
+                }
+        }
 
-                       if ( is_array( $log_files ) ) {
-                               foreach ( $log_files as $log_file ) {
-                                       $full_path = $this->join_path( $log_directory, (string) $log_file );
+        // Also look for raw files on disk (compressed + uncompressed).
+        $globs = array(
+                '*.log',            // standard Woo logs
+                '*.log.gz',         // rotated/compressed logs
+        );
 
-                                       if ( '' === $full_path || isset( $seen[ $full_path ] ) ) {
-                                               continue;
-                                       }
+        foreach ( $globs as $pattern ) {
+                $matched = glob( $join( $log_directory, $pattern ) );
+                if ( is_array( $matched ) ) {
+                        foreach ( $matched as $match ) {
+                                $match = (string) $match;
+                                if ( '' === $match || isset( $seen[ $match ] ) ) {
+                                        continue;
+                                }
+                                $files[]            = $match;
+                                $seen[ $match ]     = true;
+                        }
+                }
+        }
 
-                                       $files[]             = $full_path;
-                                       $seen[ $full_path ] = true;
-                               }
-                       }
-               }
+        if ( empty( $files ) ) {
+                return array();
+        }
 
-               if ( empty( $files ) ) {
-                       $pattern = $this->join_path( $log_directory, '*.log' );
-                       if ( '' !== $pattern ) {
-                               $matched = glob( $pattern );
-                               if ( is_array( $matched ) ) {
-                                       foreach ( $matched as $match ) {
-                                               $match = (string) $match;
-                                               if ( '' === $match || isset( $seen[ $match ] ) ) {
-                                                       continue;
-                                               }
+        // Prefer category-sync logs first, but keep others as fallback.
+        $preferred = array();
+        $others    = array();
 
-                                               $files[]         = $match;
-                                               $seen[ $match ] = true;
-                                       }
-                               }
-                       }
-               }
+        foreach ( $files as $f ) {
+                $name = basename( (string) $f );
+                if ( false !== stripos( $name, 'softone-category-sync' ) || false !== stripos( $name, 'softone-category' ) ) {
+                        $preferred[] = $f;
+                } else {
+                        $others[] = $f;
+                }
+        }
 
-               if ( empty( $files ) ) {
-                       return array();
-               }
+        $ordered = array_merge( $preferred, $others );
 
-               usort(
-                       $files,
-                       function ( $a, $b ) {
-                               $a_time = @filemtime( (string) $a );
-                               $b_time = @filemtime( (string) $b );
+        // Sort newest first by filemtime.
+        usort(
+                $ordered,
+                function( $a, $b ) {
+                        $ta = @filemtime( $a ) ?: 0;
+                        $tb = @filemtime( $b ) ?: 0;
+                        if ( $ta === $tb ) {
+                                return strcmp( $b, $a );
+                        }
+                        return ( $tb <=> $ta );
+                }
+        );
 
-                               if ( false === $a_time ) {
-                                       $a_time = 0;
-                               }
-
-                               if ( false === $b_time ) {
-                                       $b_time = 0;
-                               }
-
-                               if ( $a_time === $b_time ) {
-                                       return strnatcasecmp( (string) $b, (string) $a );
-                               }
-
-                               return $b_time <=> $a_time;
-                       }
-               );
-
-               return array_slice( $files, 0, 10 );
-       }
+        return $ordered;
+}
 
        /**
         * Join path segments without relying on WordPress helper functions.
