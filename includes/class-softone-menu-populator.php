@@ -322,6 +322,111 @@ class Softone_Menu_Populator {
  *
  * @return array<int, array<int, WP_Term>> Grouped by parent term_id
  */
+
+        if ( null !== $this->category_terms ) {
+                return $this->category_terms;
+        }
+
+        if ( ! function_exists( 'taxonomy_exists' ) || ! taxonomy_exists( 'product_cat' ) ) {
+                $this->category_terms = false;
+                return $this->category_terms;
+        }
+
+        if ( ! function_exists( 'get_terms' ) ) {
+                $this->category_terms = array();
+                return $this->category_terms;
+        }
+
+        // Pull every category (even empty), ordered by name
+        $terms = get_terms(
+                array(
+                        'taxonomy'   => 'product_cat',
+                        'hide_empty' => false,
+                        'orderby'    => 'name',
+                        'order'      => 'ASC',
+                )
+        );
+
+        if ( $this->is_wp_error( $terms ) ) {
+                $this->category_terms = array();
+                return $this->category_terms;
+        }
+
+        if ( ! is_array( $terms ) ) {
+                $this->category_terms = array();
+                return $this->category_terms;
+        }
+
+        // Figure out the default product category (usually "Uncategorized")
+        $default_cat_id = 0;
+        if ( function_exists( 'get_option' ) ) {
+                $default_cat_id = (int) get_option( 'default_product_cat', 0 );
+        }
+
+        $removed_ids = array();
+
+        // First pass: mark "Uncategorized" for removal by ID or by slug/name as a fallback.
+        foreach ( $terms as $t ) {
+                $tid  = isset( $t->term_id ) ? (int) $t->term_id : 0;
+                $slug = isset( $t->slug ) ? (string) $t->slug : '';
+                $name = isset( $t->name ) ? (string) $t->name : '';
+
+                $is_default_id = ( $default_cat_id > 0 && $tid === $default_cat_id );
+
+                $is_uncat_slug = false;
+                if ( '' !== $slug && function_exists( 'sanitize_title' ) ) {
+                        $is_uncat_slug = ( sanitize_title( $slug ) === 'uncategorized' );
+                } elseif ( '' !== $name && function_exists( 'sanitize_title' ) ) {
+                        $is_uncat_slug = ( sanitize_title( $name ) === 'uncategorized' );
+                }
+
+                if ( $is_default_id || $is_uncat_slug ) {
+                        $removed_ids[ $tid ] = true;
+                }
+        }
+
+        // Second pass: build grouped list, skipping removed IDs.
+        // If a term's parent is removed (i.e., Uncategorized), lift it to top-level (parent 0).
+        $grouped = array();
+
+        foreach ( $terms as $t ) {
+                $tid = isset( $t->term_id ) ? (int) $t->term_id : 0;
+                if ( 0 === $tid ) {
+                        continue;
+                }
+
+                if ( isset( $removed_ids[ $tid ] ) ) {
+                        // Skip "Uncategorized" itself
+                        continue;
+                }
+
+                $parent_id = isset( $t->parent ) ? (int) $t->parent : 0;
+
+                if ( $parent_id > 0 && isset( $removed_ids[ $parent_id ] ) ) {
+                        // Re-parent children of "Uncategorized" to top-level
+                        $parent_id = 0;
+                        // Also reflect this in the term object we store, so downstream code reads correctly.
+                        $t->parent = 0;
+                }
+
+                if ( ! isset( $grouped[ $parent_id ] ) ) {
+                        $grouped[ $parent_id ] = array();
+                }
+
+                $grouped[ $parent_id ][] = $t;
+        }
+
+        $this->category_terms = $grouped;
+        return $this->category_terms;
+}
+/**
+ * Fetch and group product categories for building the menu,
+ * excluding the WooCommerce default "Uncategorized" category.
+ *
+ * Any children of "Uncategorized" are re-parented to top level.
+ *
+ * @return array<int, array<int, WP_Term>> Grouped by parent term_id
+ */
 function get_category_terms() {
         if ( null !== $this->category_terms ) {
                 return $this->category_terms;
