@@ -1244,310 +1244,165 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             return $normalized_existing_ids === $normalized_target_ids;
         }
 
-        /**
-         * Prepare a list of category IDs from the SoftOne data.
-         *
-         * @param array $data Normalised data.
-         *
-         * @return int[]
-         */
-        protected function prepare_category_ids( array $data ) {
-            $categories = array();
+  /**
+ * Prepare a list of category IDs from the SoftOne data.
+ *
+ * @param array $data Normalised data.
+ * @return array<int> Term IDs in parent→child order (top, sub, sub-sub) (deduped).
+ */
+protected function prepare_category_ids( array $data ) {
+    $categories = array();
 
-            $category_name    = $this->get_value(
-                $data,
-                array(
-                    'commecategory_name',
-                    'commercategory_name',
-                    'commercategory',
-                    'category_name',
-                    'Category Name',
-                    'Category',
-                )
-            );
-            $subcategory_name = $this->get_value(
-                $data,
-                array(
-                    'submecategory_name',
-                    'subcategory_name',
-                    'subcategory',
-                    'Subcategory Name',
-                    'Subcategory',
-                )
-            );
+    $category_name    = $this->get_value(
+        $data,
+        array(
+            'commecategory_name',
+            'commercategory_name',
+            'commercategory',
+            'category_name',
+            'Category Name',
+            'Category',
+        )
+    );
+    $subcategory_name = $this->get_value(
+        $data,
+        array(
+            'submecategory_name',
+            'subcategory_name',
+            'subcategory',
+            'Subcategory Name',
+            'Subcategory',
+        )
+    );
+    $subsubcategory_name = $this->get_value(
+        $data,
+        array(
+            'subsubcategoy_name',
+            'subsubcategory_name',
+            'subsubcategory',
+            'sub_subcategory_name',
+            'sub_subcategory',
+        )
+    );
 
-            $subsubcategory_name = $this->get_value(
-                $data,
-                array(
-                    'subsubcategoy_name',
-                    'subsubcategory_name',
-                    'subsubcategory',
-                    'sub_subcategory_name',
-                    'sub_subcategory',
-                )
-            );
+    $category_parent = 0;
 
-            $category_parent = 0;
+    $category_slug        = function_exists( 'sanitize_title' ) ? sanitize_title( $category_name ) : '';
+    $subcategory_slug     = function_exists( 'sanitize_title' ) ? sanitize_title( $subcategory_name ) : '';
+    $subsubcategory_slug  = function_exists( 'sanitize_title' ) ? sanitize_title( $subsubcategory_name ) : '';
 
-            $category_slug        = function_exists( 'sanitize_title' ) ? sanitize_title( $category_name ) : '';
-            $subcategory_slug     = function_exists( 'sanitize_title' ) ? sanitize_title( $subcategory_name ) : '';
-            $subsubcategory_slug  = function_exists( 'sanitize_title' ) ? sanitize_title( $subsubcategory_name ) : '';
+    $category_uncategorized       = $this->evaluate_uncategorized_term( $category_name );
+    $subcategory_uncategorized    = $this->evaluate_uncategorized_term( $subcategory_name );
+    $subsubcategory_uncategorized = $this->evaluate_uncategorized_term( $subsubcategory_name );
 
-            $category_uncategorized       = $this->evaluate_uncategorized_term( $category_name );
-            $subcategory_uncategorized    = $this->evaluate_uncategorized_term( $subcategory_name );
-            $subsubcategory_uncategorized = $this->evaluate_uncategorized_term( $subsubcategory_name );
+    $category_is_uncategorized       = $category_uncategorized['is_uncategorized'];
+    $subcategory_is_uncategorized    = $subcategory_uncategorized['is_uncategorized'];
+    $subsubcategory_is_uncategorized = $subsubcategory_uncategorized['is_uncategorized'];
 
-            $category_is_uncategorized       = $category_uncategorized['is_uncategorized'];
-            $subcategory_is_uncategorized    = $subcategory_uncategorized['is_uncategorized'];
-            $subsubcategory_is_uncategorized = $subsubcategory_uncategorized['is_uncategorized'];
+    $item_log_context = array();
+    $sku = isset( $data['sku'] ) ? (string) $data['sku'] : '';
+    $mtrl = isset( $data['mtrl'] ) ? (string) $data['mtrl'] : '';
+    if ( '' !== $sku ) {
+        $item_log_context['sku'] = $sku;
+    }
+    if ( '' !== $mtrl ) {
+        $item_log_context['mtrl'] = $mtrl;
+    }
 
-            $item_log_context = $this->get_item_log_context( $data );
+    // Top-level
+    $category_context = array(
+        'raw_name'       => $category_name,
+        'sanitized_slug' => $category_slug,
+        'term_id'        => 0,
+        'parent_id'      => 0,
+    );
+    $category_log_context = $this->extend_log_context_with_item( $category_context, $item_log_context );
 
-            $category_context = array(
-                'raw_name'       => $category_name,
-                'sanitized_slug' => $category_slug,
-                'term_id'        => 0,
-                'parent_id'      => 0,
-            );
-
-            $category_log_context = $this->extend_log_context_with_item( $category_context, $item_log_context );
-
-            if (
-                '' !== $category_name
-                && ! $this->is_numeric_term_name( $category_name )
-                && ! $category_is_uncategorized
-            ) {
-                $this->log(
-                    'debug',
-                    'SOFTONE_CAT_SYNC_002 Ensuring top-level category.',
-                    $category_log_context
-                );
-                $category_parent = $this->ensure_term( $category_name, 'product_cat' );
-                $this->log(
-                    'debug',
-                    'SOFTONE_CAT_SYNC_002 Result for top-level category ensure.',
-                    $this->extend_log_context_with_item(
-                        array_merge(
-                            $category_context,
-                            array(
-                                'term_id' => $category_parent,
-                            )
-                        ),
-                        $item_log_context
-                    )
-                );
-                if ( $category_parent ) {
-                    $categories[] = $category_parent;
-                }
-            } else {
-                $reason = 'empty_name';
-
-                if ( '' !== $category_name && $this->is_numeric_term_name( $category_name ) ) {
-                    $reason = 'numeric_name';
-                } elseif ( '' !== $category_name && $category_is_uncategorized ) {
-                    $reason = 'uncategorized';
-                }
-
-                $skip_context = array_merge(
-                    $category_context,
-                    array(
-                        'reason'    => $reason,
-                        'term_role' => 'category',
-                    ),
-                    $this->build_uncategorized_log_fields( $category_uncategorized )
-                );
-
-                $this->log(
-                    'debug',
-                    'SOFTONE_CAT_SYNC_001 Skipping top-level category ensure.',
-                    $this->extend_log_context_with_item(
-                        $skip_context,
-                        $item_log_context
-                    )
-                );
-            }
-
-            $subcategory_context = array(
-                'raw_name'       => $subcategory_name,
-                'sanitized_slug' => $subcategory_slug,
-                'term_id'        => 0,
-                'parent_id'      => $category_parent,
-            );
-
-            $subcategory_log_context = $this->extend_log_context_with_item( $subcategory_context, $item_log_context );
-
-            if (
-                '' !== $subcategory_name
-                && ! $this->is_numeric_term_name( $subcategory_name )
-                && ! $subcategory_is_uncategorized
-            ) {
-                $this->log(
-                    'debug',
-                    'SOFTONE_CAT_SYNC_005 Ensuring subcategory.',
-                    $subcategory_log_context
-                );
-                $subcategory_id = $this->ensure_term( $subcategory_name, 'product_cat', $category_parent );
-                $this->log(
-                    'debug',
-                    'SOFTONE_CAT_SYNC_005 Result for subcategory ensure.',
-                    $this->extend_log_context_with_item(
-                        array_merge(
-                            $subcategory_context,
-                            array(
-                                'term_id' => $subcategory_id,
-                            )
-                        ),
-                        $item_log_context
-                    )
-                );
-                if ( $subcategory_id ) {
-                    $categories[] = $subcategory_id;
-                }
-            } else {
-                $reason = 'empty_name';
-
-                if ( '' !== $subcategory_name && $this->is_numeric_term_name( $subcategory_name ) ) {
-                    $reason = 'numeric_name';
-                } elseif ( '' !== $subcategory_name && $subcategory_is_uncategorized ) {
-                    $reason = 'uncategorized';
-                }
-
-                $skip_context = array_merge(
-                    $subcategory_context,
-                    array(
-                        'reason'    => $reason,
-                        'term_role' => 'subcategory',
-                    ),
-                    $this->build_uncategorized_log_fields( $subcategory_uncategorized )
-                );
-
-                $this->log(
-                    'debug',
-                    'SOFTONE_CAT_SYNC_004 Skipping subcategory ensure.',
-                    $this->extend_log_context_with_item(
-                        $skip_context,
-                        $item_log_context
-                    )
-                );
-            }
-
-            $subsubcategory_parent = $category_parent;
-
-            if ( isset( $subcategory_id ) && $subcategory_id ) {
-                $subsubcategory_parent = $subcategory_id;
-            }
-
-            $subsubcategory_context = array(
-                'raw_name'       => $subsubcategory_name,
-                'sanitized_slug' => $subsubcategory_slug,
-                'term_id'        => 0,
-                'parent_id'      => $subsubcategory_parent,
-            );
-
-            $subsubcategory_log_context = $this->extend_log_context_with_item( $subsubcategory_context, $item_log_context );
-
-            if (
-                '' !== $subsubcategory_name
-                && ! $this->is_numeric_term_name( $subsubcategory_name )
-                && ! $subsubcategory_is_uncategorized
-            ) {
-                $this->log(
-                    'debug',
-                    'SOFTONE_CAT_SYNC_011 Ensuring sub-subcategory.',
-                    $subsubcategory_log_context
-                );
-                $subsubcategory_id = $this->ensure_term( $subsubcategory_name, 'product_cat', $subsubcategory_parent );
-                $this->log(
-                    'debug',
-                    'SOFTONE_CAT_SYNC_011 Result for sub-subcategory ensure.',
-                    $this->extend_log_context_with_item(
-                        array_merge(
-                            $subsubcategory_context,
-                            array(
-                                'term_id' => $subsubcategory_id,
-                            )
-                        ),
-                        $item_log_context
-                    )
-                );
-                if ( $subsubcategory_id ) {
-                    $categories[] = $subsubcategory_id;
-                }
-            } else {
-                $reason = 'empty_name';
-
-                if ( '' !== $subsubcategory_name && $this->is_numeric_term_name( $subsubcategory_name ) ) {
-                    $reason = 'numeric_name';
-                } elseif ( '' !== $subsubcategory_name && $subsubcategory_is_uncategorized ) {
-                    $reason = 'uncategorized';
-                }
-
-                $skip_context = array_merge(
-                    $subsubcategory_context,
-                    array(
-                        'reason'    => $reason,
-                        'term_role' => 'sub_subcategory',
-                    ),
-                    $this->build_uncategorized_log_fields( $subsubcategory_uncategorized )
-                );
-
-                $this->log(
-                    'debug',
-                    'SOFTONE_CAT_SYNC_012 Skipping sub-subcategory ensure.',
-                    $this->extend_log_context_with_item(
-                        $skip_context,
-                        $item_log_context
-                    )
-                );
-            }
-
-            if ( $category_is_uncategorized ) {
-                $this->log(
-                    'debug',
-                    'SOFTONE_CAT_SYNC_010 Term matched default uncategorized category.',
-                    $this->extend_log_context_with_item(
-                        array_merge(
-                            $category_context,
-                            array( 'term_role' => 'category' ),
-                            $this->build_uncategorized_log_fields( $category_uncategorized )
-                        ),
-                        $item_log_context
-                    )
-                );
-            }
-
-            if ( $subcategory_is_uncategorized ) {
-                $this->log(
-                    'debug',
-                    'SOFTONE_CAT_SYNC_010 Term matched default uncategorized category.',
-                    $this->extend_log_context_with_item(
-                        array_merge(
-                            $subcategory_context,
-                            array( 'term_role' => 'subcategory' ),
-                            $this->build_uncategorized_log_fields( $subcategory_uncategorized )
-                        ),
-                        $item_log_context
-                    )
-                );
-            }
-
-            if ( $subsubcategory_is_uncategorized ) {
-                $this->log(
-                    'debug',
-                    'SOFTONE_CAT_SYNC_010 Term matched default uncategorized category.',
-                    $this->extend_log_context_with_item(
-                        array_merge(
-                            $subsubcategory_context,
-                            array( 'term_role' => 'sub_subcategory' ),
-                            $this->build_uncategorized_log_fields( $subsubcategory_uncategorized )
-                        ),
-                        $item_log_context
-                    )
-                );
-            }
-
-            return array_values( array_unique( array_filter( $categories ) ) );
+    if ( '' !== $category_name && ! $this->is_numeric_term_name( $category_name ) ) {
+        $this->log( 'debug', 'SOFTONE_CAT_SYNC_002 Ensuring top-level category.', $category_log_context );
+        $category_parent = $this->ensure_term( $category_name, 'product_cat' );
+        $this->log(
+            'debug',
+            'SOFTONE_CAT_SYNC_002 Result for top-level category ensure.',
+            $this->extend_log_context_with_item(
+                array_merge( $category_context, array( 'term_id' => $category_parent ) ),
+                $item_log_context
+            )
+        );
+        if ( $category_parent ) {
+            $categories[] = $category_parent;
         }
+    } else {
+        $reason = ( '' === $category_name ) ? 'empty_name' : ( $this->is_numeric_term_name( $category_name ) ? 'numeric_name' : 'uncategorized' );
+        $skip_context = array_merge( $this->build_uncategorized_log_fields( $category_uncategorized ), array( 'reason' => $reason ) );
+        $this->log( 'debug', 'SOFTONE_CAT_SYNC_012 Skipping top-level category ensure.', $this->extend_log_context_with_item( $skip_context, $item_log_context ) );
+    }
+
+    // Subcategory
+    $subcategory_parent = $category_parent;
+    $subcategory_context = array(
+        'raw_name'       => $subcategory_name,
+        'sanitized_slug' => $subcategory_slug,
+        'term_id'        => 0,
+        'parent_id'      => $subcategory_parent,
+    );
+    $subcategory_log_context = $this->extend_log_context_with_item( $subcategory_context, $item_log_context );
+
+    if ( '' !== $subcategory_name && ! $this->is_numeric_term_name( $subcategory_name ) ) {
+        $this->log( 'debug', 'SOFTONE_CAT_SYNC_002 Ensuring subcategory.', $subcategory_log_context );
+        $subcategory_parent = $this->ensure_term( $subcategory_name, 'product_cat', $subcategory_parent );
+        $this->log(
+            'debug',
+            'SOFTONE_CAT_SYNC_002 Result for subcategory ensure.',
+            $this->extend_log_context_with_item(
+                array_merge( $subcategory_context, array( 'term_id' => $subcategory_parent ) ),
+                $item_log_context
+            )
+        );
+        if ( $subcategory_parent ) {
+            $categories[] = $subcategory_parent;
+        }
+    } else {
+        $reason = ( '' === $subcategory_name ) ? 'empty_name' : ( $this->is_numeric_term_name( $subcategory_name ) ? 'numeric_name' : 'uncategorized' );
+        $skip_context = array_merge( $this->build_uncategorized_log_fields( $subcategory_uncategorized ), array( 'reason' => $reason ) );
+        $this->log( 'debug', 'SOFTONE_CAT_SYNC_012 Skipping subcategory ensure.', $this->extend_log_context_with_item( $skip_context, $item_log_context ) );
+    }
+
+    // Sub-subcategory
+    $subsubcategory_parent = $subcategory_parent ?: $category_parent;
+    $subsubcategory_context = array(
+        'raw_name'       => $subsubcategory_name,
+        'sanitized_slug' => $subsubcategory_slug,
+        'term_id'        => 0,
+        'parent_id'      => $subsubcategory_parent,
+    );
+    $subsubcategory_log_context = $this->extend_log_context_with_item( $subsubcategory_context, $item_log_context );
+
+    if ( '' !== $subsubcategory_name && ! $this->is_numeric_term_name( $subsubcategory_name ) ) {
+        $this->log( 'debug', 'SOFTONE_CAT_SYNC_002 Ensuring sub-subcategory.', $subsubcategory_log_context );
+        $subsubcategory_parent = $this->ensure_term( $subsubcategory_name, 'product_cat', $subsubcategory_parent );
+        $this->log(
+            'debug',
+            'SOFTONE_CAT_SYNC_002 Result for sub-subcategory ensure.',
+            $this->extend_log_context_with_item(
+                array_merge( $subsubcategory_context, array( 'term_id' => $subsubcategory_parent ) ),
+                $item_log_context
+            )
+        );
+        if ( $subsubcategory_parent ) {
+            $categories[] = $subsubcategory_parent;
+        }
+    } else {
+        $reason = ( '' === $subsubcategory_name ) ? 'empty_name' : ( $this->is_numeric_term_name( $subsubcategory_name ) ? 'numeric_name' : 'uncategorized' );
+        $skip_context = array_merge( $this->build_uncategorized_log_fields( $subsubcategory_uncategorized ), array( 'reason' => $reason ) );
+        $this->log( 'debug', 'SOFTONE_CAT_SYNC_012 Skipping sub-subcategory ensure.', $this->extend_log_context_with_item( $skip_context, $item_log_context ) );
+    }
+
+    // Dedupe while preserving order
+    $categories = array_values( array_unique( array_map( 'intval', array_filter( $categories ) ) ) );
+    return $categories;
+}
+
 
         /**
          * Assign images from the media library to a product based on its SKU.
