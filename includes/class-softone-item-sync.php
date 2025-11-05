@@ -1731,70 +1731,83 @@ protected function prepare_category_ids( array $data ) {
             wp_set_object_terms( $product_id, array( (int) $term_id ), 'product_brand' );
         }
 
-        /**
-         * Prepare attribute assignments for a product.
-         *
-         * @param array       $data                Normalised data.
-         * @param WC_Product  $product             Product instance.
-         * @param array       $fallback_attributes Optional attribute values keyed by slug.
-         *
-         * @return array{
-         *     attributes: array<string, WC_Product_Attribute>,
-         *     terms: array<string, array<int>>,
-         *     values: array<string, string>,
-         *     clear: array<string>
-         * }
-         */
-        protected function prepare_attribute_assignments( array $data, $product, array $fallback_attributes = array() ) {
-    if ( ! function_exists( 'wc_attribute_taxonomy_name' ) || ! class_exists( 'WC_Product_Attribute' ) ) {
-        return array(
-            'attributes' => $product->get_attributes(),
-            'terms'      => array(),
-            'clear'      => array(),
-        );
-    }
-
+/**
+ * Build attribute assignments for the product.
+ *
+ * @param array       $data
+ * @param WC_Product  $product
+ * @param array       $fallback_attributes
+ *
+ * @return array{attributes: array<int,WC_Product_Attribute>, terms: array, values: array, clear: array}
+ */
+protected function prepare_attribute_assignments( array $data, $product, array $fallback_attributes = array() ) {
+    // Initialize the return shape using what the product currently has.
     $assignments = array(
-        'attributes' => $product->get_attributes(),
+        'attributes' => is_array( $product->get_attributes() ) ? $product->get_attributes() : array(),
         'terms'      => array(),
         'values'     => array(),
         'clear'      => array(),
     );
 
-    // ------------------------------------------------------------
-    // (Your existing logic that ensures taxonomies/terms, e.g. color/size/brand)
-    // This usually:
-    //  - derives $slug / $taxonomy via wc_attribute_taxonomy_name()
-    //  - $attribute_id = $this->ensure_attribute_taxonomy(...)
-    //  - $term_id = $this->ensure_attribute_term($taxonomy, $config['value'])
-    //  - creates/updates a WC_Product_Attribute for taxonomy attributes
-    //  - populates:
-    //      $assignments['attributes'][ $taxonomy ] = $attribute;
-    //      $assignments['terms'][ $taxonomy ]      = array( (int) $term_id );
-    //      $assignments['values'][ $taxonomy ]     = $config['value'];
-    // Keep all of that intact.
-    // ------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // Keep your existing attribute-building logic here (brand/color/size etc.)
+    // ---------------------------------------------------------------------
 
-    /**
-     * Add hidden custom attribute for Softone MTRL.
-     * - Not taxonomy-based (custom)
-     * - Not visible on the product page
-     * - Not used for variations
-     */
-    $mtrl_value = trim( (string) $this->get_value( $data, array( 'mtrl', 'MTRL' ) ) );
-    if ( '' !== $mtrl_value ) {
-        $attr = new WC_Product_Attribute();
-        $attr->set_id( 0 ); // 0 => custom (non-taxonomy) attribute
-        $attr->set_name( 'softone_mtrl' ); // internal name (kept out of front-end)
-        $attr->set_options( array( $mtrl_value ) );
-        $attr->set_visible( false );       // ensure not shown on front-end
-        $attr->set_variation( false );
+    // ---------------------------
+    // Add hidden MTRL attribute
+    // ---------------------------
+    // Try to read MTRL from payload using common keys.
+    $mtrl_value = '';
+    if ( method_exists( $this, 'get_value' ) ) {
+        $mtrl_value = (string) $this->get_value( $data, array( 'mtrl', 'MTRL', 'mtrl_code', 'MTRL_CODE' ) );
+    } elseif ( isset( $data['mtrl'] ) ) {
+        $mtrl_value = (string) $data['mtrl'];
+    } elseif ( isset( $data['MTRL'] ) ) {
+        $mtrl_value = (string) $data['MTRL'];
+    } elseif ( isset( $data['MTRL_CODE'] ) ) {
+        $mtrl_value = (string) $data['MTRL_CODE'];
+    }
 
-        // Merge with existing attributes array
-        $attributes = $assignments['attributes'];
-        // Use a string key so it persists nicely alongside taxonomy keys
-        $attributes['softone_mtrl'] = $attr;
-        $assignments['attributes']   = $attributes;
+    $mtrl_value = trim( $mtrl_value );
+
+    if ( $mtrl_value !== '' ) {
+        // Prefer storing as a hidden custom attribute when possible.
+        if ( class_exists( 'WC_Product_Attribute' ) ) {
+            try {
+                $attr = new WC_Product_Attribute();
+                // id=0 => custom (non-taxonomy) attribute
+                $attr->set_id( 0 );
+                // For custom attributes, name is a plain string (no 'pa_' prefix).
+                $attr->set_name( 'softone_mtrl' );
+                // For custom attributes, set_options receives an array of strings.
+                $attr->set_options( array( $mtrl_value ) );
+                // Keep it hidden on the front-end and not for variations.
+                $attr->set_visible( false );
+                $attr->set_variation( false );
+
+                // IMPORTANT: Append as a numeric index (no string keys).
+                $attributes = is_array( $assignments['attributes'] ) ? $assignments['attributes'] : array();
+                $attributes[] = $attr;
+                $assignments['attributes'] = $attributes;
+
+            } catch ( \Throwable $e ) {
+                // Fallback: store as meta if attribute creation fails for any reason.
+                if ( function_exists( 'update_post_meta' ) && method_exists( $product, 'get_id' ) ) {
+                    $pid = (int) $product->get_id();
+                    if ( $pid > 0 ) {
+                        update_post_meta( $pid, '_softone_mtrl', $mtrl_value );
+                    }
+                }
+            }
+        } else {
+            // Very old WooCommerce: just store as meta.
+            if ( function_exists( 'update_post_meta' ) && method_exists( $product, 'get_id' ) ) {
+                $pid = (int) $product->get_id();
+                if ( $pid > 0 ) {
+                    update_post_meta( $pid, '_softone_mtrl', $mtrl_value );
+                }
+            }
+        }
     }
 
     return $assignments;
