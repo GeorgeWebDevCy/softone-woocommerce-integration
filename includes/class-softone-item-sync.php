@@ -531,7 +531,6 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             // ---------- PRODUCT NAME ----------
-            // Prefer 'desc' or 'description' from Softone, fallback to 'code' if needed.
             $name              = $this->get_value( $data, array( 'desc', 'description', 'code' ) );
             $derived_colour    = '';
             $normalized_name   = '';
@@ -1094,164 +1093,164 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         }
 
         /**
- * Build attribute assignments for the product.
- *
- * - Adds hidden custom attributes:
- *     - softone_mtrl (from mtrl / MTRL / mtrl_code / MTRL_CODE)
- *     - related_item_mtrl (from related_item_mtrl / related_mtrl / rel_mtrl)
- * - Ensures taxonomy attributes for Colour, Size, Brand (visible on frontend).
- *
- * @param array       $data               Normalised Softone row.
- * @param WC_Product  $product            Product instance.
- * @param array       $fallback_attributes e.g. ['colour' => 'Red'].
- *
- * @return array{attributes: array<int,WC_Product_Attribute>, terms: array, values: array, clear: array}
- */
-protected function prepare_attribute_assignments( array $data, $product, array $fallback_attributes = array() ) {
-    // We rebuild attributes fresh each time to avoid stale data.
-    $assignments = array(
-        'attributes' => array(),
-        'terms'      => array(),
-        'values'     => array(),
-        'clear'      => array(),
-    );
+         * Build attribute assignments for the product.
+         *
+         * - Adds hidden custom attributes:
+         *     - softone_mtrl (from mtrl / MTRL / mtrl_code / MTRL_CODE)
+         *     - related_item_mtrl (from related_item_mtrl / related_mtrl / rel_mtrl)
+         * - Ensures taxonomy attributes for Colour, Size, Brand (visible on frontend).
+         *
+         * @param array       $data               Normalised Softone row.
+         * @param WC_Product  $product            Product instance.
+         * @param array       $fallback_attributes e.g. ['colour' => 'Red'].
+         *
+         * @return array{attributes: array<int,WC_Product_Attribute>, terms: array, values: array, clear: array}
+         */
+        protected function prepare_attribute_assignments( array $data, $product, array $fallback_attributes = array() ) {
+            // We rebuild attributes fresh each time to avoid stale data.
+            $assignments = array(
+                'attributes' => array(),
+                'terms'      => array(),
+                'values'     => array(),
+                'clear'      => array(),
+            );
 
-    // ---------------------------------------------------------------------
-    // Hidden custom attribute: softone_mtrl
-    // ---------------------------------------------------------------------
-    $mtrl_value = '';
-    if ( method_exists( $this, 'get_value' ) ) {
-        $mtrl_value = (string) $this->get_value( $data, array( 'mtrl', 'MTRL', 'mtrl_code', 'MTRL_CODE' ) );
-    } elseif ( isset( $data['mtrl'] ) ) {
-        $mtrl_value = (string) $data['mtrl'];
-    } elseif ( isset( $data['MTRL'] ) ) {
-        $mtrl_value = (string) $data['MTRL'];
-    } elseif ( isset( $data['MTRL_CODE'] ) ) {
-        $mtrl_value = (string) $data['MTRL_CODE'];
-    }
-    $mtrl_value = trim( $mtrl_value );
+            // ---------------------------------------------------------------------
+            // Hidden custom attribute: softone_mtrl
+            // ---------------------------------------------------------------------
+            $mtrl_value = '';
+            if ( method_exists( $this, 'get_value' ) ) {
+                $mtrl_value = (string) $this->get_value( $data, array( 'mtrl', 'MTRL', 'mtrl_code', 'MTRL_CODE' ) );
+            } elseif ( isset( $data['mtrl'] ) ) {
+                $mtrl_value = (string) $data['mtrl'];
+            } elseif ( isset( $data['MTRL'] ) ) {
+                $mtrl_value = (string) $data['MTRL'];
+            } elseif ( isset( $data['MTRL_CODE'] ) ) {
+                $mtrl_value = (string) $data['MTRL_CODE'];
+            }
+            $mtrl_value = trim( $mtrl_value );
 
-    if ( $mtrl_value !== '' && class_exists( 'WC_Product_Attribute' ) ) {
-        try {
-            $attr = new WC_Product_Attribute();
-            $attr->set_id( 0 );                  // custom (non-taxonomy)
-            $attr->set_name( 'softone_mtrl' );   // plain string, no 'pa_' prefix
-            $attr->set_options( array( $mtrl_value ) );
-            $attr->set_visible( false );         // hidden on frontend
-            $attr->set_variation( false );
-            $assignments['attributes'][] = $attr;
-        } catch ( \Throwable $e ) {
-            if ( function_exists( 'update_post_meta' ) && method_exists( $product, 'get_id' ) ) {
-                $pid = (int) $product->get_id();
-                if ( $pid > 0 ) {
-                    update_post_meta( $pid, '_softone_mtrl', $mtrl_value );
+            if ( $mtrl_value !== '' && class_exists( 'WC_Product_Attribute' ) ) {
+                try {
+                    $attr = new WC_Product_Attribute();
+                    $attr->set_id( 0 );                  // custom (non-taxonomy)
+                    $attr->set_name( 'softone_mtrl' );   // plain string, no 'pa_' prefix
+                    $attr->set_options( array( $mtrl_value ) );
+                    $attr->set_visible( false );         // hidden on frontend
+                    $attr->set_variation( false );
+                    $assignments['attributes'][] = $attr;
+                } catch ( \Throwable $e ) {
+                    if ( function_exists( 'update_post_meta' ) && method_exists( $product, 'get_id' ) ) {
+                        $pid = (int) $product->get_id();
+                        if ( $pid > 0 ) {
+                            // Align meta fallback with constant.
+                            update_post_meta( $pid, self::META_MTRL, $mtrl_value );
+                        }
+                    }
                 }
             }
-        }
-    }
 
-    // ---------------------------------------------------------------------
-    // Hidden custom attribute: related_item_mtrl
-    // ---------------------------------------------------------------------
-    $related_mtrl = '';
-    if ( method_exists( $this, 'get_value' ) ) {
-        $related_mtrl = (string) $this->get_value( $data, array( 'related_item_mtrl', 'related_mtrl', 'rel_mtrl' ) );
-    } else {
-        if ( isset( $data['related_item_mtrl'] ) ) { $related_mtrl = (string) $data['related_item_mtrl']; }
-        elseif ( isset( $data['related_mtrl'] ) )  { $related_mtrl = (string) $data['related_mtrl']; }
-        elseif ( isset( $data['rel_mtrl'] ) )      { $related_mtrl = (string) $data['rel_mtrl']; }
-    }
-    $related_mtrl = trim( $related_mtrl );
+            // ---------------------------------------------------------------------
+            // Hidden custom attribute: related_item_mtrl
+            // ---------------------------------------------------------------------
+            $related_mtrl = '';
+            if ( method_exists( $this, 'get_value' ) ) {
+                $related_mtrl = (string) $this->get_value( $data, array( 'related_item_mtrl', 'related_mtrl', 'rel_mtrl' ) );
+            } else {
+                if ( isset( $data['related_item_mtrl'] ) ) { $related_mtrl = (string) $data['related_item_mtrl']; }
+                elseif ( isset( $data['related_mtrl'] ) )  { $related_mtrl = (string) $data['related_mtrl']; }
+                elseif ( isset( $data['rel_mtrl'] ) )      { $related_mtrl = (string) $data['rel_mtrl']; }
+            }
+            $related_mtrl = trim( $related_mtrl );
 
-    if ( $related_mtrl !== '' && class_exists( 'WC_Product_Attribute' ) ) {
-        try {
-            $attr = new WC_Product_Attribute();
-            $attr->set_id( 0 );                       // custom (non-taxonomy)
-            $attr->set_name( 'related_item_mtrl' );   // plain string, no 'pa_' prefix
-            $attr->set_options( array( $related_mtrl ) );
-            $attr->set_visible( false );              // hidden on frontend
-            $attr->set_variation( false );
-            $assignments['attributes'][] = $attr;
-        } catch ( \Throwable $e ) {
-            if ( function_exists( 'update_post_meta' ) && method_exists( $product, 'get_id' ) ) {
-                $pid = (int) $product->get_id();
-                if ( $pid > 0 ) {
-                    update_post_meta( $pid, '_softone_related_item_mtrl', $related_mtrl );
+            if ( $related_mtrl !== '' && class_exists( 'WC_Product_Attribute' ) ) {
+                try {
+                    $attr = new WC_Product_Attribute();
+                    $attr->set_id( 0 );                       // custom (non-taxonomy)
+                    $attr->set_name( 'related_item_mtrl' );   // plain string, no 'pa_' prefix
+                    $attr->set_options( array( $related_mtrl ) );
+                    $attr->set_visible( false );              // hidden on frontend
+                    $attr->set_variation( false );
+                    $assignments['attributes'][] = $attr;
+                } catch ( \Throwable $e ) {
+                    if ( function_exists( 'update_post_meta' ) && method_exists( $product, 'get_id' ) ) {
+                        $pid = (int) $product->get_id();
+                        if ( $pid > 0 ) {
+                            update_post_meta( $pid, '_softone_related_item_mtrl', $related_mtrl );
+                        }
+                    }
                 }
             }
-        }
-    }
 
-    // ---------------------------------------------------------------------
-    // Visible taxonomy attributes: Colour, Size, Brand
-    // ---------------------------------------------------------------------
-    $colour_value = '';
-    if ( method_exists( $this, 'get_value' ) ) {
-        $colour_value = $this->normalize_colour_value(
-            trim( $this->get_value( $data, array( 'colour_name', 'color_name', 'colour', 'color' ) ) )
-        );
-    }
-    if ( $colour_value === '' && isset( $fallback_attributes['colour'] ) ) {
-        $colour_value = $this->normalize_colour_value( (string) $fallback_attributes['colour'] );
-    }
-
-    $size_value  = method_exists( $this, 'get_value' ) ? trim( $this->get_value( $data, array( 'size_name', 'size' ) ) ) : '';
-    $brand_value = method_exists( $this, 'get_value' ) ? trim( $this->get_value( $data, array( 'brand_name', 'brand' ) ) ) : '';
-
-    // Slug => [Label, Value, Position]
-    $attribute_map = array(
-        'colour' => array( __( 'Colour', 'softone-woocommerce-integration' ), $colour_value, 0 ),
-        'size'   => array( __( 'Size',   'softone-woocommerce-integration' ), $size_value,   1 ),
-        'brand'  => array( __( 'Brand',  'softone-woocommerce-integration' ), $brand_value,  2 ),
-    );
-
-    foreach ( $attribute_map as $slug => $tuple ) {
-        list( $label, $value, $position ) = $tuple;
-
-        $taxonomy = function_exists( 'wc_attribute_taxonomy_name' )
-            ? wc_attribute_taxonomy_name( $slug )
-            : '';
-
-        if ( '' === $value ) {
-            // No value: make sure it will be cleared at term level.
-            if ( $taxonomy !== '' ) {
-                $assignments['clear'][] = $taxonomy;
+            // ---------------------------------------------------------------------
+            // Visible taxonomy attributes: Colour, Size, Brand
+            // ---------------------------------------------------------------------
+            $colour_value = '';
+            if ( method_exists( $this, 'get_value' ) ) {
+                $colour_value = $this->normalize_colour_value(
+                    trim( $this->get_value( $data, array( 'colour_name', 'color_name', 'colour', 'color' ) ) )
+                );
             }
-            continue;
+            if ( $colour_value === '' && isset( $fallback_attributes['colour'] ) ) {
+                $colour_value = $this->normalize_colour_value( (string) $fallback_attributes['colour'] );
+            }
+
+            $size_value  = method_exists( $this, 'get_value' ) ? trim( $this->get_value( $data, array( 'size_name', 'size' ) ) ) : '';
+            $brand_value = method_exists( $this, 'get_value' ) ? trim( $this->get_value( $data, array( 'brand_name', 'brand' ) ) ) : '';
+
+            // Slug => [Label, Value, Position]
+            $attribute_map = array(
+                'colour' => array( __( 'Colour', 'softone-woocommerce-integration' ), $colour_value, 0 ),
+                'size'   => array( __( 'Size',   'softone-woocommerce-integration' ), $size_value,   1 ),
+                'brand'  => array( __( 'Brand',  'softone-woocommerce-integration' ), $brand_value,  2 ),
+            );
+
+            foreach ( $attribute_map as $slug => $tuple ) {
+                list( $label, $value, $position ) = $tuple;
+
+                $taxonomy = function_exists( 'wc_attribute_taxonomy_name' )
+                    ? wc_attribute_taxonomy_name( $slug )
+                    : '';
+
+                if ( '' === $value ) {
+                    // No value: make sure it will be cleared at term level.
+                    if ( $taxonomy !== '' ) {
+                        $assignments['clear'][] = $taxonomy;
+                    }
+                    continue;
+                }
+
+                // Ensure the taxonomy exists (creates it if missing, registers it, caches id)
+                $attribute_id = $this->ensure_attribute_taxonomy( $slug, $label );
+                if ( ! $attribute_id ) {
+                    // Can't proceed without a taxonomy for this one.
+                    continue;
+                }
+
+                // Ensure the term exists within the taxonomy
+                $term_id = $this->ensure_attribute_term( $taxonomy, $value );
+                if ( ! $term_id ) {
+                    continue;
+                }
+
+                // Build WC attribute object for the product
+                if ( class_exists( 'WC_Product_Attribute' ) ) {
+                    $attr = new WC_Product_Attribute();
+                    $attr->set_id( (int) $attribute_id );
+                    $attr->set_name( $taxonomy );
+                    $attr->set_options( array( (int) $term_id ) );
+                    $attr->set_position( (int) $position );
+                    $attr->set_visible( true );     // show on frontend
+                    $attr->set_variation( false );  // not a variation attribute here
+
+                    $assignments['attributes'][]      = $attr;
+                    $assignments['terms'][$taxonomy]  = array( (int) $term_id );
+                    $assignments['values'][$taxonomy] = $value;
+                }
+            }
+
+            return $assignments;
         }
-
-        // Ensure the taxonomy exists (creates it if missing, registers it, caches id)
-        $attribute_id = $this->ensure_attribute_taxonomy( $slug, $label );
-        if ( ! $attribute_id ) {
-            // Can't proceed without a taxonomy for this one.
-            continue;
-        }
-
-        // Ensure the term exists within the taxonomy
-        $term_id = $this->ensure_attribute_term( $taxonomy, $value );
-        if ( ! $term_id ) {
-            continue;
-        }
-
-        // Build WC attribute object for the product
-        if ( class_exists( 'WC_Product_Attribute' ) ) {
-            $attr = new WC_Product_Attribute();
-            $attr->set_id( (int) $attribute_id );
-            $attr->set_name( $taxonomy );
-            $attr->set_options( array( (int) $term_id ) );
-            $attr->set_position( (int) $position );
-            $attr->set_visible( true );     // show on frontend
-            $attr->set_variation( false );  // not a variation attribute here
-
-            $assignments['attributes'][]   = $attr;
-            $assignments['terms'][$taxonomy]  = array( (int) $term_id );
-            $assignments['values'][$taxonomy] = $value;
-        }
-    }
-
-    return $assignments;
-}
-
 
         /** @return array{0:string,1:string} */
         protected function split_product_name_and_colour( $name ) {
@@ -1903,6 +1902,88 @@ protected function prepare_attribute_assignments( array $data, $product, array $
                 return;
             }
             $this->category_logger->log_assignment( $product_id, $category_ids, $context );
+        }
+
+        /**
+         * Try to attach existing Media Library images to the product by SKU.
+         * Safe no-op if nothing is found.
+         *
+         * @param WC_Product $product
+         * @param string     $sku
+         * @return void
+         */
+        protected function assign_media_library_images( $product, $sku ) {
+            $sku = trim( (string) $sku );
+            if ( '' === $sku || ! function_exists( 'get_posts' ) ) {
+                return;
+            }
+
+            $ids = get_posts( array(
+                'post_type'      => 'attachment',
+                'post_status'    => 'inherit',
+                'posts_per_page' => 10,
+                'orderby'        => 'date',
+                'order'          => 'DESC',
+                's'              => $sku,
+                'fields'         => 'ids',
+            ) );
+
+            if ( empty( $ids ) ) {
+                global $wpdb;
+                $like  = '%' . $wpdb->esc_like( $sku ) . '%';
+                $ids   = $wpdb->get_col(
+                    $wpdb->prepare(
+                        "SELECT ID FROM {$wpdb->posts} WHERE post_type='attachment' AND post_status='inherit' AND guid LIKE %s ORDER BY post_date_gmt DESC LIMIT 10",
+                        $like
+                    )
+                );
+            }
+
+            if ( empty( $ids ) || ! is_array( $ids ) ) {
+                return;
+            }
+
+            $ids = array_values( array_unique( array_map( 'intval', $ids ) ) );
+            $thumb_id = array_shift( $ids );
+
+            if ( $thumb_id > 0 && method_exists( $product, 'set_image_id' ) ) {
+                $product->set_image_id( $thumb_id );
+            }
+
+            if ( ! empty( $ids ) && method_exists( $product, 'set_gallery_image_ids' ) ) {
+                $product->set_gallery_image_ids( $ids );
+            }
+        }
+
+        /**
+         * Ensure a Brand term exists and assign it to the product.
+         *
+         * @param int    $product_id
+         * @param string $brand_value
+         * @return void
+         */
+        protected function assign_brand_term( $product_id, $brand_value ) {
+            $brand_value = trim( (string) $brand_value );
+            if ( $product_id <= 0 || '' === $brand_value ) {
+                return;
+            }
+
+            $slug    = 'brand';
+            $label   = __( 'Brand', 'softone-woocommerce-integration' );
+            $attr_id = $this->ensure_attribute_taxonomy( $slug, $label );
+            if ( ! $attr_id || ! function_exists( 'wc_attribute_taxonomy_name' ) ) {
+                return;
+            }
+
+            $taxonomy = wc_attribute_taxonomy_name( $slug );
+            if ( '' === $taxonomy || ( function_exists( 'taxonomy_exists' ) && ! taxonomy_exists( $taxonomy ) ) ) {
+                return;
+            }
+
+            $term_id = $this->ensure_attribute_term( $taxonomy, $brand_value );
+            if ( $term_id > 0 && function_exists( 'wp_set_object_terms' ) ) {
+                wp_set_object_terms( $product_id, array( (int) $term_id ), $taxonomy, false );
+            }
         }
     }
 }
