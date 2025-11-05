@@ -1746,13 +1746,60 @@ protected function prepare_category_ids( array $data ) {
          * }
          */
         protected function prepare_attribute_assignments( array $data, $product, array $fallback_attributes = array() ) {
-            if ( ! function_exists( 'wc_attribute_taxonomy_name' ) || ! class_exists( 'WC_Product_Attribute' ) ) {
-                return array(
-                    'attributes' => $product->get_attributes(),
-                    'terms'      => array(),
-                    'clear'      => array(),
-                );
-            }
+    if ( ! function_exists( 'wc_attribute_taxonomy_name' ) || ! class_exists( 'WC_Product_Attribute' ) ) {
+        return array(
+            'attributes' => $product->get_attributes(),
+            'terms'      => array(),
+            'clear'      => array(),
+        );
+    }
+
+    $assignments = array(
+        'attributes' => $product->get_attributes(),
+        'terms'      => array(),
+        'values'     => array(),
+        'clear'      => array(),
+    );
+
+    // ------------------------------------------------------------
+    // (Your existing logic that ensures taxonomies/terms, e.g. color/size/brand)
+    // This usually:
+    //  - derives $slug / $taxonomy via wc_attribute_taxonomy_name()
+    //  - $attribute_id = $this->ensure_attribute_taxonomy(...)
+    //  - $term_id = $this->ensure_attribute_term($taxonomy, $config['value'])
+    //  - creates/updates a WC_Product_Attribute for taxonomy attributes
+    //  - populates:
+    //      $assignments['attributes'][ $taxonomy ] = $attribute;
+    //      $assignments['terms'][ $taxonomy ]      = array( (int) $term_id );
+    //      $assignments['values'][ $taxonomy ]     = $config['value'];
+    // Keep all of that intact.
+    // ------------------------------------------------------------
+
+    /**
+     * Add hidden custom attribute for Softone MTRL.
+     * - Not taxonomy-based (custom)
+     * - Not visible on the product page
+     * - Not used for variations
+     */
+    $mtrl_value = trim( (string) $this->get_value( $data, array( 'mtrl', 'MTRL' ) ) );
+    if ( '' !== $mtrl_value ) {
+        $attr = new WC_Product_Attribute();
+        $attr->set_id( 0 ); // 0 => custom (non-taxonomy) attribute
+        $attr->set_name( 'softone_mtrl' ); // internal name (kept out of front-end)
+        $attr->set_options( array( $mtrl_value ) );
+        $attr->set_visible( false );       // ensure not shown on front-end
+        $attr->set_variation( false );
+
+        // Merge with existing attributes array
+        $attributes = $assignments['attributes'];
+        // Use a string key so it persists nicely alongside taxonomy keys
+        $attributes['softone_mtrl'] = $attr;
+        $assignments['attributes']   = $attributes;
+    }
+
+    return $assignments;
+}
+
 
             $assignments = array(
                 'attributes' => $product->get_attributes(),
