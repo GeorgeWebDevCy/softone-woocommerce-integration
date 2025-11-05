@@ -464,13 +464,13 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
          */
         protected function import_row( array $data, $run_timestamp ) {
             $mtrl = isset( $data['mtrl'] ) ? (string) $data['mtrl'] : '';
-            $sku  = $this->determine_sku( $data );
+            $sku_requested  = $this->determine_sku( $data );
 
-            if ( '' === $mtrl && '' === $sku ) {
+            if ( '' === $mtrl && '' === $sku_requested ) {
                 throw new Exception( __( 'Unable to determine a product identifier for the imported row.', 'softone-woocommerce-integration' ) );
             }
 
-            $product_id = $this->find_existing_product( $sku, $mtrl );
+            $product_id = $this->find_existing_product( $sku_requested, $mtrl );
             $is_new     = 0 === $product_id;
 
             $hash_source  = $data;
@@ -501,7 +501,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                             'Skipping product import because the payload hash matches the existing product.',
                             array(
                                 'product_id'             => $product_id,
-                                'sku'                    => $sku,
+                                'sku'                    => $sku_requested,
                                 'mtrl'                   => $mtrl,
                                 'payload_hash'           => $payload_hash,
                                 'existing_hash'          => $existing_hash,
@@ -518,7 +518,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                         'Continuing product import to refresh mismatched category assignments despite a matching payload hash.',
                         array(
                             'product_id'             => $product_id,
-                            'sku'                    => $sku,
+                            'sku'                    => $sku_requested,
                             'mtrl'                   => $mtrl,
                             'payload_hash'           => $payload_hash,
                             'existing_hash'          => $existing_hash,
@@ -570,8 +570,33 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 $product->set_regular_price( wc_format_decimal( $price ) );
             }
 
-            // ---------- SKU ----------
-            $product->set_sku( $sku );
+            // ---------- SKU (ensure unique) ----------
+            $extra_suffixes = array();
+            if ( '' !== $derived_colour && function_exists( 'sanitize_title' ) ) {
+                $extra_suffixes[] = sanitize_title( $derived_colour );
+            }
+
+            // If updating an existing product that already owns the requested SKU, keep it.
+            $effective_sku = $this->ensure_unique_sku(
+                $sku_requested,
+                $is_new ? 0 : (int) $product_id,
+                $extra_suffixes
+            );
+
+            if ( '' !== $effective_sku ) {
+                $product->set_sku( $effective_sku );
+            } else {
+                // Valid to leave SKU empty; log once for visibility
+                $this->log(
+                    'warning',
+                    'SKU left empty after failing to find a unique variant.',
+                    array(
+                        'requested_sku' => $sku_requested,
+                        'product_id'    => $is_new ? 0 : (int) $product_id,
+                        'suffixes'      => $extra_suffixes,
+                    )
+                );
+            }
 
             // ---------- STOCK ----------
             $stock_quantity = $this->get_value( $data, array( 'stock_qty', 'qty1' ) );
@@ -613,7 +638,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             // ---------- IMAGES ----------
-            $this->assign_media_library_images( $product, $sku );
+            $this->assign_media_library_images( $product, ( '' !== $effective_sku ? $effective_sku : $sku_requested ) );
 
             // ---------- SAVE ----------
             $product_id = $product->save();
@@ -641,7 +666,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                         'Failed to assign product categories.',
                         array(
                             'product_id'    => $product_id,
-                            'sku'           => $sku,
+                            'sku'           => $effective_sku ?: $sku_requested,
                             'mtrl'          => $mtrl,
                             'category_ids'  => $category_ids,
                             'error_message' => $category_assignment->get_error_message(),
@@ -657,7 +682,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                         $product_id,
                         $category_ids,
                         array(
-                            'sku'                    => $sku,
+                            'sku'                    => $effective_sku ?: $sku_requested,
                             'mtrl'                   => $mtrl,
                             'term_taxonomy_ids'      => $term_taxonomy_ids,
                             'force_taxonomy_refresh' => (bool) $this->force_taxonomy_refresh,
@@ -671,7 +696,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                         'Assigned product categories to the item.',
                         array(
                             'product_id'            => $product_id,
-                            'sku'                   => $sku,
+                            'sku'                   => $effective_sku ?: $sku_requested,
                             'mtrl'                  => $mtrl,
                             'category_ids'          => $category_ids,
                             'term_taxonomy_ids'     => $term_taxonomy_ids,
@@ -737,7 +762,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                         'Failed to assign attribute terms.',
                         array(
                             'product_id'      => $product_id,
-                            'sku'             => $sku,
+                            'sku'             => $effective_sku ?: $sku_requested,
                             'taxonomy'        => $taxonomy,
                             'term_ids'        => $normalized_term_ids,
                             'attribute_value' => isset( $attribute_assignments['values'][ $taxonomy ] ) ? $attribute_assignments['values'][ $taxonomy ] : '',
@@ -751,7 +776,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                         'Assigned attribute terms to the item.',
                         array(
                             'product_id'      => $product_id,
-                            'sku'             => $sku,
+                            'sku'             => $effective_sku ?: $sku_requested,
                             'taxonomy'        => $taxonomy,
                             'term_ids'        => $normalized_term_ids,
                             'attribute_value' => isset( $attribute_assignments['values'][ $taxonomy ] ) ? $attribute_assignments['values'][ $taxonomy ] : '',
@@ -774,7 +799,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     'Removed attribute term assignments from the item.',
                     array(
                         'product_id' => $product_id,
-                        'sku'        => $sku,
+                        'sku'        => $effective_sku ?: $sku_requested,
                         'taxonomies' => $cleared_taxonomies,
                     )
                 );
@@ -789,7 +814,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 sprintf( 'Product %s via Softone sync.', $action ),
                 array(
                     'product_id' => $product_id,
-                    'sku'        => $sku,
+                    'sku'        => $effective_sku ?: $sku_requested,
                     'mtrl'       => $mtrl,
                     'timestamp'  => $run_timestamp,
                 )
@@ -907,6 +932,82 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 }
             }
             return '';
+        }
+
+        /**
+         * Ensure a unique SKU across the catalog.
+         *
+         * Strategy:
+         *  - If $base_sku is unused or used by $current_product_id, keep it.
+         *  - Else try `$base_sku-<suffixParts>` if provided (e.g. colour), then increment `-2`, `-3`, ...
+         *  - After max attempts, return '' (leave SKU empty, valid in WC).
+         *
+         * @param string $base_sku
+         * @param int    $current_product_id
+         * @param array  $extra_suffix_parts e.g. ['red']
+         * @return string
+         */
+        protected function ensure_unique_sku( $base_sku, $current_product_id = 0, array $extra_suffix_parts = array() ) {
+            $base_sku = trim( (string) $base_sku );
+            if ( '' === $base_sku ) {
+                return '';
+            }
+
+            // Base free or belongs to the same product?
+            if ( ! $this->sku_taken_by_other( $base_sku, (int) $current_product_id ) ) {
+                return $base_sku;
+            }
+
+            // Try with suffix parts (e.g., colour)
+            $suffix = '';
+            $parts  = array();
+            foreach ( $extra_suffix_parts as $p ) {
+                $p = trim( (string) $p );
+                if ( '' !== $p ) { $parts[] = $p; }
+            }
+            if ( ! empty( $parts ) ) {
+                $suffix = '-' . implode( '-', $parts );
+            }
+
+            $candidate  = $base_sku . $suffix;
+            $max_checks = (int) apply_filters( 'softone_wc_integration_sku_unique_attempts', 100 );
+
+            if ( $this->sku_taken_by_other( $candidate, (int) $current_product_id ) ) {
+                $idx = 2;
+                while ( $this->sku_taken_by_other( $candidate, (int) $current_product_id ) && $idx <= $max_checks ) {
+                    $candidate = $base_sku . $suffix . '-' . $idx;
+                    $idx++;
+                }
+            }
+
+            if ( $this->sku_taken_by_other( $candidate, (int) $current_product_id ) ) {
+                // Still taken; leave empty.
+                return '';
+            }
+
+            return $candidate;
+        }
+
+        /**
+         * Check if SKU belongs to someone else (not the current product).
+         *
+         * @param string $sku
+         * @param int    $current_product_id
+         * @return bool
+         */
+        protected function sku_taken_by_other( $sku, $current_product_id = 0 ) {
+            $sku = trim( (string) $sku );
+            if ( '' === $sku ) {
+                return false;
+            }
+
+            $owner_id = function_exists( 'wc_get_product_id_by_sku' ) ? (int) wc_get_product_id_by_sku( $sku ) : 0;
+            if ( ! $owner_id ) {
+                return false;
+            }
+
+            $current_product_id = (int) $current_product_id;
+            return $current_product_id <= 0 || $owner_id !== $current_product_id;
         }
 
         /** @return int */
