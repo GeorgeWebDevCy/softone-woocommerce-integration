@@ -544,7 +544,7 @@ protected function import_row( array $data, $run_timestamp ) {
     }
 
     // ---------- PRODUCT NAME ----------
-    $name              = $this->get_value( $data, array( 'desc', 'description', 'code' ) );
+    $name              = $this->get_value( $data, array( 'varchar02','desc', 'description', 'code' ) );
     $derived_colour    = '';
     $normalized_name   = '';
     $fallback_metadata = array();
