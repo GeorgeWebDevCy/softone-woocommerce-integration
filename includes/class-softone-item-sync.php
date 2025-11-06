@@ -23,12 +23,13 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) :
 
 class Softone_Item_Sync {
 
-    const CRON_HOOK       = 'softone_wc_integration_sync_items';
-    const ADMIN_ACTION    = 'softone_wc_integration_run_item_import';
-    const META_MTRL       = '_softone_mtrl_id';
-    const META_LAST_SYNC  = '_softone_last_synced';
-    const META_BARCODE    = '_softone_barcode';
-    const META_BRAND      = '_softone_brand';
+    const CRON_HOOK         = 'softone_wc_integration_sync_items';
+    const ADMIN_ACTION      = 'softone_wc_integration_run_item_import';
+    const OPTION_LAST_RUN   = 'softone_last_run';
+    const META_MTRL         = '_softone_mtrl_id';
+    const META_LAST_SYNC    = '_softone_last_synced';
+    const META_BARCODE      = '_softone_barcode';
+    const META_BRAND        = '_softone_brand';
     const META_SOFTONE_CODE = '_softone_item_code';
 
     /**
