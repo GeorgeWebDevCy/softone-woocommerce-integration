@@ -663,11 +663,17 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 );
             }
 
-            if ( ! empty( $colour_values ) ) {
-                $parent_payload['__group_variations']   = array_values( $variation_records );
-                $parent_payload['__colour_values']      = array_values( $colour_values );
-                $group_context                          = isset( $primary_row['context'] ) && is_array( $primary_row['context'] ) ? $primary_row['context'] : array();
-                $parent_code                            = isset( $group_context['code'] ) ? (string) $group_context['code'] : '';
+            if ( ! empty( $variation_records ) ) {
+                $parent_payload['__group_variations'] = array_values( $variation_records );
+
+                if ( ! empty( $colour_values ) ) {
+                    $parent_payload['__colour_values'] = array_values( $colour_values );
+                }
+
+                $group_context = isset( $primary_row['context'] ) && is_array( $primary_row['context'] )
+                    ? $primary_row['context']
+                    : array();
+                $parent_code   = isset( $group_context['code'] ) ? (string) $group_context['code'] : '';
                 if ( '' === $parent_code && isset( $parent_payload['code'] ) ) {
                     $parent_code = (string) $parent_payload['code'];
                 }
@@ -1728,6 +1734,26 @@ protected function prepare_attribute_assignments( array $data, $product, array $
     if ( isset( $data['__colour_values'] ) && is_array( $data['__colour_values'] ) ) {
         foreach ( $data['__colour_values'] as $value ) {
             $normalized = $this->normalize_colour_value( (string) $value );
+            if ( '' !== $normalized ) {
+                $colour_values[] = $normalized;
+            }
+        }
+    }
+
+    if ( empty( $colour_values ) && isset( $data['__group_variations'] ) && is_array( $data['__group_variations'] ) ) {
+        foreach ( $data['__group_variations'] as $variation_payload ) {
+            if ( ! is_array( $variation_payload ) ) {
+                continue;
+            }
+
+            $label = '';
+            if ( isset( $variation_payload['colour_label'] ) ) {
+                $label = (string) $variation_payload['colour_label'];
+            } elseif ( isset( $variation_payload['color_label'] ) ) {
+                $label = (string) $variation_payload['color_label'];
+            }
+
+            $normalized = $this->normalize_colour_value( $label );
             if ( '' !== $normalized ) {
                 $colour_values[] = $normalized;
             }
