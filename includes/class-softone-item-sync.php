@@ -70,13 +70,36 @@ class Softone_Item_Sync {
         try {
             $payload = $this->fetch_softone_items();
             if ( empty( $payload ) || empty( $payload['success'] ) || empty( $payload['rows'] ) ) {
-                $logger->log( 'SoftOne: No items to sync or API error.' );
+                $logger->log(
+                    'item_sync',
+                    'empty_payload',
+                    'SoftOne: No items to sync or API error.',
+                    array(
+                        'payload_success' => isset( $payload['success'] ) ? (bool) $payload['success'] : null,
+                        'row_count'       => isset( $payload['rows'] ) && is_array( $payload['rows'] )
+                            ? count( $payload['rows'] )
+                            : null,
+                    )
+                );
                 return;
             }
             $processed = $this->process_items( $payload['rows'] );
-            $logger->log( sprintf( 'SoftOne: processed %d rows into variable products.', $processed ) );
+            $logger->log(
+                'item_sync',
+                'processed',
+                sprintf( 'SoftOne: processed %d rows into variable products.', $processed ),
+                array( 'processed_rows' => (int) $processed )
+            );
         } catch ( \Throwable $e ) {
-            $logger->log( 'SoftOne error: ' . $e->getMessage() );
+            $logger->log(
+                'item_sync',
+                'exception',
+                'SoftOne error: ' . $e->getMessage(),
+                array(
+                    'exception_class' => get_class( $e ),
+                    'code'            => (int) $e->getCode(),
+                )
+            );
         }
     }
 
@@ -137,7 +160,15 @@ class Softone_Item_Sync {
         foreach ( $groups as $key => $group ) {
             $parent_id = $this->upsert_variable_parent( $group );
             if ( ! $parent_id ) {
-                $logger->log( 'Failed to upsert parent for key: ' . $key );
+                $logger->log(
+                    'item_sync',
+                    'parent_upsert_failed',
+                    'Failed to upsert parent for key: ' . $key,
+                    array(
+                        'brand' => isset( $group['brand'] ) ? $group['brand'] : '',
+                        'code'  => isset( $group['code'] ) ? $group['code'] : '',
+                    )
+                );
                 continue;
             }
 
