@@ -660,6 +660,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     'sku'           => $this->determine_sku( $row ),
                     'regular_price' => $regular_price,
                     'stock_profile' => $this->build_stock_profile_from_data( $row ),
+                    'barcode'       => $this->extract_barcode( $row ),
+                    'mtrl'          => $this->extract_softone_mtrl( $row ),
                 );
             }
 
@@ -767,6 +769,16 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
          */
         protected function extract_softone_mtrl( array $data ) {
             return trim( (string) $this->get_value( $data, array( 'mtrl', 'MTRL', 'mtrl_code', 'MTRL_CODE' ) ) );
+        }
+
+        /**
+         * Extract the Softone barcode/GTIN value from a row.
+         *
+         * @param array $data
+         * @return string
+         */
+        protected function extract_barcode( array $data ) {
+            return trim( (string) $this->get_value( $data, array( 'barcode', 'BARCODE' ) ) );
         }
 
         /**
@@ -897,6 +909,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             $mtrl          = isset( $data['mtrl'] ) ? (string) $data['mtrl'] : '';
+            $child_mtrls   = $this->extract_related_item_mtrls_from_row( $data );
+            $barcode_value = $this->extract_barcode( $data );
             $sku_requested = '' !== $parent_sku_override
                 ? $parent_sku_override
                 : $this->determine_sku( $data );
@@ -1153,6 +1167,12 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         update_post_meta( $product_id, self::META_MTRL, $mtrl );
     }
 
+    $this->assign_gtin_meta( $product_id, $barcode_value );
+
+    if ( ! empty( $child_mtrls ) ) {
+        $this->convert_child_products_to_variations( $product_id, $child_mtrls, $mtrl );
+    }
+
     // ---------- IMAGES (after save) ----------
     $sku_for_images = ( '' !== $effective_sku ? $effective_sku : $sku_requested );
     if ( ! empty( $sku_for_images ) && class_exists( 'Softone_Sku_Image_Attacher' ) ) {
@@ -1365,13 +1385,144 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
         /** @return string */
         protected function determine_sku( array $data ) {
-            $candidates = array( 'sku', 'barcode', 'code' );
+            $candidates = array( 'sku', 'code' );
             foreach ( $candidates as $key ) {
                 if ( isset( $data[ $key ] ) && '' !== trim( (string) $data[ $key ] ) ) {
                     return (string) $data[ $key ];
                 }
             }
             return '';
+        }
+
+        /**
+         * Assign the Softone barcode value to WooCommerce GTIN-compatible meta keys.
+         *
+         * @param int    $product_id
+         * @param string $barcode
+         * @return void
+         */
+        protected function assign_gtin_meta( $product_id, $barcode ) {
+            $product_id = (int) $product_id;
+            if ( $product_id <= 0 ) {
+                return;
+            }
+
+            $barcode = trim( (string) $barcode );
+
+            $meta_keys = apply_filters( 'softone_wc_integration_gtin_meta_keys', array( '_barcode' ), $product_id, $barcode );
+            if ( ! is_array( $meta_keys ) ) {
+                $meta_keys = array( $meta_keys );
+            }
+
+            foreach ( $meta_keys as $meta_key ) {
+                $meta_key = is_string( $meta_key ) ? trim( $meta_key ) : '';
+                if ( '' === $meta_key ) {
+                    continue;
+                }
+
+                if ( '' === $barcode ) {
+                    delete_post_meta( $product_id, $meta_key );
+                } else {
+                    update_post_meta( $product_id, $meta_key, $barcode );
+                }
+            }
+        }
+
+        /**
+         * Convert existing Softone-linked simple products into variations of the parent product.
+         *
+         * @param int        $parent_product_id
+         * @param array<int, string> $child_mtrls
+         * @param string     $parent_mtrl
+         * @return void
+         */
+        protected function convert_child_products_to_variations( $parent_product_id, array $child_mtrls, $parent_mtrl ) {
+            $parent_product_id = (int) $parent_product_id;
+            if ( $parent_product_id <= 0 ) {
+                return;
+            }
+
+            if ( empty( $child_mtrls ) ) {
+                return;
+            }
+
+            if ( ! class_exists( 'WP_Query' ) ) {
+                return;
+            }
+
+            $normalized_mtrls = array();
+            $parent_mtrl      = trim( (string) $parent_mtrl );
+
+            foreach ( $child_mtrls as $child_mtrl ) {
+                $child_mtrl = trim( (string) $child_mtrl );
+                if ( '' === $child_mtrl ) {
+                    continue;
+                }
+
+                if ( '' !== $parent_mtrl && 0 === strcasecmp( $parent_mtrl, $child_mtrl ) ) {
+                    continue;
+                }
+
+                $normalized_mtrls[ $child_mtrl ] = $child_mtrl;
+            }
+
+            if ( empty( $normalized_mtrls ) ) {
+                return;
+            }
+
+            $query = new WP_Query(
+                array(
+                    'post_type'      => array( 'product', 'product_variation' ),
+                    'post_status'    => array( 'publish', 'pending', 'draft', 'private' ),
+                    'posts_per_page' => -1,
+                    'fields'         => 'ids',
+                    'meta_query'     => array(
+                        array(
+                            'key'     => self::META_MTRL,
+                            'value'   => array_values( $normalized_mtrls ),
+                            'compare' => 'IN',
+                        ),
+                    ),
+                )
+            );
+
+            if ( ! $query->have_posts() ) {
+                wp_reset_postdata();
+                return;
+            }
+
+            foreach ( $query->posts as $child_id ) {
+                $child_id = (int) $child_id;
+                if ( $child_id <= 0 || $child_id === $parent_product_id ) {
+                    continue;
+                }
+
+                $post_type   = get_post_type( $child_id );
+                $post_parent = (int) get_post_field( 'post_parent', $child_id );
+
+                $update_data  = array( 'ID' => $child_id );
+                $needs_update = false;
+
+                if ( 'product_variation' !== $post_type ) {
+                    $update_data['post_type']   = 'product_variation';
+                    $update_data['post_status'] = 'publish';
+                    $needs_update               = true;
+                }
+
+                if ( $post_parent !== $parent_product_id ) {
+                    $update_data['post_parent'] = $parent_product_id;
+                    $needs_update               = true;
+                }
+
+                if ( $needs_update ) {
+                    wp_update_post( $update_data );
+                    if ( function_exists( 'clean_post_cache' ) ) {
+                        clean_post_cache( $child_id );
+                    }
+                }
+            }
+
+            wp_reset_postdata();
         }
 
         /**
@@ -1968,6 +2119,7 @@ protected function prepare_attribute_assignments( array $data, $product, array $
                         'product' => $child,
                         'slug'    => $attribute_slug,
                         'sku'     => strtolower( (string) $child->get_sku() ),
+                        'mtrl'    => strtolower( (string) get_post_meta( $child_id, self::META_MTRL, true ) ),
                     );
                 }
             }
@@ -1985,6 +2137,9 @@ protected function prepare_attribute_assignments( array $data, $product, array $
                 if ( '' === $colour_label ) {
                     continue;
                 }
+
+                $variation_mtrl_raw = isset( $variation_payload['mtrl'] ) ? (string) $variation_payload['mtrl'] : '';
+                $normalized_mtrl    = strtolower( trim( $variation_mtrl_raw ) );
 
                 $colour_slug = '';
                 if ( ! empty( $term_slug_map ) ) {
@@ -2020,6 +2175,15 @@ protected function prepare_attribute_assignments( array $data, $product, array $
                 if ( 0 === $matched_variation_id && '' !== $normalized_sku ) {
                     foreach ( $existing_variations as $existing_id => $existing_data ) {
                         if ( '' !== $existing_data['sku'] && $existing_data['sku'] === $normalized_sku ) {
+                            $matched_variation_id = (int) $existing_id;
+                            break;
+                        }
+                    }
+                }
+
+                if ( 0 === $matched_variation_id && '' !== $normalized_mtrl ) {
+                    foreach ( $existing_variations as $existing_id => $existing_data ) {
+                        if ( '' !== $existing_data['mtrl'] && $existing_data['mtrl'] === $normalized_mtrl ) {
                             $matched_variation_id = (int) $existing_id;
                             break;
                         }
@@ -2094,6 +2258,17 @@ protected function prepare_attribute_assignments( array $data, $product, array $
                 }
 
                 $variation->save();
+                $variation_id = $variation->get_id();
+
+                if ( $variation_id > 0 ) {
+                    if ( '' !== $variation_mtrl_raw ) {
+                        update_post_meta( $variation_id, self::META_MTRL, $variation_mtrl_raw );
+                    }
+
+                    if ( array_key_exists( 'barcode', $variation_payload ) ) {
+                        $this->assign_gtin_meta( $variation_id, $variation_payload['barcode'] );
+                    }
+                }
 
                 if ( 0 === $variation_position && '' !== $colour_slug ) {
                     $default_attributes[ $variation_taxonomy ] = $colour_slug;
