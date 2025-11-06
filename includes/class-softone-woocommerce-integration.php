@@ -199,6 +199,9 @@ class Softone_Woocommerce_Integration {
 		 */
 		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'public/class-softone-woocommerce-integration-public.php';
 
+		require_once __DIR__ . '/includes/class-softone-sku-image-attacher.php';
+
+
                 $this->loader          = new Softone_Woocommerce_Integration_Loader();
                 $this->activity_logger = new Softone_Sync_Activity_Logger();
                 $this->item_sync       = new Softone_Item_Sync( null, null, null, $this->activity_logger );

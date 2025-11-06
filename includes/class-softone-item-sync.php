@@ -459,369 +459,371 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         }
 
         /**
-         * @throws Exception
-         * @return string created|updated|skipped
-         */
-        protected function import_row( array $data, $run_timestamp ) {
-            $mtrl = isset( $data['mtrl'] ) ? (string) $data['mtrl'] : '';
-            $sku_requested  = $this->determine_sku( $data );
+ * @throws Exception
+ * @return string created|updated|skipped
+ */
+protected function import_row( array $data, $run_timestamp ) {
+    $mtrl = isset( $data['mtrl'] ) ? (string) $data['mtrl'] : '';
+    $sku_requested  = $this->determine_sku( $data );
 
-            if ( '' === $mtrl && '' === $sku_requested ) {
-                throw new Exception( __( 'Unable to determine a product identifier for the imported row.', 'softone-woocommerce-integration' ) );
-            }
+    if ( '' === $mtrl && '' === $sku_requested ) {
+        throw new Exception( __( 'Unable to determine a product identifier for the imported row.', 'softone-woocommerce-integration' ) );
+    }
 
-            $product_id = $this->find_existing_product( $sku_requested, $mtrl );
-            $is_new     = 0 === $product_id;
+    $product_id = $this->find_existing_product( $sku_requested, $mtrl );
+    $is_new     = 0 === $product_id;
 
-            $hash_source  = $data;
-            ksort( $hash_source );
-            $payload_hash = md5( wp_json_encode( $hash_source ) );
+    $hash_source  = $data;
+    ksort( $hash_source );
+    $payload_hash = md5( wp_json_encode( $hash_source ) );
 
-            if ( $is_new ) {
-                $product = new WC_Product_Simple();
-                $product->set_status( 'publish' );
-            } else {
-                $product = wc_get_product( $product_id );
-            }
+    if ( $is_new ) {
+        $product = new WC_Product_Simple();
+        $product->set_status( 'publish' );
+    } else {
+        $product = wc_get_product( $product_id );
+    }
 
-            if ( ! $product ) {
-                throw new Exception( __( 'Failed to load the matching WooCommerce product.', 'softone-woocommerce-integration' ) );
-            }
+    if ( ! $product ) {
+        throw new Exception( __( 'Failed to load the matching WooCommerce product.', 'softone-woocommerce-integration' ) );
+    }
 
-            $category_ids = $this->prepare_category_ids( $data );
+    $category_ids = $this->prepare_category_ids( $data );
 
-            if ( ! $is_new ) {
-                $existing_hash    = (string) get_post_meta( $product_id, self::META_PAYLOAD_HASH, true );
-                $categories_match = $this->product_categories_match( $product_id, $category_ids );
+    if ( ! $is_new ) {
+        $existing_hash    = (string) get_post_meta( $product_id, self::META_PAYLOAD_HASH, true );
+        $categories_match = $this->product_categories_match( $product_id, $category_ids );
 
-                if ( ! $this->force_taxonomy_refresh && '' !== $existing_hash && $existing_hash === $payload_hash ) {
-                    if ( $categories_match ) {
-                        $this->log(
-                            'debug',
-                            'Skipping product import because the payload hash matches the existing product.',
-                            array(
-                                'product_id'             => $product_id,
-                                'sku'                    => $sku_requested,
-                                'mtrl'                   => $mtrl,
-                                'payload_hash'           => $payload_hash,
-                                'existing_hash'          => $existing_hash,
-                                'category_ids'           => $category_ids,
-                                'categories_match'       => true,
-                                'force_taxonomy_refresh' => (bool) $this->force_taxonomy_refresh,
-                            )
-                        );
-                        return 'skipped';
-                    }
-
-                    $this->log(
-                        'debug',
-                        'Continuing product import to refresh mismatched category assignments despite a matching payload hash.',
-                        array(
-                            'product_id'             => $product_id,
-                            'sku'                    => $sku_requested,
-                            'mtrl'                   => $mtrl,
-                            'payload_hash'           => $payload_hash,
-                            'existing_hash'          => $existing_hash,
-                            'category_ids'           => $category_ids,
-                            'categories_match'       => false,
-                            'force_taxonomy_refresh' => (bool) $this->force_taxonomy_refresh,
-                        )
-                    );
-                }
-            }
-
-            // ---------- PRODUCT NAME ----------
-            $name              = $this->get_value( $data, array( 'desc', 'description', 'code' ) );
-            $derived_colour    = '';
-            $normalized_name   = '';
-            $fallback_metadata = array();
-
-            if ( '' !== $name ) {
-                list( $normalized_name, $derived_colour ) = $this->split_product_name_and_colour( $name );
-                if ( '' === $normalized_name ) {
-                    $normalized_name = $name;
-                }
-                if ( '' !== $normalized_name ) {
-                    $product->set_name( $normalized_name );
-                }
-            }
-
-            if ( '' !== $derived_colour ) {
-                $fallback_metadata['colour'] = $derived_colour;
-            }
-
-            // ---------- DESCRIPTIONS ----------
-            $description = $this->get_value(
-                $data,
-                array( 'long_description', 'longdescription', 'cccsocylodes', 'remarks', 'remark', 'notes' )
-            );
-            if ( '' !== $description ) {
-                $product->set_description( $description );
-            }
-
-            $short_description = $this->get_value( $data, array( 'short_description', 'cccsocyshdes' ) );
-            if ( '' !== $short_description ) {
-                $product->set_short_description( $short_description );
-            }
-
-            // ---------- PRICE ----------
-            $price = $this->get_value( $data, array( 'retailprice' ) );
-            if ( '' !== $price ) {
-                $product->set_regular_price( wc_format_decimal( $price ) );
-            }
-
-            // ---------- SKU (ensure unique) ----------
-            $extra_suffixes = array();
-            if ( '' !== $derived_colour && function_exists( 'sanitize_title' ) ) {
-                $extra_suffixes[] = sanitize_title( $derived_colour );
-            }
-
-            // If updating an existing product that already owns the requested SKU, keep it.
-            $effective_sku = $this->ensure_unique_sku(
-                $sku_requested,
-                $is_new ? 0 : (int) $product_id,
-                $extra_suffixes
-            );
-
-            if ( '' !== $effective_sku ) {
-                $product->set_sku( $effective_sku );
-            } else {
-                // Valid to leave SKU empty; log once for visibility
+        if ( ! $this->force_taxonomy_refresh && '' !== $existing_hash && $existing_hash === $payload_hash ) {
+            if ( $categories_match ) {
                 $this->log(
-                    'warning',
-                    'SKU left empty after failing to find a unique variant.',
+                    'debug',
+                    'Skipping product import because the payload hash matches the existing product.',
                     array(
-                        'requested_sku' => $sku_requested,
-                        'product_id'    => $is_new ? 0 : (int) $product_id,
-                        'suffixes'      => $extra_suffixes,
+                        'product_id'             => $product_id,
+                        'sku'                    => $sku_requested,
+                        'mtrl'                   => $mtrl,
+                        'payload_hash'           => $payload_hash,
+                        'existing_hash'          => $existing_hash,
+                        'category_ids'           => $category_ids,
+                        'categories_match'       => true,
+                        'force_taxonomy_refresh' => (bool) $this->force_taxonomy_refresh,
                     )
                 );
+                return 'skipped';
             }
 
-            // ---------- STOCK ----------
-            $stock_quantity = $this->get_value( $data, array( 'stock_qty', 'qty1' ) );
-            if ( '' !== $stock_quantity ) {
-                $stock_amount = wc_stock_amount( $stock_quantity );
-                if ( 0 === $stock_amount && softone_wc_integration_should_force_minimum_stock() ) {
-                    $stock_amount = 1;
-                }
-
-                $product->set_manage_stock( true );
-                $product->set_stock_quantity( $stock_amount );
-
-                $should_backorder = softone_wc_integration_should_backorder_out_of_stock();
-
-                if ( $should_backorder && $stock_amount <= 0 && method_exists( $product, 'set_backorders' ) ) {
-                    $product->set_backorders( 'notify' );
-                    $product->set_stock_status( 'onbackorder' );
-                } else {
-                    if ( method_exists( $product, 'set_backorders' ) ) {
-                        $product->set_backorders( 'no' );
-                    }
-                    $product->set_stock_status( $stock_amount > 0 ? 'instock' : 'outofstock' );
-                }
-            }
-
-            // ---------- CATEGORIES ----------
-            if ( ! empty( $category_ids ) ) {
-                $product->set_category_ids( $category_ids );
-            }
-
-            // ---------- ATTRIBUTES ----------
-            $brand_value           = trim( $this->get_value( $data, array( 'brand_name', 'brand' ) ) );
-            $attribute_assignments = $this->prepare_attribute_assignments( $data, $product, $fallback_metadata );
-
-            if ( ! empty( $attribute_assignments['attributes'] ) ) {
-                $product->set_attributes( $attribute_assignments['attributes'] );
-            } elseif ( empty( $attribute_assignments['attributes'] ) && $is_new ) {
-                $product->set_attributes( array() );
-            }
-
-            // ---------- IMAGES ----------
-            $this->assign_media_library_images( $product, ( '' !== $effective_sku ? $effective_sku : $sku_requested ) );
-
-            // ---------- SAVE ----------
-            $product_id = $product->save();
-            if ( ! $product_id ) {
-                throw new Exception( __( 'Unable to save the WooCommerce product.', 'softone-woocommerce-integration' ) );
-            }
-
-            // ---------- CATEGORY TERMS ----------
-            if ( ! empty( $category_ids ) && function_exists( 'taxonomy_exists' ) && taxonomy_exists( 'product_cat' ) && function_exists( 'wp_set_object_terms' ) ) {
-                $category_assignment = wp_set_object_terms( $product_id, $category_ids, 'product_cat' );
-
-                if ( is_wp_error( $category_assignment ) ) {
-                    $this->log(
-                        'error',
-                        'SOFTONE_CAT_SYNC_009 Failed to assign product categories.',
-                        array(
-                            'product_id'    => $product_id,
-                            'category_ids'  => $category_ids,
-                            'error_message' => $category_assignment->get_error_message(),
-                        )
-                    );
-                    $this->log_activity(
-                        'product_categories',
-                        'assignment_error',
-                        'Failed to assign product categories.',
-                        array(
-                            'product_id'    => $product_id,
-                            'sku'           => $effective_sku ?: $sku_requested,
-                            'mtrl'          => $mtrl,
-                            'category_ids'  => $category_ids,
-                            'error_message' => $category_assignment->get_error_message(),
-                        )
-                    );
-                } else {
-                    $term_taxonomy_ids = array();
-                    if ( null !== $category_assignment ) {
-                        $term_taxonomy_ids = array_map( 'intval', (array) $category_assignment );
-                    }
-
-                    $this->log_category_assignment(
-                        $product_id,
-                        $category_ids,
-                        array(
-                            'sku'                    => $effective_sku ?: $sku_requested,
-                            'mtrl'                   => $mtrl,
-                            'term_taxonomy_ids'      => $term_taxonomy_ids,
-                            'force_taxonomy_refresh' => (bool) $this->force_taxonomy_refresh,
-                            'sync_action'            => $is_new ? 'created' : 'updated',
-                        )
-                    );
-
-                    $this->log_activity(
-                        'product_categories',
-                        'assigned',
-                        'Assigned product categories to the item.',
-                        array(
-                            'product_id'            => $product_id,
-                            'sku'                   => $effective_sku ?: $sku_requested,
-                            'mtrl'                  => $mtrl,
-                            'category_ids'          => $category_ids,
-                            'term_taxonomy_ids'     => $term_taxonomy_ids,
-                            'force_taxonomy_refresh'=> (bool) $this->force_taxonomy_refresh,
-                            'sync_action'           => $is_new ? 'created' : 'updated',
-                        )
-                    );
-                }
-            }
-
-            // ---------- META ----------
-            if ( $mtrl ) {
-                update_post_meta( $product_id, self::META_MTRL, $mtrl );
-            }
-            update_post_meta( $product_id, self::META_PAYLOAD_HASH, $payload_hash );
-            if ( is_numeric( $run_timestamp ) ) {
-                update_post_meta( $product_id, self::META_LAST_SYNC, (int) $run_timestamp );
-            }
-
-            // ---------- ATTRIBUTE TERMS (taxonomies) ----------
-            foreach ( $attribute_assignments['terms'] as $taxonomy => $term_ids ) {
-                $normalized_term_ids = array();
-                foreach ( (array) $term_ids as $term_id ) {
-                    $term_id = (int) $term_id;
-                    if ( $term_id > 0 ) {
-                        $normalized_term_ids[] = $term_id;
-                    }
-                }
-                if ( empty( $normalized_term_ids ) ) {
-                    continue;
-                }
-
-                if ( function_exists( 'taxonomy_exists' ) && ! taxonomy_exists( $taxonomy ) ) {
-                    $this->log(
-                        'error',
-                        'SOFTONE_ATTR_SYNC_000 Missing attribute taxonomy before assignment.',
-                        array(
-                            'product_id'      => $product_id,
-                            'taxonomy'        => $taxonomy,
-                            'term_ids'        => $normalized_term_ids,
-                            'attribute_value' => isset( $attribute_assignments['values'][ $taxonomy ] ) ? $attribute_assignments['values'][ $taxonomy ] : '',
-                        )
-                    );
-                    continue;
-                }
-
-                $term_assignment = wp_set_object_terms( $product_id, $normalized_term_ids, $taxonomy );
-                if ( is_wp_error( $term_assignment ) ) {
-                    $this->log(
-                        'error',
-                        'SOFTONE_ATTR_SYNC_001 Failed to assign attribute terms.',
-                        array(
-                            'product_id'      => $product_id,
-                            'taxonomy'        => $taxonomy,
-                            'term_ids'        => $normalized_term_ids,
-                            'attribute_value' => isset( $attribute_assignments['values'][ $taxonomy ] ) ? $attribute_assignments['values'][ $taxonomy ] : '',
-                            'error_message'   => $term_assignment->get_error_message(),
-                        )
-                    );
-                    $this->log_activity(
-                        'product_attributes',
-                        'assignment_error',
-                        'Failed to assign attribute terms.',
-                        array(
-                            'product_id'      => $product_id,
-                            'sku'             => $effective_sku ?: $sku_requested,
-                            'taxonomy'        => $taxonomy,
-                            'term_ids'        => $normalized_term_ids,
-                            'attribute_value' => isset( $attribute_assignments['values'][ $taxonomy ] ) ? $attribute_assignments['values'][ $taxonomy ] : '',
-                            'error_message'   => $term_assignment->get_error_message(),
-                        )
-                    );
-                } else {
-                    $this->log_activity(
-                        'product_attributes',
-                        'assigned_terms',
-                        'Assigned attribute terms to the item.',
-                        array(
-                            'product_id'      => $product_id,
-                            'sku'             => $effective_sku ?: $sku_requested,
-                            'taxonomy'        => $taxonomy,
-                            'term_ids'        => $normalized_term_ids,
-                            'attribute_value' => isset( $attribute_assignments['values'][ $taxonomy ] ) ? $attribute_assignments['values'][ $taxonomy ] : '',
-                        )
-                    );
-                }
-            }
-
-            // ---------- CLEAR TAXONOMIES ----------
-            $cleared_taxonomies = array();
-            foreach ( $attribute_assignments['clear'] as $taxonomy ) {
-                if ( '' === $taxonomy ) { continue; }
-                $cleared_taxonomies[] = (string) $taxonomy;
-                wp_set_object_terms( $product_id, array(), $taxonomy );
-            }
-            if ( ! empty( $cleared_taxonomies ) ) {
-                $this->log_activity(
-                    'product_attributes',
-                    'cleared_terms',
-                    'Removed attribute term assignments from the item.',
-                    array(
-                        'product_id' => $product_id,
-                        'sku'        => $effective_sku ?: $sku_requested,
-                        'taxonomies' => $cleared_taxonomies,
-                    )
-                );
-            }
-
-            // ---------- BRAND ----------
-            $this->assign_brand_term( $product_id, $brand_value );
-
-            $action = $is_new ? 'created' : 'updated';
             $this->log(
-                'info',
-                sprintf( 'Product %s via Softone sync.', $action ),
+                'debug',
+                'Continuing product import to refresh mismatched category assignments despite a matching payload hash.',
                 array(
-                    'product_id' => $product_id,
-                    'sku'        => $effective_sku ?: $sku_requested,
-                    'mtrl'       => $mtrl,
-                    'timestamp'  => $run_timestamp,
+                    'product_id'             => $product_id,
+                    'sku'                    => $sku_requested,
+                    'mtrl'                   => $mtrl,
+                    'payload_hash'           => $payload_hash,
+                    'existing_hash'          => $existing_hash,
+                    'category_ids'           => $category_ids,
+                    'categories_match'       => false,
+                    'force_taxonomy_refresh' => (bool) $this->force_taxonomy_refresh,
+                )
+            );
+        }
+    }
+
+    // ---------- PRODUCT NAME ----------
+    $name              = $this->get_value( $data, array( 'desc', 'description', 'code' ) );
+    $derived_colour    = '';
+    $normalized_name   = '';
+    $fallback_metadata = array();
+
+    if ( '' !== $name ) {
+        list( $normalized_name, $derived_colour ) = $this->split_product_name_and_colour( $name );
+        if ( '' === $normalized_name ) {
+            $normalized_name = $name;
+        }
+        if ( '' !== $normalized_name ) {
+            $product->set_name( $normalized_name );
+        }
+    }
+
+    if ( '' !== $derived_colour ) {
+        $fallback_metadata['colour'] = $derived_colour;
+    }
+
+    // ---------- DESCRIPTIONS ----------
+    $description = $this->get_value(
+        $data,
+        array( 'long_description', 'longdescription', 'cccsocylodes', 'remarks', 'remark', 'notes' )
+    );
+    if ( '' !== $description ) {
+        $product->set_description( $description );
+    }
+
+    $short_description = $this->get_value( $data, array( 'short_description', 'cccsocyshdes' ) );
+    if ( '' !== $short_description ) {
+        $product->set_short_description( $short_description );
+    }
+
+    // ---------- PRICE ----------
+    $price = $this->get_value( $data, array( 'retailprice' ) );
+    if ( '' !== $price ) {
+        $product->set_regular_price( wc_format_decimal( $price ) );
+    }
+
+    // ---------- SKU (ensure unique) ----------
+    $extra_suffixes = array();
+    if ( '' !== $derived_colour && function_exists( 'sanitize_title' ) ) {
+        $extra_suffixes[] = sanitize_title( $derived_colour );
+    }
+
+    $effective_sku = $this->ensure_unique_sku(
+        $sku_requested,
+        $is_new ? 0 : (int) $product_id,
+        $extra_suffixes
+    );
+
+    if ( '' !== $effective_sku ) {
+        $product->set_sku( $effective_sku );
+    } else {
+        $this->log(
+            'warning',
+            'SKU left empty after failing to find a unique variant.',
+            array(
+                'requested_sku' => $sku_requested,
+                'product_id'    => $is_new ? 0 : (int) $product_id,
+                'suffixes'      => $extra_suffixes,
+            )
+        );
+    }
+
+    // ---------- STOCK ----------
+    $stock_quantity = $this->get_value( $data, array( 'stock_qty', 'qty1' ) );
+    if ( '' !== $stock_quantity ) {
+        $stock_amount = wc_stock_amount( $stock_quantity );
+        if ( 0 === $stock_amount && softone_wc_integration_should_force_minimum_stock() ) {
+            $stock_amount = 1;
+        }
+
+        $product->set_manage_stock( true );
+        $product->set_stock_quantity( $stock_amount );
+
+        $should_backorder = softone_wc_integration_should_backorder_out_of_stock();
+
+        if ( $should_backorder && $stock_amount <= 0 && method_exists( $product, 'set_backorders' ) ) {
+            $product->set_backorders( 'notify' );
+            $product->set_stock_status( 'onbackorder' );
+        } else {
+            if ( method_exists( $product, 'set_backorders' ) ) {
+                $product->set_backorders( 'no' );
+            }
+            $product->set_stock_status( $stock_amount > 0 ? 'instock' : 'outofstock' );
+        }
+    }
+
+    // ---------- CATEGORIES ----------
+    if ( ! empty( $category_ids ) ) {
+        $product->set_category_ids( $category_ids );
+    }
+
+    // ---------- ATTRIBUTES ----------
+    $brand_value           = trim( $this->get_value( $data, array( 'brand_name', 'brand' ) ) );
+    $attribute_assignments = $this->prepare_attribute_assignments( $data, $product, $fallback_metadata );
+
+    if ( ! empty( $attribute_assignments['attributes'] ) ) {
+        $product->set_attributes( $attribute_assignments['attributes'] );
+    } elseif ( empty( $attribute_assignments['attributes'] ) && $is_new ) {
+        $product->set_attributes( array() );
+    }
+
+    // ---------- SAVE FIRST ----------
+    $product_id = $product->save();
+    if ( ! $product_id ) {
+        throw new Exception( __( 'Unable to save the WooCommerce product.', 'softone-woocommerce-integration' ) );
+    }
+
+    // ---------- IMAGES (after save) ----------
+    $sku_for_images = ( '' !== $effective_sku ? $effective_sku : $sku_requested );
+    if ( ! empty( $sku_for_images ) && class_exists( 'Softone_Sku_Image_Attacher' ) ) {
+        \Softone_Sku_Image_Attacher::attach_gallery_from_sku( (int) $product_id, (string) $sku_for_images );
+    }
+
+    // ---------- CATEGORY TERMS ----------
+    if ( ! empty( $category_ids ) && function_exists( 'taxonomy_exists' ) && taxonomy_exists( 'product_cat' ) && function_exists( 'wp_set_object_terms' ) ) {
+        $category_assignment = wp_set_object_terms( $product_id, $category_ids, 'product_cat' );
+
+        if ( is_wp_error( $category_assignment ) ) {
+            $this->log(
+                'error',
+                'SOFTONE_CAT_SYNC_009 Failed to assign product categories.',
+                array(
+                    'product_id'    => $product_id,
+                    'category_ids'  => $category_ids,
+                    'error_message' => $category_assignment->get_error_message(),
+                )
+            );
+            $this->log_activity(
+                'product_categories',
+                'assignment_error',
+                'Failed to assign product categories.',
+                array(
+                    'product_id'    => $product_id,
+                    'sku'           => $sku_for_images,
+                    'mtrl'          => $mtrl,
+                    'category_ids'  => $category_ids,
+                    'error_message' => $category_assignment->get_error_message(),
+                )
+            );
+        } else {
+            $term_taxonomy_ids = array();
+            if ( null !== $category_assignment ) {
+                $term_taxonomy_ids = array_map( 'intval', (array) $category_assignment );
+            }
+
+            $this->log_category_assignment(
+                $product_id,
+                $category_ids,
+                array(
+                    'sku'                    => $sku_for_images,
+                    'mtrl'                   => $mtrl,
+                    'term_taxonomy_ids'      => $term_taxonomy_ids,
+                    'force_taxonomy_refresh' => (bool) $this->force_taxonomy_refresh,
+                    'sync_action'            => $is_new ? 'created' : 'updated',
                 )
             );
 
-            return $action;
+            $this->log_activity(
+                'product_categories',
+                'assigned',
+                'Assigned product categories to the item.',
+                array(
+                    'product_id'            => $product_id,
+                    'sku'                   => $sku_for_images,
+                    'mtrl'                  => $mtrl,
+                    'category_ids'          => $category_ids,
+                    'term_taxonomy_ids'     => $term_taxonomy_ids,
+                    'force_taxonomy_refresh'=> (bool) $this->force_taxonomy_refresh,
+                    'sync_action'           => $is_new ? 'created' : 'updated',
+                )
+            );
         }
+    }
+
+    // ---------- META ----------
+    if ( $mtrl ) {
+        update_post_meta( $product_id, self::META_MTRL, $mtrl );
+    }
+    update_post_meta( $product_id, self::META_PAYLOAD_HASH, $payload_hash );
+    if ( is_numeric( $run_timestamp ) ) {
+        update_post_meta( $product_id, self::META_LAST_SYNC, (int) $run_timestamp );
+    }
+
+    // ---------- ATTRIBUTE TERMS (taxonomies) ----------
+    foreach ( $attribute_assignments['terms'] as $taxonomy => $term_ids ) {
+        $normalized_term_ids = array();
+        foreach ( (array) $term_ids as $term_id ) {
+            $term_id = (int) $term_id;
+            if ( $term_id > 0 ) {
+                $normalized_term_ids[] = $term_id;
+            }
+        }
+        if ( empty( $normalized_term_ids ) ) {
+            continue;
+        }
+
+        if ( function_exists( 'taxonomy_exists' ) && ! taxonomy_exists( $taxonomy ) ) {
+            $this->log(
+                'error',
+                'SOFTONE_ATTR_SYNC_000 Missing attribute taxonomy before assignment.',
+                array(
+                    'product_id'      => $product_id,
+                    'taxonomy'        => $taxonomy,
+                    'term_ids'        => $normalized_term_ids,
+                    'attribute_value' => isset( $attribute_assignments['values'][ $taxonomy ] ) ? $attribute_assignments['values'][ $taxonomy ] : '',
+                )
+            );
+            continue;
+        }
+
+        $term_assignment = wp_set_object_terms( $product_id, $normalized_term_ids, $taxonomy );
+        if ( is_wp_error( $term_assignment ) ) {
+            $this->log(
+                'error',
+                'SOFTONE_ATTR_SYNC_001 Failed to assign attribute terms.',
+                array(
+                    'product_id'      => $product_id,
+                    'taxonomy'        => $taxonomy,
+                    'term_ids'        => $normalized_term_ids,
+                    'attribute_value' => isset( $attribute_assignments['values'][ $taxonomy ] ) ? $attribute_assignments['values'][ $taxonomy ] : '',
+                    'error_message'   => $term_assignment->get_error_message(),
+                )
+            );
+            $this->log_activity(
+                'product_attributes',
+                'assignment_error',
+                'Failed to assign attribute terms.',
+                array(
+                    'product_id'      => $product_id,
+                    'sku'             => $sku_for_images,
+                    'taxonomy'        => $taxonomy,
+                    'term_ids'        => $normalized_term_ids,
+                    'attribute_value' => isset( $attribute_assignments['values'][ $taxonomy ] ) ? $attribute_assignments['values'][ $taxonomy ] : '',
+                    'error_message'   => $term_assignment->get_error_message(),
+                )
+            );
+        } else {
+            $this->log_activity(
+                'product_attributes',
+                'assigned_terms',
+                'Assigned attribute terms to the item.',
+                array(
+                    'product_id'      => $product_id,
+                    'sku'             => $sku_for_images,
+                    'taxonomy'        => $taxonomy,
+                    'term_ids'        => $normalized_term_ids,
+                    'attribute_value' => isset( $attribute_assignments['values'][ $taxonomy ] ) ? $attribute_assignments['values'][ $taxonomy ] : '',
+                )
+            );
+        }
+    }
+
+    // ---------- CLEAR TAXONOMIES ----------
+    $cleared_taxonomies = array();
+    foreach ( $attribute_assignments['clear'] as $taxonomy ) {
+        if ( '' === $taxonomy ) { continue; }
+        $cleared_taxonomies[] = (string) $taxonomy;
+        wp_set_object_terms( $product_id, array(), $taxonomy );
+    }
+    if ( ! empty( $cleared_taxonomies ) ) {
+        $this->log_activity(
+            'product_attributes',
+            'cleared_terms',
+            'Removed attribute term assignments from the item.',
+            array(
+                'product_id' => $product_id,
+                'sku'        => $sku_for_images,
+                'taxonomies' => $cleared_taxonomies,
+            )
+        );
+    }
+
+    // ---------- BRAND ----------
+    $this->assign_brand_term( $product_id, $brand_value );
+
+    $action = $is_new ? 'created' : 'updated';
+    $this->log(
+        'info',
+        sprintf( 'Product %s via Softone sync.', $action ),
+        array(
+            'product_id' => $product_id,
+            'sku'        => $sku_for_images,
+            'mtrl'       => $mtrl,
+            'timestamp'  => $run_timestamp,
+        )
+    );
+
+    return $action;
+}
+
 
         /** @return int */
         protected function handle_stale_products( $run_timestamp ) {
@@ -900,6 +902,10 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     }
 
                     $product->save();
+                    // --- Attach images based on SKU ---
+                    if ( ! empty( $sku ) ) {
+                    Softone_Sku_Image_Attacher::attach_gallery_from_sku( (int) $product_id, (string) $sku );
+                    }
                     update_post_meta( $product_id, self::META_LAST_SYNC, (int) $run_timestamp );
 
                     $this->log( 'info', 'Marked product as stale following Softone sync run.', array( 'product_id' => $product_id, 'action' => $action ) );
