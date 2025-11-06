@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.8.53
+Stable tag: 1.8.54
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -78,27 +78,8 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 
 == Changelog ==
 
-= 1.8.53 =
-* Prefer the SoftOne `SKU` field when assigning WooCommerce SKUs so catalogue records mirror ERP identifiers.
-* Map SoftOne barcodes to WooCommerce's GTIN/UPC/EAN/ISBN field and allow custom GTIN meta keys via a filter.
-* Convert SoftOne items linked via `related_item_mtrl` into true WooCommerce variations, reusing existing simple products as variation records.
-
-= 1.8.52 =
-* Always attach grouped variation payloads to SoftOne parent products so WooCommerce variations are generated during sync.
-* Derive colour attribute values from grouped variation metadata when explicit colour overrides are absent.
-
-= 1.8.51 =
-* Group SoftOne items connected via `related_item_mtrl` into a single variable product so Softone-defined colour siblings import as WooCommerce variations.
-* Persist related SoftOne material identifiers on parent products to capture the `related_item_mtrls` list alongside the Softone item metadata.
-* Force grouped products into the WooCommerce "variable" product type taxonomy when variations are generated so the admin UI reflects their actual configuration.
-
-= 1.8.50 =
-* Group SoftOne catalogue rows by brand, cleaned title, and code so imports create/maintain variable parent products with one colour-based variation per SKU.
-* Always provision the `pa_colour` taxonomy, generate missing colour terms, and map parent attributes as "Used for variations" to keep previously imported products in the variable state.
-
-= 1.8.49 =
-* Treat SoftOne colour placeholders such as `-` as empty so derived colours populate the `pa_colour` taxonomy.
-* Mark colour attributes as variation-enabled, convert synced products to variable products, and create a default colour variation to keep items purchasable.
+= 1.8.54 =
+* Re-release the plugin using the codebase from commit 5ff7c3d to undo later changes while continuing the version sequence.
 
 = 1.8.48 =
 * Ensure WooCommerce item sync detects SKU-prefixed media files even when WordPress renames uploads, promoting `_1` images to featured status and assigning remaining matches to the gallery automatically.

@@ -442,27 +442,6 @@ if ( ! function_exists( 'wp_set_object_terms' ) ) {
     }
 }
 
-if ( ! function_exists( 'wp_get_object_terms' ) ) {
-    /**
-     * Retrieve taxonomy assignments from the in-memory store.
-     *
-     * @param int    $object_id Object identifier.
-     * @param string $taxonomy  Taxonomy slug.
-     * @param array  $args      Query arguments (unused).
-     * @return array<int>
-     */
-    function wp_get_object_terms( $object_id, $taxonomy, $args = array() ) {
-        $taxonomy = (string) $taxonomy;
-        $object_id = (int) $object_id;
-
-        if ( isset( $GLOBALS['softone_object_terms'][ $taxonomy ][ $object_id ] ) ) {
-            return $GLOBALS['softone_object_terms'][ $taxonomy ][ $object_id ];
-        }
-
-        return array();
-    }
-}
-
 if ( ! function_exists( 'get_post_meta' ) ) {
     /**
      * Retrieve a value from the in-memory post meta store.
@@ -806,15 +785,6 @@ if ( ! class_exists( 'WC_Product_Attribute' ) ) {
         public function get_options() {
             return $this->options;
         }
-
-        /**
-         * Determine whether the attribute is used for variations.
-         *
-         * @return bool
-         */
-        public function get_variation() {
-            return $this->variation;
-        }
     }
 }
 
@@ -1093,14 +1063,6 @@ if ( $attribute_object->get_options() !== array( $expected_term_id ) ) {
     throw new RuntimeException( 'Prepared attribute options should include the reused colour term identifier.' );
 }
 
-if ( ! isset( $assignments['variation_taxonomies'][ $colour_taxonomy ] ) ) {
-    throw new RuntimeException( 'Colour attributes should be marked for variation handling.' );
-}
-
-if ( ! $attribute_object->get_variation() ) {
-    throw new RuntimeException( 'Colour attribute metadata should be flagged as a variation attribute.' );
-}
-
 $term = get_term( $expected_term_id, $colour_taxonomy );
 if ( ! $term || is_wp_error( $term ) ) {
     throw new RuntimeException( 'Failed to retrieve the colour term after ensuring it exists.' );
@@ -1150,89 +1112,9 @@ if ( ! $alias_attribute instanceof WC_Product_Attribute ) {
     throw new RuntimeException( 'Expected a WC_Product_Attribute instance for the colour alias assignment.' );
 }
 
-if ( ! isset( $alias_assignments['variation_taxonomies'][ $colour_taxonomy ] ) ) {
-    throw new RuntimeException( 'Colour alias assignments should be marked for variation handling.' );
-}
-
-if ( ! $alias_attribute->get_variation() ) {
-    throw new RuntimeException( 'Colour alias metadata should be flagged as a variation attribute.' );
-}
-
 if ( $alias_attribute->get_options() !== array( $expected_term_id ) ) {
     throw new RuntimeException( 'Colour alias attribute options should contain the reused term identifier.' );
 }
 
-$group_attribute_sync = new Softone_Item_Sync_Attribute_Test_Double();
-
-$group_product = new WC_Product_Simple();
-$group_product->set_attributes( array() );
-
-$group_assignments = $group_attribute_sync->prepare_attribute_assignments_public(
-    array(
-        '__group_variations' => array(
-            array(
-                'colour_label' => 'Teal',
-            ),
-            array(
-                'colour_label' => 'Scarlet',
-            ),
-        ),
-    ),
-    $group_product
-);
-
-if ( ! isset( $group_assignments['variation_taxonomies'][ $colour_taxonomy ] ) ) {
-    throw new RuntimeException( 'Group variation colour labels should trigger variation taxonomy assignment.' );
-}
-
-if ( ! isset( $group_assignments['attributes'][ $colour_taxonomy ] ) ) {
-    throw new RuntimeException( 'Expected group variations to prepare colour attribute metadata.' );
-}
-
-$group_attribute = $group_assignments['attributes'][ $colour_taxonomy ];
-if ( ! $group_attribute instanceof WC_Product_Attribute ) {
-    throw new RuntimeException( 'Group variation attributes should use WC_Product_Attribute metadata.' );
-}
-
-if ( ! $group_attribute->get_variation() ) {
-    throw new RuntimeException( 'Group variation colour metadata should be flagged for variation handling.' );
-}
-
-if ( ! isset( $group_assignments['terms'][ $colour_taxonomy ] ) ) {
-    throw new RuntimeException( 'Group variations should schedule colour term assignments.' );
-}
-
-$group_term_ids = $group_assignments['terms'][ $colour_taxonomy ];
-if ( count( $group_term_ids ) !== 2 ) {
-    throw new RuntimeException( 'Expected both group colour labels to register attribute terms.' );
-}
-
-$group_term_names = array();
-foreach ( $group_term_ids as $term_id ) {
-    $term = get_term( $term_id, $colour_taxonomy );
-    if ( ! $term || is_wp_error( $term ) ) {
-        throw new RuntimeException( 'Failed to load the colour term created for group variations.' );
-    }
-    $group_term_names[] = $term->name;
-}
-
-sort( $group_term_names );
-if ( $group_term_names !== array( 'Scarlet', 'Teal' ) ) {
-    throw new RuntimeException( 'Group variation colour labels should be normalised into attribute terms.' );
-}
-
-if ( ! isset( $group_assignments['values'][ $colour_taxonomy ] ) ) {
-    throw new RuntimeException( 'Group variation attributes should include a comma-separated value summary.' );
-}
-
-if ( $group_assignments['values'][ $colour_taxonomy ] !== 'Teal, Scarlet' ) {
-    throw new RuntimeException( 'Group variation attribute values should preserve the original label order.' );
-}
-
-if ( ! isset( $group_assignments['term_slugs'][ $colour_taxonomy ]['Teal'] ) || ! isset( $group_assignments['term_slugs'][ $colour_taxonomy ]['Scarlet'] ) ) {
-    throw new RuntimeException( 'Group variation term slugs should be recorded for both colours.' );
-}
-
 echo "Taxonomy refresh regression test passed." . PHP_EOL;
 echo "Attribute term normalisation regression test passed." . PHP_EOL;
-echo "Group variation attribute fallback regression test passed." . PHP_EOL;
