@@ -31,6 +31,41 @@ class Softone_Item_Sync {
     const META_BARCODE      = '_softone_barcode';
     const META_BRAND        = '_softone_brand';
     const META_SOFTONE_CODE = '_softone_item_code';
+    const META_PAYLOAD_HASH = '_softone_payload_hash';
+
+    /**
+     * Track whether taxonomy refresh is forced during a manual import.
+     *
+     * @var bool
+     */
+    protected $force_taxonomy_refresh = false;
+
+    /**
+     * Optional Softone API client used by legacy import helpers.
+     *
+     * @var Softone_API_Client|null
+     */
+    protected $api_client;
+
+    /**
+     * Optional logger provided by older integrations.
+     *
+     * @var object|null
+     */
+    protected $legacy_logger;
+
+    /**
+     * Constructor kept for backwards compatibility with older bootstraps.
+     */
+    public function __construct( $api_client = null, $logger = null ) {
+        if ( null !== $api_client ) {
+            $this->api_client = $api_client;
+        }
+
+        if ( null !== $logger ) {
+            $this->legacy_logger = $logger;
+        }
+    }
 
     /**
      * Back-compat for older loader code that expects register_hooks().
@@ -281,12 +316,18 @@ class Softone_Item_Sync {
         $logger = new Softone_Sync_Activity_Logger();
 
         try {
+            $previous_refresh_state         = $this->force_taxonomy_refresh;
+            $this->force_taxonomy_refresh   = (bool) $force_taxonomy_refresh;
             $result = $this->execute_sync( $force_full_import, $force_taxonomy_refresh );
             $this->log_sync_result( $result, $logger );
+
+            $this->force_taxonomy_refresh = $previous_refresh_state;
 
             return $result;
         } catch ( \Throwable $e ) {
             $this->log_sync_exception( $e, $logger );
+
+            $this->force_taxonomy_refresh = $previous_refresh_state;
 
             throw $e;
         }
@@ -361,6 +402,160 @@ class Softone_Item_Sync {
             'success' => true,
             'rows'    => [],
         ];
+    }
+
+    /**
+     * Legacy Softone pagination helper used by historical import flows.
+     */
+    protected function yield_item_rows( array $extra ) {
+        if ( ! $this->api_client || ! is_object( $this->api_client ) || ! method_exists( $this->api_client, 'sql_data' ) ) {
+            return ( function () { yield from []; } )();
+        }
+
+        $default_page_size = 250;
+        $page_size         = (int) apply_filters( 'softone_wc_integration_item_sync_page_size', $default_page_size );
+        if ( $page_size <= 0 ) {
+            $page_size = $default_page_size;
+        }
+
+        $max_pages     = (int) apply_filters( 'softone_wc_integration_item_sync_max_pages', 0 );
+        $page          = 1;
+        $previous_hash = [];
+
+        $generator = function () use ( $extra, $page_size, $max_pages, &$page, &$previous_hash ) {
+            while ( true ) {
+                $request_extra          = $extra;
+                $request_extra['pPage'] = $page;
+                $request_extra['pSize'] = $page_size;
+
+                $response = $this->api_client->sql_data( 'getItems', [], $request_extra );
+                $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : [];
+
+                $this->log_activity(
+                    'api_requests',
+                    'payload_received',
+                    'Received payload from Softone API for getItems request.',
+                    [
+                        'endpoint'  => 'getItems',
+                        'page'      => $page,
+                        'page_size' => $page_size,
+                        'row_count' => count( $rows ),
+                        'request'   => $request_extra,
+                        'payload'   => $this->prepare_api_payload_for_logging( $response ),
+                    ]
+                );
+
+                if ( empty( $rows ) ) {
+                    break;
+                }
+
+                $hash = $this->hash_item_rows( $rows );
+                if ( isset( $previous_hash[ $hash ] ) ) {
+                    $this->log(
+                        'warning',
+                        'Detected repeated page payload when fetching Softone item rows. Aborting further pagination to prevent an infinite loop.',
+                        [ 'page' => $page, 'page_size' => $page_size ]
+                    );
+                    break;
+                }
+
+                $previous_hash[ $hash ] = true;
+
+                foreach ( $rows as $row ) {
+                    yield $row;
+                }
+
+                if ( count( $rows ) < $page_size ) {
+                    break;
+                }
+
+                $page++;
+
+                if ( $max_pages > 0 && $page > $max_pages ) {
+                    break;
+                }
+            }
+        };
+
+        return $generator();
+    }
+
+    /**
+     * Hash the API payload to detect repeated pages.
+     */
+    protected function hash_item_rows( array $rows ) {
+        $context = hash_init( 'md5' );
+        $this->hash_append_value( $context, $rows );
+
+        return hash_final( $context );
+    }
+
+    /**
+     * Append values to a hashing context.
+     */
+    protected function hash_append_value( $context, $value ) {
+        if ( is_array( $value ) ) {
+            $keys       = array_keys( $value );
+            $item_count = count( $value );
+            $is_list    = 0 === $item_count || $keys === range( 0, $item_count - 1 );
+
+            if ( $is_list ) {
+                hash_update( $context, '[' );
+                $first = true;
+                foreach ( $value as $item ) {
+                    if ( $first ) { $first = false; } else { hash_update( $context, ',' ); }
+                    $this->hash_append_value( $context, $item );
+                }
+                hash_update( $context, ']' );
+
+                return;
+            }
+
+            hash_update( $context, '{' );
+            $first = true;
+            foreach ( $value as $key => $item ) {
+                if ( $first ) { $first = false; } else { hash_update( $context, ',' ); }
+                hash_update( $context, $this->encode_json_fragment( (string) $key ) );
+                hash_update( $context, ':' );
+                $this->hash_append_value( $context, $item );
+            }
+            hash_update( $context, '}' );
+
+            return;
+        }
+
+        hash_update( $context, $this->encode_json_fragment( $value ) );
+    }
+
+    /**
+     * Encode a value using JSON semantics for hashing purposes.
+     */
+    protected function encode_json_fragment( $value ) {
+        $encoded = function_exists( 'wp_json_encode' ) ? wp_json_encode( $value ) : json_encode( $value );
+        if ( false === $encoded ) {
+            $encoded = '';
+        }
+
+        return (string) $encoded;
+    }
+
+    /**
+     * Lightweight legacy activity logger shim.
+     */
+    protected function log_activity( $channel, $action, $message, array $context = [] ) {
+        if ( is_object( $this->legacy_logger ) && method_exists( $this->legacy_logger, 'log' ) ) {
+            $this->legacy_logger->log( $action, $message, $context );
+            return;
+        }
+
+        $this->log( $action, $message, $context );
+    }
+
+    /**
+     * Prepare API payloads for logging output.
+     */
+    protected function prepare_api_payload_for_logging( $payload ) {
+        return $payload;
     }
 
     /**
@@ -443,6 +638,186 @@ class Softone_Item_Sync {
         }
 
         return $processed;
+    }
+
+    /**
+     * Backwards compatible single row import handler.
+     *
+     * Older integrations invoke import_row() directly when synchronising
+     * catalogue data. The refactored variable product workflow no longer uses
+     * this path internally, however the regression suite (and legacy installs)
+     * still rely on it. Re-introduce a lightweight implementation that keeps
+     * the public surface stable while delegating to modern helpers wherever
+     * possible.
+     *
+     * @param array $data          Normalised SoftOne item data.
+     * @param int   $run_timestamp Sync timestamp.
+     *
+     * @throws \RuntimeException When WooCommerce product APIs are unavailable.
+     *
+     * @return string created|updated|skipped
+     */
+    protected function import_row( array $data, $run_timestamp ) {
+        if ( ! class_exists( 'WC_Product' ) ) {
+            throw new \RuntimeException( __( 'WooCommerce is required to sync items.', 'softone-woocommerce-integration' ) );
+        }
+
+        $normalized = $this->normalize_legacy_row( $data );
+
+        $mtrl         = isset( $normalized['mtrl'] ) ? (string) $normalized['mtrl'] : '';
+        $sku_requested = $this->determine_sku( $normalized );
+
+        if ( '' === $mtrl && '' === $sku_requested ) {
+            throw new \RuntimeException( __( 'Unable to determine a product identifier for the imported row.', 'softone-woocommerce-integration' ) );
+        }
+
+        $product_id = $this->find_existing_product( $sku_requested, $mtrl );
+        $is_new     = ( $product_id <= 0 );
+
+        $product = $is_new ? new WC_Product_Simple() : wc_get_product( $product_id );
+
+        if ( ! $product ) {
+            throw new \RuntimeException( __( 'Failed to load the matching WooCommerce product.', 'softone-woocommerce-integration' ) );
+        }
+
+        if ( $is_new && method_exists( $product, 'set_status' ) ) {
+            $product->set_status( 'publish' );
+        }
+
+        $payload_hash = $this->build_payload_hash( $normalized );
+        $category_ids = $this->prepare_category_ids( $normalized );
+
+        if ( ! $is_new ) {
+            $existing_hash    = (string) get_post_meta( $product_id, self::META_PAYLOAD_HASH, true );
+            $categories_match = $this->product_categories_match( $product_id, $category_ids );
+
+            if ( ! $this->force_taxonomy_refresh && '' !== $existing_hash && $existing_hash === $payload_hash && $categories_match ) {
+                return 'skipped';
+            }
+        }
+
+        $name = $this->first_non_empty( $normalized, [ 'varchar02', 'desc', 'description', 'code', 'name' ] );
+        if ( null !== $name && method_exists( $product, 'set_name' ) ) {
+            $product->set_name( $name );
+        }
+
+        $description = $this->first_non_empty( $normalized, [ 'long_description', 'longdescription', 'remarks', 'remark', 'notes' ] );
+        if ( null !== $description && method_exists( $product, 'set_description' ) ) {
+            $product->set_description( $description );
+        }
+
+        $short_description = $this->first_non_empty( $normalized, [ 'short_description', 'short_desc' ] );
+        if ( null !== $short_description && method_exists( $product, 'set_short_description' ) ) {
+            $product->set_short_description( $short_description );
+        }
+
+        $price = $this->first_non_empty( $normalized, [ 'retailprice', 'price' ] );
+        if ( null !== $price && method_exists( $product, 'set_regular_price' ) ) {
+            $product->set_regular_price( wc_format_decimal( $price ) );
+        }
+
+        $stock_quantity = $this->first_non_empty( $normalized, [ 'stock_qty', 'qty1', 'qty' ] );
+        if ( null !== $stock_quantity && method_exists( $product, 'set_manage_stock' ) ) {
+            $amount = wc_stock_amount( $stock_quantity );
+            $product->set_manage_stock( true );
+            if ( method_exists( $product, 'set_stock_quantity' ) ) {
+                $product->set_stock_quantity( $amount );
+            }
+            if ( method_exists( $product, 'set_stock_status' ) ) {
+                $product->set_stock_status( $amount > 0 ? 'instock' : 'outofstock' );
+            }
+        }
+
+        if ( method_exists( $product, 'set_category_ids' ) ) {
+            $product->set_category_ids( $category_ids );
+        }
+
+        $effective_sku = $this->ensure_unique_sku( $sku_requested, $is_new ? 0 : (int) $product_id );
+        if ( '' !== $effective_sku && method_exists( $product, 'set_sku' ) ) {
+            $product->set_sku( $effective_sku );
+        }
+
+        $attribute_assignments = $this->prepare_attribute_assignments( $normalized, $product, array() );
+        if ( method_exists( $product, 'set_attributes' ) ) {
+            if ( ! empty( $attribute_assignments['attributes'] ) ) {
+                $product->set_attributes( $attribute_assignments['attributes'] );
+            } elseif ( $is_new ) {
+                $product->set_attributes( array() );
+            }
+        }
+
+        if ( method_exists( $product, 'save' ) ) {
+            $product_id = (int) $product->save();
+        }
+
+        if ( $product_id <= 0 ) {
+            throw new \RuntimeException( __( 'Unable to save the WooCommerce product.', 'softone-woocommerce-integration' ) );
+        }
+
+        if ( '' !== $mtrl ) {
+            update_post_meta( $product_id, self::META_MTRL, $mtrl );
+        }
+
+        update_post_meta( $product_id, self::META_PAYLOAD_HASH, $payload_hash );
+        if ( is_numeric( $run_timestamp ) ) {
+            update_post_meta( $product_id, self::META_LAST_SYNC, (int) $run_timestamp );
+        }
+
+        if ( ! empty( $category_ids ) && function_exists( 'wp_set_object_terms' ) ) {
+            $assignment = wp_set_object_terms( $product_id, $category_ids, 'product_cat' );
+            if ( is_wp_error( $assignment ) ) {
+                $this->log(
+                    'error',
+                    'Failed to assign product categories during Softone legacy import.',
+                    array(
+                        'product_id'    => $product_id,
+                        'category_ids'  => $category_ids,
+                        'error_message' => $assignment->get_error_message(),
+                    )
+                );
+            }
+        }
+
+        if ( ! empty( $attribute_assignments['terms'] ) && function_exists( 'wp_set_object_terms' ) ) {
+            foreach ( $attribute_assignments['terms'] as $taxonomy => $term_ids ) {
+                if ( empty( $term_ids ) ) {
+                    continue;
+                }
+
+                wp_set_object_terms( $product_id, array_map( 'intval', (array) $term_ids ), $taxonomy );
+            }
+        }
+
+        if ( ! empty( $attribute_assignments['clear'] ) && function_exists( 'wp_set_object_terms' ) ) {
+            foreach ( $attribute_assignments['clear'] as $taxonomy ) {
+                if ( '' === $taxonomy ) {
+                    continue;
+                }
+
+                wp_set_object_terms( $product_id, array(), $taxonomy );
+            }
+        }
+
+        $brand_value = $this->first_non_empty( $normalized, [ 'brand_name', 'brand' ] );
+        if ( null !== $brand_value ) {
+            $this->assign_brand_term( $product_id, $brand_value );
+            $this->assign_product_brand_term( $product_id, $brand_value );
+        }
+
+        $action = $is_new ? 'created' : 'updated';
+
+        $this->log(
+            'info',
+            sprintf( 'Product %s via Softone legacy import.', $action ),
+            array(
+                'product_id' => $product_id,
+                'sku'        => $effective_sku ?: $sku_requested,
+                'mtrl'       => $mtrl,
+                'timestamp'  => $run_timestamp,
+            )
+        );
+
+        return $action;
     }
 
     protected function upsert_variable_parent( array $group ) : int {
@@ -730,6 +1105,458 @@ class Softone_Item_Sync {
             return (int) $q->posts[0];
         }
         return 0;
+    }
+
+    /**
+     * Locate an existing product by SKU or SoftOne MTRL metadata.
+     */
+    protected function find_existing_product( $sku, $mtrl ) {
+        $sku = trim( (string) $sku );
+        if ( '' !== $sku && function_exists( 'wc_get_product_id_by_sku' ) ) {
+            $existing = (int) wc_get_product_id_by_sku( $sku );
+            if ( $existing > 0 ) {
+                return $existing;
+            }
+        }
+
+        $mtrl = trim( (string) $mtrl );
+        if ( '' !== $mtrl ) {
+            $existing = $this->find_product_by_meta( self::META_MTRL, $mtrl );
+            if ( $existing > 0 ) {
+                return $existing;
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * Build a payload hash used to detect identical imports.
+     */
+    protected function build_payload_hash( array $data ) : string {
+        $hash_source = $data;
+        ksort( $hash_source );
+
+        $encoded = function_exists( 'wp_json_encode' ) ? wp_json_encode( $hash_source ) : json_encode( $hash_source );
+        if ( false === $encoded ) {
+            $encoded = '';
+        }
+
+        return md5( (string) $encoded );
+    }
+
+    /**
+     * Determine the preferred SKU candidate.
+     */
+    protected function determine_sku( array $data ) : string {
+        foreach ( [ 'sku', 'barcode', 'code' ] as $key ) {
+            if ( isset( $data[ $key ] ) && '' !== trim( (string) $data[ $key ] ) ) {
+                return (string) $data[ $key ];
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Normalise category identifiers embedded in the row payload.
+     *
+     * @param array $data Normalised row payload.
+     *
+     * @return array<int>
+     */
+    protected function prepare_category_ids( array $data ) {
+        $ids = [];
+
+        if ( isset( $data['category_ids'] ) ) {
+            $ids = (array) $data['category_ids'];
+        }
+
+        $normalized = [];
+        foreach ( $ids as $id ) {
+            $id = (int) $id;
+            if ( $id > 0 ) {
+                $normalized[] = $id;
+            }
+        }
+
+        $normalized = array_values( array_unique( $normalized ) );
+
+        return $normalized;
+    }
+
+    /**
+     * Compare existing product category assignments with the target payload.
+     */
+    protected function product_categories_match( $product_id, array $category_ids ) : bool {
+        $product_id = (int) $product_id;
+        if ( $product_id <= 0 ) {
+            return false;
+        }
+
+        $target = array_values( array_unique( array_map( 'intval', array_filter( $category_ids ) ) ) );
+        sort( $target );
+
+        if ( function_exists( 'wp_get_object_terms' ) ) {
+            $existing_terms = wp_get_object_terms( $product_id, 'product_cat', [ 'fields' => 'ids' ] );
+            if ( is_wp_error( $existing_terms ) ) {
+                return false;
+            }
+
+            $existing = array_map( 'intval', (array) $existing_terms );
+        } elseif ( isset( $GLOBALS['softone_object_terms']['product_cat'][ $product_id ] ) ) {
+            $existing = array_map( 'intval', (array) $GLOBALS['softone_object_terms']['product_cat'][ $product_id ] );
+        } else {
+            $product = wc_get_product( $product_id );
+            if ( ! $product || ! method_exists( $product, 'get_category_ids' ) ) {
+                return false;
+            }
+
+            $existing = array_map( 'intval', (array) $product->get_category_ids() );
+        }
+
+        $existing = array_values( array_unique( $existing ) );
+        sort( $existing );
+
+        return $existing === $target;
+    }
+
+    /**
+     * Retrieve the first non-empty value from a list of candidate keys.
+     */
+    protected function first_non_empty( array $data, array $keys ) {
+        foreach ( $keys as $key ) {
+            if ( isset( $data[ $key ] ) ) {
+                $value = $data[ $key ];
+                if ( '' !== $value && null !== $value ) {
+                    return $value;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Ensure SKUs remain unique by appending numeric suffixes when necessary.
+     */
+    protected function ensure_unique_sku( $base_sku, $current_product_id = 0 ) : string {
+        $base_sku = trim( (string) $base_sku );
+        if ( '' === $base_sku ) {
+            return '';
+        }
+
+        if ( ! $this->sku_taken_by_other( $base_sku, $current_product_id ) ) {
+            return $base_sku;
+        }
+
+        $attempts = (int) apply_filters( 'softone_wc_integration_sku_unique_attempts', 50 );
+        $suffix   = 2;
+        $candidate = $base_sku . '-' . $suffix;
+
+        while ( $this->sku_taken_by_other( $candidate, $current_product_id ) && $suffix <= $attempts ) {
+            $suffix++;
+            $candidate = $base_sku . '-' . $suffix;
+        }
+
+        if ( $this->sku_taken_by_other( $candidate, $current_product_id ) ) {
+            return '';
+        }
+
+        return $candidate;
+    }
+
+    /**
+     * Detect when a SKU is already owned by another product.
+     */
+    protected function sku_taken_by_other( $sku, $current_product_id = 0 ) : bool {
+        $sku = trim( (string) $sku );
+        if ( '' === $sku ) {
+            return false;
+        }
+
+        if ( ! function_exists( 'wc_get_product_id_by_sku' ) ) {
+            return false;
+        }
+
+        $owner_id = (int) wc_get_product_id_by_sku( $sku );
+        if ( $owner_id <= 0 ) {
+            return false;
+        }
+
+        $current_product_id = (int) $current_product_id;
+
+        return $current_product_id <= 0 || $owner_id !== $current_product_id;
+    }
+
+    /**
+     * Normalise a colour attribute value for taxonomy usage.
+     */
+    protected function normalize_colour_value( $colour ) {
+        $colour = is_string( $colour ) ? trim( $colour ) : '';
+        if ( '' === $colour ) {
+            return '';
+        }
+
+        return $this->normalize_colour_name( $colour );
+    }
+
+    /**
+     * Resolve the colour attribute slug, preferring existing taxonomies.
+     */
+    protected function resolve_colour_attribute_slug() {
+        if ( function_exists( 'wc_attribute_taxonomy_id_by_name' ) ) {
+            if ( wc_attribute_taxonomy_id_by_name( 'colour' ) ) {
+                return 'colour';
+            }
+
+            if ( wc_attribute_taxonomy_id_by_name( 'color' ) ) {
+                return 'color';
+            }
+        }
+
+        return 'colour';
+    }
+
+    /**
+     * Ensure the requested attribute taxonomy exists and return its identifier.
+     */
+    protected function ensure_attribute_taxonomy( $slug, $label ) {
+        if ( ! function_exists( 'wc_attribute_taxonomy_id_by_name' ) ) {
+            return 0;
+        }
+
+        $attribute_id = (int) wc_attribute_taxonomy_id_by_name( $slug );
+
+        if ( $attribute_id <= 0 && function_exists( 'wc_create_attribute' ) ) {
+            $result = wc_create_attribute(
+                [
+                    'slug'         => $slug,
+                    'name'         => $label,
+                    'type'         => 'select',
+                    'order_by'     => 'menu_order',
+                    'has_archives' => false,
+                ]
+            );
+
+            if ( is_wp_error( $result ) ) {
+                $this->log( 'error', 'Failed to create attribute taxonomy.', [ 'slug' => $slug, 'error' => $result->get_error_message() ] );
+                return 0;
+            }
+
+            $attribute_id = (int) $result;
+        }
+
+        if ( $attribute_id > 0 && function_exists( 'wc_attribute_taxonomy_name' ) ) {
+            $taxonomy = wc_attribute_taxonomy_name( $slug );
+            if ( '' !== $taxonomy && function_exists( 'taxonomy_exists' ) && ! taxonomy_exists( $taxonomy ) && function_exists( 'register_taxonomy' ) ) {
+                register_taxonomy( $taxonomy, [ 'product' ], [ 'hierarchical' => false ] );
+            }
+        }
+
+        return $attribute_id;
+    }
+
+    /**
+     * Ensure an attribute term exists for the provided taxonomy.
+     */
+    protected function ensure_attribute_term( $taxonomy, $value ) {
+        if ( '' === $taxonomy ) {
+            return 0;
+        }
+
+        $normalized_value = $this->normalize_colour_value( $value );
+
+        if ( '' === $normalized_value ) {
+            return 0;
+        }
+
+        $term = false;
+        if ( function_exists( 'get_term_by' ) ) {
+            $term = get_term_by( 'name', $normalized_value, $taxonomy );
+            if ( ! $term && function_exists( 'sanitize_title' ) ) {
+                $term = get_term_by( 'slug', sanitize_title( $normalized_value ), $taxonomy );
+            }
+        }
+
+        if ( $term && ! is_wp_error( $term ) ) {
+            $term_id = (int) $term->term_id;
+
+            if ( property_exists( $term, 'name' ) && $term->name !== $normalized_value && function_exists( 'wp_update_term' ) ) {
+                wp_update_term( $term_id, $taxonomy, [ 'name' => $normalized_value ] );
+            }
+
+            if ( function_exists( 'clean_term_cache' ) ) {
+                clean_term_cache( [ $term_id ], $taxonomy );
+            }
+
+            return $term_id;
+        }
+
+        if ( ! function_exists( 'wp_insert_term' ) ) {
+            return 0;
+        }
+
+        $args = [];
+        if ( function_exists( 'sanitize_title' ) ) {
+            $args['slug'] = sanitize_title( $normalized_value );
+        }
+
+        $created = wp_insert_term( $normalized_value, $taxonomy, $args );
+
+        if ( is_wp_error( $created ) ) {
+            $this->log( 'error', 'Failed to create attribute term.', [ 'taxonomy' => $taxonomy, 'value' => $normalized_value, 'error' => $created->get_error_message() ] );
+            return 0;
+        }
+
+        $term_id = (int) $created['term_id'];
+
+        if ( function_exists( 'clean_term_cache' ) ) {
+            clean_term_cache( [ $term_id ], $taxonomy );
+        }
+
+        return $term_id;
+    }
+
+    /**
+     * Prepare legacy attribute assignments.
+     */
+    protected function prepare_attribute_assignments( array $data, $product, array $fallback_attributes = array() ) {
+        $assignments = [
+            'attributes' => [],
+            'terms'      => [],
+            'values'     => [],
+            'clear'      => [],
+        ];
+
+        $colour_value = $this->normalize_colour_value( $this->first_non_empty( $data, [ 'colour_name', 'color_name', 'colour', 'color' ] ) );
+        if ( '' === $colour_value && isset( $fallback_attributes['colour'] ) ) {
+            $colour_value = $this->normalize_colour_value( $fallback_attributes['colour'] );
+        }
+
+        $colour_slug = $this->resolve_colour_attribute_slug();
+        $taxonomy    = function_exists( 'wc_attribute_taxonomy_name' ) ? wc_attribute_taxonomy_name( $colour_slug ) : '';
+
+        if ( '' !== $colour_value && '' !== $taxonomy ) {
+            $attribute_id = $this->ensure_attribute_taxonomy( $colour_slug, __( 'Colour', 'softone-woocommerce-integration' ) );
+
+            if ( $attribute_id ) {
+                $term_id = $this->ensure_attribute_term( $taxonomy, $colour_value );
+
+                if ( $term_id && class_exists( 'WC_Product_Attribute' ) ) {
+                    $attribute = new WC_Product_Attribute();
+                    $attribute->set_id( (int) $attribute_id );
+                    $attribute->set_name( $taxonomy );
+                    $attribute->set_options( [ (int) $term_id ] );
+                    $attribute->set_position( 0 );
+                    $attribute->set_visible( true );
+                    $attribute->set_variation( false );
+
+                    $assignments['attributes'][ $taxonomy ] = $attribute;
+                    $assignments['terms'][ $taxonomy ]      = [ (int) $term_id ];
+                    $assignments['values'][ $taxonomy ]     = $colour_value;
+                }
+            }
+        } elseif ( '' === $colour_value && '' !== $taxonomy ) {
+            $assignments['clear'][] = $taxonomy;
+        }
+
+        return $assignments;
+    }
+
+    /**
+     * Persist brand metadata and taxonomy assignments when available.
+     */
+    protected function assign_brand_term( $product_id, $brand_value ) {
+        $product_id  = (int) $product_id;
+        $brand_value = trim( (string) $brand_value );
+
+        if ( $product_id <= 0 || '' === $brand_value ) {
+            return;
+        }
+
+        update_post_meta( $product_id, self::META_BRAND, $brand_value );
+
+        if ( ! function_exists( 'taxonomy_exists' ) || ! taxonomy_exists( 'pa_brand' ) || ! function_exists( 'wp_set_object_terms' ) ) {
+            return;
+        }
+
+        $term = get_term_by( 'name', $brand_value, 'pa_brand' );
+        if ( ! $term && function_exists( 'wp_insert_term' ) ) {
+            $created = wp_insert_term( $brand_value, 'pa_brand' );
+            if ( ! is_wp_error( $created ) ) {
+                $term = get_term( (int) $created['term_id'], 'pa_brand' );
+            }
+        }
+
+        if ( $term && ! is_wp_error( $term ) ) {
+            wp_set_object_terms( $product_id, [ (int) $term->term_id ], 'pa_brand', false );
+        }
+    }
+
+    /**
+     * Assign WooCommerce product_brand taxonomy terms when present.
+     */
+    protected function assign_product_brand_term( $product_id, $brand_value ) {
+        $product_id  = (int) $product_id;
+        $brand_value = trim( (string) $brand_value );
+
+        if ( $product_id <= 0 || '' === $brand_value ) {
+            return;
+        }
+
+        if ( ! function_exists( 'taxonomy_exists' ) || ! taxonomy_exists( 'product_brand' ) || ! function_exists( 'wp_set_object_terms' ) ) {
+            return;
+        }
+
+        $term = get_term_by( 'name', $brand_value, 'product_brand' );
+        if ( ! $term && function_exists( 'wp_insert_term' ) ) {
+            $created = wp_insert_term( $brand_value, 'product_brand' );
+            if ( is_wp_error( $created ) ) {
+                $this->log( 'error', 'Failed to create product_brand term.', [ 'brand' => $brand_value, 'error' => $created->get_error_message() ] );
+                return;
+            }
+
+            $term = get_term( (int) $created['term_id'], 'product_brand' );
+        }
+
+        if ( $term && ! is_wp_error( $term ) ) {
+            wp_set_object_terms( $product_id, [ (int) $term->term_id ], 'product_brand', false );
+        }
+    }
+
+    /**
+     * Lightweight logger used by legacy paths.
+     */
+    protected function log( $level, $message, array $context = [] ) {
+        if ( is_object( $this->legacy_logger ) && method_exists( $this->legacy_logger, 'log' ) ) {
+            $this->legacy_logger->log( $level, $message, $context );
+            return;
+        }
+
+        if ( class_exists( 'Softone_Sync_Activity_Logger' ) ) {
+            $logger = new Softone_Sync_Activity_Logger();
+            $logger->log( 'item_sync', (string) $level, (string) $message, $context );
+            return;
+        }
+
+        if ( function_exists( 'error_log' ) ) {
+            $encoded_context = function_exists( 'wp_json_encode' ) ? wp_json_encode( $context ) : json_encode( $context );
+            error_log( sprintf( '[softone-item-sync:%s] %s %s', $level, $message, (string) $encoded_context ) );
+        }
+    }
+
+    /**
+     * Convert incoming row data to a predictable, lower-case keyed array.
+     */
+    protected function normalize_legacy_row( array $row ) : array {
+        $normalized = [];
+
+        foreach ( $row as $key => $value ) {
+            $normalized[ strtolower( (string) $key ) ] = $value;
+        }
+
+        return $normalized;
     }
 
     /**
