@@ -106,16 +106,20 @@ if ( ! class_exists( 'Softone_Sku_Image_Attacher' ) ) {
             // Query attachments likely to match (restrict to images).
             $sql = $wpdb->prepare(
                 "
-                SELECT p.ID, p.post_title, p.post_parent, p.guid
+                SELECT
+                    p.ID,
+                    p.post_title,
+                    p.post_parent,
+                    p.guid,
+                    MAX(pm.meta_value) AS attached_file
                 FROM {$wpdb->posts} p
+                LEFT JOIN {$wpdb->postmeta} pm
+                    ON pm.post_id = p.ID
+                    AND pm.meta_key = '_wp_attached_file'
                 WHERE p.post_type = 'attachment'
                   AND p.post_mime_type LIKE 'image/%%'
-                  AND (p.guid RLIKE %s OR EXISTS (
-                        SELECT 1 FROM {$wpdb->postmeta} pm
-                        WHERE pm.post_id = p.ID
-                          AND pm.meta_key = '_wp_attached_file'
-                          AND pm.meta_value RLIKE %s
-                  ))
+                  AND (p.guid RLIKE %s OR pm.meta_value RLIKE %s)
+                GROUP BY p.ID, p.post_title, p.post_parent, p.guid
                 ",
                 $regexp,
                 $regexp
@@ -126,11 +130,28 @@ if ( ! class_exists( 'Softone_Sku_Image_Attacher' ) ) {
             // Extra pass with PHP to be strict and handle odd spaces.
             $filtered = array();
             foreach ( (array) $rows as $row ) {
-                $fn = self::filename_from_url( $row->guid );
-                if ( $fn ) {
-                    $fn = self::safe_utf8( $fn );
-                    if ( self::filename_starts_with_sku( $fn, $sku ) ) {
-                        $filtered[] = $row;
+                $candidates = array();
+
+                if ( ! empty( $row->attached_file ) ) {
+                    $candidate = self::filename_from_url( $row->attached_file );
+                    if ( $candidate ) {
+                        $candidates[] = $candidate;
+                    }
+                }
+
+                $from_guid = self::filename_from_url( $row->guid );
+                if ( $from_guid ) {
+                    $candidates[] = $from_guid;
+                }
+
+                $candidates = array_values( array_unique( array_filter( $candidates ) ) );
+
+                foreach ( $candidates as $candidate ) {
+                    $candidate = self::safe_utf8( $candidate );
+                    if ( self::filename_starts_with_sku( $candidate, $sku ) ) {
+                        $row->softone_filename = $candidate;
+                        $filtered[]             = $row;
+                        break;
                     }
                 }
             }
@@ -146,10 +167,19 @@ if ( ! class_exists( 'Softone_Sku_Image_Attacher' ) ) {
                 return null;
             }
             $parts = wp_parse_url( $url );
-            if ( empty( $parts['path'] ) ) {
-                return null;
+            $path  = '';
+
+            if ( false === $parts ) {
+                $path = $url;
+            } elseif ( isset( $parts['path'] ) ) {
+                $path = $parts['path'];
             }
-            $base = basename( $parts['path'] );
+
+            if ( '' === $path ) {
+                $path = $url;
+            }
+
+            $base = basename( $path );
             return $base ?: null;
         }
 
@@ -173,8 +203,7 @@ if ( ! class_exists( 'Softone_Sku_Image_Attacher' ) ) {
             $decorated = array();
 
             foreach ( $attachments as $att ) {
-                $fn         = self::filename_from_url( $att->guid );
-                $fn         = $fn ? self::safe_utf8( $fn ) : '';
+                $fn         = self::attachment_filename( $att );
                 $suffix_num = self::extract_suffix_number( $fn, $sku ); // int|null
                 $has_number = is_int( $suffix_num );
 
@@ -221,6 +250,38 @@ if ( ! class_exists( 'Softone_Sku_Image_Attacher' ) ) {
         }
 
         /**
+         * Return the best-effort filename for an attachment row.
+         *
+         * @param object $attachment WP_Post-like attachment row.
+         * @return string
+         */
+        protected static function attachment_filename( $attachment ) {
+            if ( ! is_object( $attachment ) ) {
+                return '';
+            }
+
+            if ( ! empty( $attachment->softone_filename ) ) {
+                return self::safe_utf8( (string) $attachment->softone_filename );
+            }
+
+            if ( ! empty( $attachment->attached_file ) ) {
+                $candidate = self::filename_from_url( $attachment->attached_file );
+                if ( $candidate ) {
+                    return self::safe_utf8( $candidate );
+                }
+            }
+
+            if ( isset( $attachment->guid ) ) {
+                $candidate = self::filename_from_url( $attachment->guid );
+                if ( $candidate ) {
+                    return self::safe_utf8( $candidate );
+                }
+            }
+
+            return '';
+        }
+
+        /**
          * Extract numeric suffix after the SKU, e.g. "523000829_3.jpg" => 3.
          * Returns null if no explicit numeric suffix is found.
          */
@@ -231,13 +292,18 @@ if ( ! class_exists( 'Softone_Sku_Image_Attacher' ) ) {
             $filename = self::safe_utf8( $filename );
             $sku      = self::safe_utf8( $sku );
 
-            // Allow separators/spaces between SKU and number. The number must be right before extension.
-            // Examples matched: 523000829_1.jpg, 523000829 - 2.png
-            // Not matched as suffix: 5230008293.jpg (to avoid catching SKU+digit as one long SKU)
-            $pattern = '/^' . preg_quote( $sku, '/' ) . '(?:[ _-]+)(\d+)\.[a-z0-9]+$/iu';
-            if ( preg_match( $pattern, $filename, $m ) ) {
+            // Remove the extension to make matching duplicate-safe, e.g. `_1-1`.
+            $base = $filename;
+            $dot  = strrpos( $base, '.' );
+            if ( false !== $dot ) {
+                $base = substr( $base, 0, $dot );
+            }
+
+            $pattern = '/^' . preg_quote( $sku, '/' ) . '(?:[ _-]+)(\d+)(?:\D.*)?$/iu';
+            if ( preg_match( $pattern, $base, $m ) ) {
                 return (int) $m[1];
             }
+
             return null;
         }
 

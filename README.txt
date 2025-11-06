@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.8.47
+Stable tag: 1.8.48
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -77,6 +77,9 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Sync::schedule_event()`.
 
 == Changelog ==
+
+= 1.8.48 =
+* Ensure WooCommerce item sync detects SKU-prefixed media files even when WordPress renames uploads, promoting `_1` images to featured status and assigning remaining matches to the gallery automatically.
 
 = 1.8.47 =
 * Revert the plugin codebase to the logic deployed in commit 2ae9c8e to restore stable item synchronisation behaviour.
