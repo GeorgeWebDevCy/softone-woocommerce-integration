@@ -199,7 +199,7 @@ class Softone_Woocommerce_Integration {
 		 */
 		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'public/class-softone-woocommerce-integration-public.php';
 
-		require_once __DIR__ . '/includes/class-softone-sku-image-attacher.php';
+		require_once __DIR__ . '/class-softone-sku-image-attacher.php';
 
 
                 $this->loader          = new Softone_Woocommerce_Integration_Loader();
