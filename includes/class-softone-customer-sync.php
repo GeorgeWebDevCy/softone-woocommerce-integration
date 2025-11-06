@@ -1,11 +1,8 @@
 <?php
 /**
- * SoftOne customer synchronisation – ONLY when WooCommerce orders become "completed".
+ * SoftOne customer synchronisation service.
  *
- * Calls SoftOne:
- *   service: setData
- *   object : CUSTOMER
- *   data   : { CUSTOMER: [ { ... } ], CUSEXTRA: [ { BOOL01: "1" } ] }
+ * @package    Softone_Woocommerce_Integration
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -13,135 +10,595 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
-
+    /**
+     * Handles synchronising WooCommerce customers with SoftOne.
+     */
     class Softone_Customer_Sync {
 
-        const META_DONE         = '_softone_customer_synced';
-        const META_SOFTONE_ID   = '_softone_customer_id';
+        const META_TRDR     = '_softone_trdr';
+        const LOGGER_SOURCE = 'softone-customer-sync';
+        const CODE_PREFIX   = 'WEB';
 
+        /**
+         * API client instance.
+         *
+         * @var Softone_API_Client
+         */
         protected $api_client;
+
+        /**
+         * Logger instance.
+         *
+         * @var WC_Logger|Psr\Log\LoggerInterface|null
+         */
         protected $logger;
 
-        public function __construct( $api_client = null, $logger = null ) {
-            $this->api_client = ( $api_client instanceof Softone_API_Client )
-                ? $api_client
-                : ( class_exists( 'Softone_API_Client' ) ? new Softone_API_Client() : null );
-
-            $this->logger = ( $logger && method_exists( $logger, 'log' ) )
-                ? $logger
-                : ( function_exists( 'wc_get_logger' ) ? wc_get_logger() : null );
+        /**
+         * Constructor.
+         *
+         * @param Softone_API_Client|null                $api_client Optional API client.
+         * @param WC_Logger|Psr\Log\LoggerInterface|null $logger     Optional logger instance.
+         */
+        public function __construct( ?Softone_API_Client $api_client = null, $logger = null ) {
+            $this->api_client = $api_client ?: new Softone_API_Client();
+            $this->logger     = $logger ?: $this->get_default_logger();
         }
 
-        public function register_hooks( $loader ) {
-            $loader->add_action( 'woocommerce_order_status_completed', $this, 'on_order_completed', 10, 1 );
+        /**
+         * Register WordPress hooks via the loader.
+         *
+         * @param Softone_Woocommerce_Integration_Loader $loader Loader instance.
+         *
+         * @return void
+         */
+        public function register_hooks( Softone_Woocommerce_Integration_Loader $loader ) {
+            $loader->add_action( 'woocommerce_created_customer', $this, 'handle_customer_created', 10, 1 );
+            $loader->add_action( 'woocommerce_checkout_customer_created', $this, 'handle_checkout_customer_created', 10, 2 );
+            $loader->add_action( 'woocommerce_checkout_update_customer', $this, 'handle_checkout_update_customer', 10, 2 );
+            $loader->add_action( 'woocommerce_save_account_details', $this, 'handle_account_details_saved', 10, 1 );
+            $loader->add_action( 'profile_update', $this, 'handle_profile_update', 10, 1 );
+            $loader->add_action( 'woocommerce_customer_save_address', $this, 'handle_customer_save_address', 10, 1 );
         }
 
-        public function on_order_completed( $order_id ) {
-            $order_id = (int) $order_id;
-            if ( $order_id <= 0 ) {
-                return;
+        /**
+         * Ensure a WooCommerce customer has an associated SoftOne TRDR identifier.
+         *
+         * @param int $customer_id Customer identifier.
+         *
+         * @return string
+         */
+        public function ensure_customer_trdr( $customer_id ) {
+            $customer_id = absint( $customer_id );
+
+            if ( $customer_id <= 0 ) {
+                return '';
             }
 
-            $order = wc_get_order( $order_id );
-            if ( ! $order ) {
-                return;
+            $existing = get_user_meta( $customer_id, self::META_TRDR, true );
+            $existing = is_scalar( $existing ) ? (string) $existing : '';
+
+            if ( '' !== $existing ) {
+                return $existing;
             }
 
-            if ( 'yes' === get_post_meta( $order_id, self::META_DONE, true ) ) {
-                $this->log( 'debug', 'Already synced', array( 'order_id' => $order_id ) );
-                return;
+            if ( ! class_exists( 'WC_Customer' ) ) {
+                return '';
             }
-
-            $envelope = $this->build_envelope( $order );
 
             try {
-                if ( ! $this->api_client || ! method_exists( $this->api_client, 'sql_data' ) ) {
-                    throw new \RuntimeException( 'SoftOne API client unavailable' );
-                }
-
-                $result = $this->api_client->sql_data(
-                    'setData',
-                    array(
-                        'object' => 'CUSTOMER',
-                        'data'   => $envelope['data'],
-                    ),
-                    array()
-                );
-
-                if ( is_array( $result ) && isset( $result['id'] ) ) {
-                    update_post_meta( $order_id, self::META_SOFTONE_ID, (string) $result['id'] );
-                }
-
-                $this->log( 'info', 'SoftOne customer sync complete', array( 'order_id' => $order_id, 'result' => $result ) );
-
-            } catch ( \Throwable $e ) {
-                $this->log( 'error', 'SoftOne customer sync failed', array(
-                    'order_id' => $order_id,
-                    'error'    => $e->getMessage(),
-                ) );
+                $customer = new WC_Customer( $customer_id );
+            } catch ( Exception $exception ) {
+                $this->log( 'error', $exception->getMessage(), array( 'user_id' => $customer_id, 'exception' => $exception ) );
+                return '';
             }
 
-            update_post_meta( $order_id, self::META_DONE, 'yes' );
+            if ( ! $customer || ! $customer->get_id() ) {
+                return '';
+            }
+
+            try {
+                $this->sync_customer( $customer );
+            } catch ( Softone_API_Client_Exception $exception ) {
+                $this->log( 'error', $exception->getMessage(), array( 'user_id' => $customer_id, 'exception' => $exception ) );
+                return '';
+            }
+
+            $updated = get_user_meta( $customer_id, self::META_TRDR, true );
+
+            return is_scalar( $updated ) ? (string) $updated : '';
         }
 
-        protected function build_envelope( $order ) {
-            $email    = (string) $order->get_billing_email();
-            $phone    = (string) $order->get_billing_phone();
-            $fname    = (string) $order->get_billing_first_name();
-            $lname    = (string) $order->get_billing_last_name();
-            $company  = (string) $order->get_billing_company();
-            $addr1    = (string) $order->get_billing_address_1();
-            $addr2    = (string) $order->get_billing_address_2();
-            $city     = (string) $order->get_billing_city();
-            $state    = (string) $order->get_billing_state();
-            $postcode = (string) $order->get_billing_postcode();
-            $country  = (string) $order->get_billing_country();
+        /**
+         * Handle the WooCommerce customer creation action.
+         *
+         * @param int $customer_id Customer identifier.
+         *
+         * @return void
+         */
+        public function handle_customer_created( $customer_id ) {
+            $this->maybe_sync_customer( $customer_id );
+        }
 
-            $code = 'WEB' . $order->get_id();
+        /**
+         * Handle the checkout customer creation action.
+         *
+         * @param int   $customer_id Customer identifier.
+         * @param array $data        Raw checkout data (unused).
+         *
+         * @return void
+         */
+        public function handle_checkout_customer_created( $customer_id, $data = array() ) { // phpcs:ignore VariableAnalysis.CodeAnalysis.VariableAnalysis.UnusedVariable
+            $this->maybe_sync_customer( $customer_id );
+        }
 
-            $country_id  = apply_filters( 'softone_wc_country_to_id', 57, $country, $order ); // default Cyprus
-            $area_id     = apply_filters( 'softone_wc_area_to_id', 22, $country, $state, $order );
-            $currency_id = apply_filters( 'softone_wc_currency_to_id', 47, get_woocommerce_currency(), $order );
-            $trdcategory = apply_filters( 'softone_wc_trdcategory', 1, $order );
+        /**
+         * Handle checkout updates for logged-in customers.
+         *
+         * @param WC_Customer|int $customer Customer instance or identifier.
+         * @param array           $data     Checkout data (unused).
+         *
+         * @return void
+         */
+        public function handle_checkout_update_customer( $customer, $data = array() ) { // phpcs:ignore VariableAnalysis.CodeAnalysis.VariableAnalysis.UnusedVariable
+            if ( is_object( $customer ) && method_exists( $customer, 'get_id' ) ) {
+                $customer_id = $customer->get_id();
+            } else {
+                $customer_id = $customer;
+            }
 
-            $name = $company ?: trim( "$fname $lname" );
-            $address = trim( $addr1 . ' ' . $addr2 );
+            $this->maybe_sync_customer( $customer_id );
+        }
 
-            $customer_row = array(
-                'CODE'        => $code,
-                'NAME'        => $name ?: 'Web Customer',
-                'COUNTRY'     => (int) $country_id,
-                'AREAS'       => (int) $area_id,
-                'PHONE01'     => $phone,
-                'PHONE02'     => $phone,
-                'SOCURRENCY'  => (int) $currency_id,
-                'EMAIL'       => $email,
-                'ADDRESS'     => $address ?: 'No address',
-                'CITY'        => $city ?: 'City',
-                'ZIP'         => $postcode ?: '0000',
-                'TRDCATEGORY' => (int) $trdcategory,
+        /**
+         * Handle the account details update action.
+         *
+         * @param int $customer_id Customer identifier.
+         *
+         * @return void
+         */
+        public function handle_account_details_saved( $customer_id ) {
+            $this->maybe_sync_customer( $customer_id );
+        }
+
+        /**
+         * Handle generic profile updates.
+         *
+         * @param int $customer_id Customer identifier.
+         *
+         * @return void
+         */
+        public function handle_profile_update( $customer_id ) {
+            $this->maybe_sync_customer( $customer_id );
+        }
+
+        /**
+         * Handle address updates from the My Account area.
+         *
+         * @param int $customer_id Customer identifier.
+         *
+         * @return void
+         */
+        public function handle_customer_save_address( $customer_id ) {
+            $this->maybe_sync_customer( $customer_id );
+        }
+
+        /**
+         * Attempt to synchronise a customer with SoftOne.
+         *
+         * @param int $customer_id Customer identifier.
+         *
+         * @return void
+         */
+        protected function maybe_sync_customer( $customer_id ) {
+            $customer_id = absint( $customer_id );
+
+            if ( $customer_id <= 0 ) {
+                return;
+            }
+
+            if ( ! class_exists( 'WC_Customer' ) ) {
+                return;
+            }
+
+            try {
+                $customer = new WC_Customer( $customer_id );
+            } catch ( Exception $exception ) {
+                $this->log( 'error', $exception->getMessage(), array( 'user_id' => $customer_id, 'exception' => $exception ) );
+                return;
+            }
+
+            if ( ! $customer || ! $customer->get_id() ) {
+                return;
+            }
+
+            try {
+                $this->sync_customer( $customer );
+            } catch ( Softone_API_Client_Exception $exception ) {
+                $this->log( 'error', $exception->getMessage(), array( 'user_id' => $customer_id, 'exception' => $exception ) );
+            }
+        }
+
+        /**
+         * Synchronise a WooCommerce customer with SoftOne.
+         *
+         * @param WC_Customer $customer WooCommerce customer instance.
+         *
+         * @throws Softone_API_Client_Exception When API requests fail.
+         *
+         * @return void
+         */
+        protected function sync_customer( WC_Customer $customer ) {
+            $customer_id = $customer->get_id();
+            $existing    = get_user_meta( $customer_id, self::META_TRDR, true );
+            $existing    = is_scalar( $existing ) ? (string) $existing : '';
+
+            if ( '' !== $existing ) {
+                $this->update_customer( $customer, $existing );
+                return;
+            }
+
+            $match = $this->locate_existing_customer( $customer );
+
+            if ( ! empty( $match['TRDR'] ) ) {
+                $trdr = (string) $match['TRDR'];
+                update_user_meta( $customer_id, self::META_TRDR, $trdr );
+                $this->update_customer( $customer, $trdr );
+                return;
+            }
+
+            $this->create_customer( $customer );
+        }
+
+        /**
+         * Query SoftOne for an existing customer record matching the WooCommerce customer.
+         *
+         * @param WC_Customer $customer WooCommerce customer instance.
+         *
+         * @throws Softone_API_Client_Exception When API requests fail.
+         *
+         * @return array<string,mixed>
+         */
+        protected function locate_existing_customer( WC_Customer $customer ) {
+            $code  = $this->generate_customer_code( $customer );
+            $email = $customer->get_email();
+
+            $arguments = array();
+
+            if ( '' !== $code ) {
+                $arguments['CODE'] = $code;
+            }
+
+            if ( '' !== $email ) {
+                $arguments['EMAIL'] = $email;
+            }
+
+            $response = $this->api_client->sql_data( 'getCustomers', $arguments );
+            $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
+
+            foreach ( $rows as $row ) {
+                $row_code  = isset( $row['CODE'] ) ? (string) $row['CODE'] : '';
+                $row_email = isset( $row['EMAIL'] ) ? (string) $row['EMAIL'] : '';
+
+                if ( '' !== $code && strcasecmp( $row_code, $code ) === 0 ) {
+                    return $row;
+                }
+
+                if ( '' !== $email && strcasecmp( $row_email, $email ) === 0 ) {
+                    return $row;
+                }
+            }
+
+            return array();
+        }
+
+        /**
+         * Create a new SoftOne customer record.
+         *
+         * @param WC_Customer $customer WooCommerce customer instance.
+         *
+         * @throws Softone_API_Client_Exception When API requests fail.
+         *
+         * @return void
+         */
+        protected function create_customer( WC_Customer $customer ) {
+            $payload = $this->build_customer_payload( $customer );
+
+            if ( empty( $payload['CUSTOMER'] ) ) {
+                return;
+            }
+
+            $response = $this->api_client->set_data( 'CUSTOMER', $payload );
+
+            if ( empty( $response['id'] ) ) {
+                return;
+            }
+
+            $trdr = (string) $response['id'];
+            update_user_meta( $customer->get_id(), self::META_TRDR, $trdr );
+        }
+
+        /**
+         * Update an existing SoftOne customer record.
+         *
+         * @param WC_Customer $customer WooCommerce customer instance.
+         * @param string      $trdr     SoftOne customer identifier.
+         *
+         * @throws Softone_API_Client_Exception When API requests fail.
+         *
+         * @return void
+         */
+        protected function update_customer( WC_Customer $customer, $trdr ) {
+            $payload = $this->build_customer_payload( $customer, $trdr );
+
+            if ( empty( $payload['CUSTOMER'] ) ) {
+                return;
+            }
+
+            $this->api_client->set_data( 'CUSTOMER', $payload );
+        }
+
+        /**
+         * Build the payload for SoftOne setData requests.
+         *
+         * @param WC_Customer   $customer WooCommerce customer instance.
+         * @param string|null   $trdr     Existing SoftOne identifier, if available.
+         *
+         * @return array<string,array<int,array<string,string>>>
+         */
+        protected function build_customer_payload( WC_Customer $customer, $trdr = null ) {
+            $billing_first_name = $customer->get_billing_first_name();
+            $billing_last_name  = $customer->get_billing_last_name();
+            $shipping_first     = method_exists( $customer, 'get_shipping_first_name' ) ? $customer->get_shipping_first_name() : '';
+            $shipping_last      = method_exists( $customer, 'get_shipping_last_name' ) ? $customer->get_shipping_last_name() : '';
+
+            $name = trim( implode( ' ', array_filter( array(
+                $customer->get_first_name(),
+                $customer->get_last_name(),
+            ), array( $this, 'filter_empty_value' ) ) ) );
+
+            if ( '' === $name ) {
+                $name = trim( implode( ' ', array_filter( array( $billing_first_name, $billing_last_name ), array( $this, 'filter_empty_value' ) ) ) );
+            }
+
+            if ( '' === $name ) {
+                $name = trim( implode( ' ', array_filter( array( $shipping_first, $shipping_last ), array( $this, 'filter_empty_value' ) ) ) );
+            }
+
+            if ( '' === $name ) {
+                $name = $customer->get_email();
+            }
+
+            $billing_phone  = $customer->get_billing_phone();
+            $shipping_phone = method_exists( $customer, 'get_shipping_phone' ) ? $customer->get_shipping_phone() : '';
+            $primary_phone  = '' !== $billing_phone ? $billing_phone : $shipping_phone;
+            $secondary      = ( '' !== $billing_phone && '' !== $shipping_phone && $billing_phone !== $shipping_phone ) ? $shipping_phone : '';
+
+            $address_1 = $customer->get_billing_address_1();
+            $address_2 = $customer->get_billing_address_2();
+
+            if ( '' === $address_1 && method_exists( $customer, 'get_shipping_address_1' ) ) {
+                $address_1 = $customer->get_shipping_address_1();
+                $address_2 = method_exists( $customer, 'get_shipping_address_2' ) ? $customer->get_shipping_address_2() : '';
+            }
+
+            $city     = $customer->get_billing_city();
+            $postcode = $customer->get_billing_postcode();
+            $country  = $customer->get_billing_country();
+
+            if ( '' === $city && method_exists( $customer, 'get_shipping_city' ) ) {
+                $city = $customer->get_shipping_city();
+            }
+
+            if ( '' === $postcode && method_exists( $customer, 'get_shipping_postcode' ) ) {
+                $postcode = $customer->get_shipping_postcode();
+            }
+
+            if ( '' === $country && method_exists( $customer, 'get_shipping_country' ) ) {
+                $country = $customer->get_shipping_country();
+            }
+
+            $country_code      = strtoupper( trim( (string) $country ) );
+            $softone_country   = '';
+            $country_log_attrs = array(
+                'customer_id' => $customer->get_id(),
             );
 
-            $customer_row = apply_filters( 'softone_wc_customer_payload', $customer_row, $order );
+            if ( null !== $trdr ) {
+                $country_log_attrs['trdr'] = (string) $trdr;
+            }
 
-            $cusextra_row = array( 'BOOL01' => '1' );
-            $cusextra_row = apply_filters( 'softone_wc_customer_extra_payload', $cusextra_row, $order );
+            if ( '' !== $country_code ) {
+                $country_log_attrs['country'] = $country_code;
+                $softone_country              = $this->map_country_to_softone_id( $country_code );
+
+                if ( '' === $softone_country ) {
+                    $this->log(
+                        'error',
+                        sprintf(
+                            /* translators: %s: ISO 3166-1 alpha-2 country code. */
+                            __( '[SO-CNTRY-001] SoftOne country mapping missing for ISO code %s.', 'softone-woocommerce-integration' ),
+                            $country_code
+                        ),
+                        $country_log_attrs
+                    );
+
+                    return array();
+                }
+            }
+
+            $record = array(
+                'CODE'        => $this->generate_customer_code( $customer ),
+                'NAME'        => $name,
+                'EMAIL'       => $customer->get_email(),
+                'PHONE01'     => $primary_phone,
+                'PHONE02'     => $secondary,
+                'ADDRESS'     => $address_1,
+                'ADDRESS2'    => $address_2,
+                'CITY'        => $city,
+                'ZIP'         => $postcode,
+                'COUNTRY'     => $softone_country,
+                'AREAS'       => $this->api_client->get_areas(),
+                'SOCURRENCY'  => $this->api_client->get_socurrency(),
+                'TRDCATEGORY' => $this->api_client->get_trdcategory(),
+            );
+
+            if ( null !== $trdr ) {
+                $record['TRDR'] = (string) $trdr;
+            }
+
+            $record = array_filter( $record, array( $this, 'filter_empty_value' ) );
+
+            if ( empty( $record['CODE'] ) ) {
+                $record['CODE'] = $this->generate_customer_code( $customer );
+            }
+
+            if ( empty( $record['NAME'] ) ) {
+                return array();
+            }
 
             return array(
-                'data' => array(
-                    'CUSTOMER' => array( $customer_row ),
-                    'CUSEXTRA' => array( $cusextra_row ),
-                ),
+                'CUSTOMER' => array( $record ),
             );
         }
 
-        protected function log( $level, $message, array $context = array() ) {
-            if ( $this->logger && method_exists( $this->logger, 'log' ) ) {
-                $context['source'] = 'softone-customer-sync';
-                $this->logger->log( $level, $message, $context );
-            } elseif ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-                error_log( '[softone-customer-sync][' . strtoupper( $level ) . '] ' . $message . ' ' . wp_json_encode( $context ) );
+        /**
+         * Determine whether a value should be considered empty for payload purposes.
+         *
+         * @param mixed $value Value to inspect.
+         *
+         * @return bool
+         */
+        protected function filter_empty_value( $value ) {
+            if ( null === $value ) {
+                return false;
             }
+
+            if ( is_string( $value ) ) {
+                return '' !== trim( $value );
+            }
+
+            return ! empty( $value );
+        }
+
+        /**
+         * Map an ISO 3166-1 alpha-2 country code to the SoftOne numeric identifier.
+         *
+         * @param string $country_code ISO country code from WooCommerce data.
+         *
+         * @return string
+         */
+        public function map_country_to_softone_id( $country_code ) {
+            $country_code = strtoupper( trim( (string) $country_code ) );
+
+            if ( '' === $country_code ) {
+                return '';
+            }
+
+            $mappings = array();
+
+            if ( function_exists( 'softone_wc_integration_get_setting' ) ) {
+                $mappings = softone_wc_integration_get_setting( 'country_mappings', array() );
+            }
+
+            if ( ! is_array( $mappings ) ) {
+                $mappings = array();
+            }
+
+            $normalized = array();
+
+            foreach ( $mappings as $code => $identifier ) {
+                if ( ! is_scalar( $code ) ) {
+                    continue;
+                }
+
+                $normalized_code = strtoupper( trim( (string) $code ) );
+
+                if ( '' === $normalized_code ) {
+                    continue;
+                }
+
+                $normalized_identifier = is_scalar( $identifier ) ? trim( (string) $identifier ) : '';
+
+                if ( '' === $normalized_identifier ) {
+                    continue;
+                }
+
+                $normalized[ $normalized_code ] = $normalized_identifier;
+            }
+
+            /**
+             * Filter the configured country mappings before they are used.
+             *
+             * @param array<string,string>   $normalized   Associative array of ISO => SoftOne ID pairs.
+             * @param string                 $country_code Requested ISO country code.
+             * @param Softone_Customer_Sync  $customer_sync Customer synchronisation service instance.
+             */
+            $normalized = apply_filters( 'softone_wc_integration_country_mappings', $normalized, $country_code, $this );
+
+            $softone_id = isset( $normalized[ $country_code ] ) ? (string) $normalized[ $country_code ] : '';
+
+            /**
+             * Filter the resolved SoftOne country identifier.
+             *
+             * @param string                $softone_id   The mapped identifier (empty string when missing).
+             * @param string                $country_code Requested ISO country code.
+             * @param array<string,string>  $normalized   Associative array of ISO => SoftOne ID pairs.
+             * @param Softone_Customer_Sync $customer_sync Customer synchronisation service instance.
+             */
+            $softone_id = apply_filters( 'softone_wc_integration_country_id', $softone_id, $country_code, $normalized, $this );
+
+            return is_scalar( $softone_id ) ? trim( (string) $softone_id ) : '';
+        }
+
+        /**
+         * Generate a deterministic customer code for SoftOne.
+         *
+         * @param WC_Customer $customer WooCommerce customer instance.
+         *
+         * @return string
+         */
+        protected function generate_customer_code( WC_Customer $customer ) {
+            $id = absint( $customer->get_id() );
+
+            if ( $id <= 0 ) {
+                return '';
+            }
+
+            return sprintf( '%s%06d', self::CODE_PREFIX, $id );
+        }
+
+        /**
+         * Retrieve the default WooCommerce logger when available.
+         *
+         * @return WC_Logger|Psr\Log\LoggerInterface|null
+         */
+        protected function get_default_logger() {
+            if ( function_exists( 'wc_get_logger' ) ) {
+                return wc_get_logger();
+            }
+
+            return null;
+        }
+
+        /**
+         * Log a message using the configured logger.
+         *
+         * @param string $level   Log level (debug, info, warning, error).
+         * @param string $message Log message.
+         * @param array  $context Additional context.
+         *
+         * @return void
+         */
+        protected function log( $level, $message, array $context = array() ) {
+            if ( ! $this->logger || ! method_exists( $this->logger, 'log' ) ) {
+                return;
+            }
+
+            if ( class_exists( 'WC_Logger' ) && $this->logger instanceof WC_Logger ) {
+                $context['source'] = self::LOGGER_SOURCE;
+            }
+
+            $this->logger->log( $level, $message, $context );
         }
     }
 }

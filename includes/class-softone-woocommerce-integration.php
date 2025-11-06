@@ -98,7 +98,7 @@ class Softone_Woocommerce_Integration {
                 if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
                         $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
                 } else {
-                        $this->version = '1.8.51';
+			$this->version = '1.8.47';
                 }
 		$this->plugin_name = 'softone-woocommerce-integration';
 
@@ -171,9 +171,6 @@ class Softone_Woocommerce_Integration {
                  * Service class for exporting WooCommerce orders to SoftOne.
                  */
                 require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-order-sync.php';
-
-				require_once __DIR__ . '/class-softone-customer-sync.php';
-
 
                 /**
                  * Helper for dynamically populating navigation menus.

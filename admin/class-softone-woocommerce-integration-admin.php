@@ -139,7 +139,7 @@ private $menu_delete_default_batch_size = 20;
  *
  * @var int
  */
-    private $menu_delete_state_lifetime = 3600;
+private $menu_delete_state_lifetime = HOUR_IN_SECONDS;
 
         /**
          * Base transient key for connection test notices.
@@ -217,10 +217,6 @@ private $menu_delete_default_batch_size = 20;
                 $this->version     = $version;
                 $this->item_sync   = $item_sync;
                 $this->activity_logger = $activity_logger ?: new Softone_Sync_Activity_Logger();
-
-                if ( defined( 'HOUR_IN_SECONDS' ) ) {
-                        $this->menu_delete_state_lifetime = (int) HOUR_IN_SECONDS;
-                }
 
         }
 
