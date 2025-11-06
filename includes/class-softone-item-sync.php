@@ -203,8 +203,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $this->force_taxonomy_refresh    = (bool) $force_taxonomy_refresh;
 
             try {
-                $group_buckets     = array();
-                $standalone_groups = array();
+                $collected_rows             = array();
+                $related_parent_candidates  = array();
 
                 foreach ( $this->yield_item_rows( $extra ) as $row ) {
                     $stats['processed']++;
@@ -212,29 +212,11 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     try {
                         $normalized    = $this->normalize_row( $row );
                         $group_context = $this->prepare_group_context( $normalized );
-                        $group_key     = isset( $group_context['group_key'] ) ? (string) $group_context['group_key'] : '';
 
-                        $group_row = array(
+                        $collected_rows[] = array(
                             'data'    => $normalized,
                             'context' => $group_context,
                         );
-
-                        if ( '' === $group_key ) {
-                            $standalone_groups[] = array(
-                                'rows'    => array( $group_row ),
-                                'context' => $group_context,
-                            );
-                            continue;
-                        }
-
-                        if ( ! isset( $group_buckets[ $group_key ] ) ) {
-                            $group_buckets[ $group_key ] = array(
-                                'rows'    => array(),
-                                'context' => $group_context,
-                            );
-                        }
-
-                        $group_buckets[ $group_key ]['rows'][] = $group_row;
                     } catch ( Exception $exception ) {
                         $stats['skipped']++;
                         $this->log(
@@ -248,7 +230,112 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     }
                 }
 
-                $groups_to_process = array_merge( $standalone_groups, array_values( $group_buckets ) );
+                foreach ( $collected_rows as $entry ) {
+                    $row_data      = isset( $entry['data'] ) && is_array( $entry['data'] ) ? $entry['data'] : array();
+                    $related_mtrl  = $this->extract_related_parent_mtrl( $row_data );
+                    $softone_mtrl  = $this->extract_softone_mtrl( $row_data );
+                    $child_mtrls   = $this->extract_related_item_mtrls_from_row( $row_data );
+
+                    if ( '' !== $related_mtrl ) {
+                        $related_parent_candidates[ $related_mtrl ] = true;
+                    }
+
+                    if ( ! empty( $child_mtrls ) && '' !== $softone_mtrl ) {
+                        $related_parent_candidates[ $softone_mtrl ] = true;
+                    }
+                }
+
+                $group_buckets     = array();
+                $standalone_groups = array();
+
+                foreach ( $collected_rows as $index => $entry ) {
+                    $row_data      = isset( $entry['data'] ) && is_array( $entry['data'] ) ? $entry['data'] : array();
+                    $context       = isset( $entry['context'] ) && is_array( $entry['context'] ) ? $entry['context'] : array();
+                    $group_key     = isset( $context['group_key'] ) ? (string) $context['group_key'] : '';
+                    $softone_mtrl  = $this->extract_softone_mtrl( $row_data );
+                    $related_mtrl  = $this->extract_related_parent_mtrl( $row_data );
+                    $child_mtrls   = $this->extract_related_item_mtrls_from_row( $row_data );
+
+                    if ( '' !== $related_mtrl ) {
+                        $group_key = $this->build_related_group_key( $related_mtrl );
+                    } elseif ( '' !== $softone_mtrl && isset( $related_parent_candidates[ $softone_mtrl ] ) ) {
+                        $group_key = $this->build_related_group_key( $softone_mtrl );
+                    }
+
+                    $collected_rows[ $index ]['context']['group_key'] = $group_key;
+
+                    if ( '' === $group_key ) {
+                        $standalone_groups[] = array(
+                            'rows'    => array( $collected_rows[ $index ] ),
+                            'context' => $collected_rows[ $index ]['context'],
+                        );
+                        continue;
+                    }
+
+                    if ( ! isset( $group_buckets[ $group_key ] ) ) {
+                        $group_buckets[ $group_key ] = array(
+                            'parents'     => array(),
+                            'children'    => array(),
+                            'context'     => $collected_rows[ $index ]['context'],
+                            'child_mtrls' => array(),
+                        );
+                    }
+
+                    if ( '' !== $related_mtrl ) {
+                        $group_buckets[ $group_key ]['children'][] = $collected_rows[ $index ];
+                        if ( '' !== $softone_mtrl ) {
+                            $group_buckets[ $group_key ]['child_mtrls'][ $softone_mtrl ] = true;
+                        }
+                    } else {
+                        $group_buckets[ $group_key ]['parents'][] = $collected_rows[ $index ];
+                        $group_buckets[ $group_key ]['context']   = $collected_rows[ $index ]['context'];
+                    }
+
+                    if ( ! empty( $child_mtrls ) ) {
+                        foreach ( $child_mtrls as $child_mtrl ) {
+                            if ( '' !== $child_mtrl ) {
+                                $group_buckets[ $group_key ]['child_mtrls'][ $child_mtrl ] = true;
+                            }
+                        }
+                    }
+                }
+
+                $groups_to_process = $standalone_groups;
+
+                foreach ( $group_buckets as $bucket ) {
+                    $group_rows = array();
+                    $child_list = array();
+
+                    if ( ! empty( $bucket['child_mtrls'] ) ) {
+                        $child_list = array_keys( $bucket['child_mtrls'] );
+                        sort( $child_list );
+                    }
+
+                    foreach ( $bucket['parents'] as $parent_row ) {
+                        if ( ! empty( $child_list ) ) {
+                            $parent_row['data']['related_item_mtrls'] = $child_list;
+                        }
+
+                        $group_rows[] = $parent_row;
+                    }
+
+                    foreach ( $bucket['children'] as $idx => $child_row ) {
+                        if ( empty( $bucket['parents'] ) && 0 === (int) $idx && ! empty( $child_list ) ) {
+                            $child_row['data']['related_item_mtrls'] = $child_list;
+                        }
+
+                        $group_rows[] = $child_row;
+                    }
+
+                    if ( empty( $group_rows ) ) {
+                        continue;
+                    }
+
+                    $groups_to_process[] = array(
+                        'rows'    => $group_rows,
+                        'context' => $bucket['context'],
+                    );
+                }
 
                 foreach ( $groups_to_process as $group_payload ) {
                     if ( empty( $group_payload['rows'] ) ) {
@@ -652,6 +739,85 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         }
 
         /**
+         * Build a grouping key for Softone relations based on a parent MTRL value.
+         *
+         * @param string $mtrl
+         * @return string
+         */
+        protected function build_related_group_key( $mtrl ) {
+            $mtrl = strtolower( trim( (string) $mtrl ) );
+            if ( '' === $mtrl ) {
+                return '';
+            }
+
+            return 'related:' . md5( $mtrl );
+        }
+
+        /**
+         * Extract the Softone MTRL identifier from a normalised row.
+         *
+         * @param array $data
+         * @return string
+         */
+        protected function extract_softone_mtrl( array $data ) {
+            return trim( (string) $this->get_value( $data, array( 'mtrl', 'MTRL', 'mtrl_code', 'MTRL_CODE' ) ) );
+        }
+
+        /**
+         * Extract the related parent Softone MTRL from a normalised row.
+         *
+         * @param array $data
+         * @return string
+         */
+        protected function extract_related_parent_mtrl( array $data ) {
+            return trim( (string) $this->get_value( $data, array( 'related_item_mtrl', 'related_mtrl', 'rel_mtrl' ) ) );
+        }
+
+        /**
+         * Extract declared related Softone MTRL identifiers from a row.
+         *
+         * @param array $data
+         * @return array<int, string>
+         */
+        protected function extract_related_item_mtrls_from_row( array $data ) {
+            $values = array();
+
+            if ( isset( $data['related_item_mtrls'] ) ) {
+                $values = $this->normalise_related_item_mtrl_list( $data['related_item_mtrls'] );
+            }
+
+            return $values;
+        }
+
+        /**
+         * Normalise a list of related Softone MTRL identifiers.
+         *
+         * @param mixed $raw
+         * @return array<int, string>
+         */
+        protected function normalise_related_item_mtrl_list( $raw ) {
+            $normalized = array();
+
+            if ( is_array( $raw ) ) {
+                $candidates = $raw;
+            } else {
+                $raw        = trim( (string) $raw );
+                $candidates = ( '' === $raw ) ? array() : preg_split( '/[\s,|;]+/', $raw );
+            }
+
+            foreach ( (array) $candidates as $candidate ) {
+                $candidate = trim( (string) $candidate );
+                if ( '' === $candidate ) {
+                    continue;
+                }
+
+                $normalized[ $candidate ] = $candidate;
+            }
+
+            return array_values( $normalized );
+        }
+
+        /**
          * Normalise a value for grouping purposes.
          *
          * @param string $value
@@ -970,6 +1136,10 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
     $product_id = $product->save();
     if ( ! $product_id ) {
         throw new Exception( __( 'Unable to save the WooCommerce product.', 'softone-woocommerce-integration' ) );
+    }
+
+    if ( $should_create_variation && function_exists( 'wp_set_object_terms' ) ) {
+        wp_set_object_terms( (int) $product_id, 'variable', 'product_type' );
     }
 
     // If we learned MTRL during import, ensure it’s set on reused products too
@@ -1523,6 +1693,31 @@ protected function prepare_attribute_assignments( array $data, $product, array $
                 $pid = (int) $product->get_id();
                 if ( $pid > 0 ) {
                     update_post_meta( $pid, '_softone_related_item_mtrl', $related_mtrl );
+                }
+            }
+        }
+    }
+
+    // ---------------- Hidden custom attribute: related_item_mtrls ----------------
+    $related_mtrls = array();
+    if ( isset( $data['related_item_mtrls'] ) ) {
+        $related_mtrls = $this->normalise_related_item_mtrl_list( $data['related_item_mtrls'] );
+    }
+
+    if ( ! empty( $related_mtrls ) && class_exists( 'WC_Product_Attribute' ) ) {
+        try {
+            $attr = new WC_Product_Attribute();
+            $attr->set_id( 0 );
+            $attr->set_name( 'related_item_mtrls' );
+            $attr->set_options( array_values( $related_mtrls ) );
+            $attr->set_visible( false );
+            $attr->set_variation( false );
+            $assignments['attributes'][] = $attr;
+        } catch ( \Throwable $e ) {
+            if ( method_exists( $product, 'get_id' ) ) {
+                $pid = (int) $product->get_id();
+                if ( $pid > 0 ) {
+                    update_post_meta( $pid, '_softone_related_item_mtrls', array_values( $related_mtrls ) );
                 }
             }
         }
