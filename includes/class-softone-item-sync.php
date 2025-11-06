@@ -75,7 +75,6 @@ class Softone_Item_Sync {
         }
 
         $loader->add_action( self::CRON_HOOK, $this, 'run' );
-        $loader->add_action( 'admin_post_' . self::ADMIN_ACTION, $this, 'run_from_admin' );
         $loader->add_action( 'init', $this, 'ensure_colour_taxonomy', 11 );
 
         return true;
@@ -110,10 +109,16 @@ class Softone_Item_Sync {
      * Manual trigger from wp-admin action.
      */
     public function run_from_admin() {
-        $this->run();
+        try {
+            $this->sync();
+        } catch ( \Throwable $e ) {
+            // The sync activity logger already captured the failure; keep fallback handler silent.
+        }
+
         if ( ! headers_sent() ) {
             wp_safe_redirect( wp_get_referer() ? wp_get_referer() : admin_url() );
         }
+
         exit;
     }
 
@@ -215,46 +220,143 @@ class Softone_Item_Sync {
      */
     public function run() {
         $logger = new Softone_Sync_Activity_Logger();
+
         try {
-            $payload = $this->fetch_softone_items();
-            if ( empty( $payload ) || empty( $payload['success'] ) || empty( $payload['rows'] ) ) {
-                $logger->log(
-                    'item_sync',
-                    'empty_payload',
-                    'SoftOne: No items to sync or API error.',
-                    array(
-                        'payload_success' => isset( $payload['success'] ) ? (bool) $payload['success'] : null,
-                        'row_count'       => isset( $payload['rows'] ) && is_array( $payload['rows'] )
-                            ? count( $payload['rows'] )
-                            : null,
-                    )
-                );
-                return;
-            }
-            $processed = $this->process_items( $payload['rows'] );
-            $logger->log(
-                'item_sync',
-                'processed',
-                sprintf( 'SoftOne: processed %d rows into variable products.', $processed ),
-                array( 'processed_rows' => (int) $processed )
-            );
+            $result = $this->execute_sync();
+            $this->log_sync_result( $result, $logger );
         } catch ( \Throwable $e ) {
+            $this->log_sync_exception( $e, $logger );
+        }
+    }
+
+    /**
+     * Execute the item import and return a summary.
+     *
+     * @param bool|null $force_full_import      Whether a full import was requested.
+     * @param bool      $force_taxonomy_refresh Whether taxonomy data should be refreshed.
+     *
+     * @return array<string,mixed>
+     */
+    protected function execute_sync( $force_full_import = null, $force_taxonomy_refresh = false ) {
+        $payload = $this->fetch_softone_items( $force_full_import, $force_taxonomy_refresh );
+
+        if ( ! is_array( $payload ) ) {
+            throw new \UnexpectedValueException( 'SoftOne: Unexpected response payload.' );
+        }
+
+        $rows = isset( $payload['rows'] ) && is_array( $payload['rows'] ) ? $payload['rows'] : array();
+
+        $result = array(
+            'started_at'      => time(),
+            'processed'       => 0,
+            'created'         => 0,
+            'updated'         => 0,
+            'skipped'         => 0,
+            'rows_count'      => count( $rows ),
+            'payload_success' => isset( $payload['success'] ) ? (bool) $payload['success'] : null,
+        );
+
+        if ( empty( $rows ) ) {
+            return $result;
+        }
+
+        $result['processed'] = (int) $this->process_items( $rows );
+
+        if ( $result['rows_count'] > $result['processed'] ) {
+            $result['skipped'] = $result['rows_count'] - $result['processed'];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Public sync API used by the admin handler.
+     *
+     * @param bool|null $force_full_import      Whether a full import was requested.
+     * @param bool      $force_taxonomy_refresh Whether taxonomy data should be refreshed.
+     *
+     * @return array<string,mixed>
+     */
+    public function sync( $force_full_import = null, $force_taxonomy_refresh = false ) {
+        $logger = new Softone_Sync_Activity_Logger();
+
+        try {
+            $result = $this->execute_sync( $force_full_import, $force_taxonomy_refresh );
+            $this->log_sync_result( $result, $logger );
+
+            return $result;
+        } catch ( \Throwable $e ) {
+            $this->log_sync_exception( $e, $logger );
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Persist a successful sync result to the activity log.
+     *
+     * @param array<string,mixed>               $result Summary values.
+     * @param Softone_Sync_Activity_Logger|null $logger Logger instance.
+     *
+     * @return void
+     */
+    protected function log_sync_result( array $result, $logger ) {
+        if ( ! $logger instanceof Softone_Sync_Activity_Logger ) {
+            return;
+        }
+
+        if ( empty( $result['rows_count'] ) ) {
             $logger->log(
                 'item_sync',
-                'exception',
-                'SoftOne error: ' . $e->getMessage(),
+                'empty_payload',
+                'SoftOne: No items to sync or API error.',
                 array(
-                    'exception_class' => get_class( $e ),
-                    'code'            => (int) $e->getCode(),
+                    'payload_success' => isset( $result['payload_success'] ) ? $result['payload_success'] : null,
+                    'row_count'       => 0,
                 )
             );
+
+            return;
         }
+
+        $processed = isset( $result['processed'] ) ? (int) $result['processed'] : 0;
+
+        $logger->log(
+            'item_sync',
+            'processed',
+            sprintf( 'SoftOne: processed %d rows into variable products.', $processed ),
+            array( 'processed_rows' => $processed )
+        );
+    }
+
+    /**
+     * Persist sync exceptions to the activity log.
+     *
+     * @param \Throwable                        $exception Caught exception instance.
+     * @param Softone_Sync_Activity_Logger|null $logger    Logger instance.
+     *
+     * @return void
+     */
+    protected function log_sync_exception( \Throwable $exception, $logger ) {
+        if ( ! $logger instanceof Softone_Sync_Activity_Logger ) {
+            return;
+        }
+
+        $logger->log(
+            'item_sync',
+            'exception',
+            'SoftOne error: ' . $exception->getMessage(),
+            array(
+                'exception_class' => get_class( $exception ),
+                'code'            => (int) $exception->getCode(),
+            )
+        );
     }
 
     /**
      * STUB – replace with your actual SoftOne API request.
      */
-    protected function fetch_softone_items() {
+    protected function fetch_softone_items( $force_full_import = null, $force_taxonomy_refresh = false ) {
         return [
             'success' => true,
             'rows'    => [],
