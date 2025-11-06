@@ -203,151 +203,12 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $this->force_taxonomy_refresh    = (bool) $force_taxonomy_refresh;
 
             try {
-                $collected_rows             = array();
-                $related_parent_candidates  = array();
-
                 foreach ( $this->yield_item_rows( $extra ) as $row ) {
                     $stats['processed']++;
 
                     try {
-                        $normalized    = $this->normalize_row( $row );
-                        $group_context = $this->prepare_group_context( $normalized );
-
-                        $collected_rows[] = array(
-                            'data'    => $normalized,
-                            'context' => $group_context,
-                        );
-                    } catch ( Exception $exception ) {
-                        $stats['skipped']++;
-                        $this->log(
-                            'error',
-                            $exception->getMessage(),
-                            $this->extend_log_context_with_item(
-                                array( 'exception' => $exception ),
-                                $this->get_item_log_context( is_array( $row ) ? $row : array() )
-                            )
-                        );
-                    }
-                }
-
-                foreach ( $collected_rows as $entry ) {
-                    $row_data      = isset( $entry['data'] ) && is_array( $entry['data'] ) ? $entry['data'] : array();
-                    $related_mtrl  = $this->extract_related_parent_mtrl( $row_data );
-                    $softone_mtrl  = $this->extract_softone_mtrl( $row_data );
-                    $child_mtrls   = $this->extract_related_item_mtrls_from_row( $row_data );
-
-                    if ( '' !== $related_mtrl ) {
-                        $related_parent_candidates[ $related_mtrl ] = true;
-                    }
-
-                    if ( ! empty( $child_mtrls ) && '' !== $softone_mtrl ) {
-                        $related_parent_candidates[ $softone_mtrl ] = true;
-                    }
-                }
-
-                $group_buckets     = array();
-                $standalone_groups = array();
-
-                foreach ( $collected_rows as $index => $entry ) {
-                    $row_data      = isset( $entry['data'] ) && is_array( $entry['data'] ) ? $entry['data'] : array();
-                    $context       = isset( $entry['context'] ) && is_array( $entry['context'] ) ? $entry['context'] : array();
-                    $group_key     = isset( $context['group_key'] ) ? (string) $context['group_key'] : '';
-                    $softone_mtrl  = $this->extract_softone_mtrl( $row_data );
-                    $related_mtrl  = $this->extract_related_parent_mtrl( $row_data );
-                    $child_mtrls   = $this->extract_related_item_mtrls_from_row( $row_data );
-
-                    if ( '' !== $related_mtrl ) {
-                        $group_key = $this->build_related_group_key( $related_mtrl );
-                    } elseif ( '' !== $softone_mtrl && isset( $related_parent_candidates[ $softone_mtrl ] ) ) {
-                        $group_key = $this->build_related_group_key( $softone_mtrl );
-                    }
-
-                    $collected_rows[ $index ]['context']['group_key'] = $group_key;
-
-                    if ( '' === $group_key ) {
-                        $standalone_groups[] = array(
-                            'rows'    => array( $collected_rows[ $index ] ),
-                            'context' => $collected_rows[ $index ]['context'],
-                        );
-                        continue;
-                    }
-
-                    if ( ! isset( $group_buckets[ $group_key ] ) ) {
-                        $group_buckets[ $group_key ] = array(
-                            'parents'     => array(),
-                            'children'    => array(),
-                            'context'     => $collected_rows[ $index ]['context'],
-                            'child_mtrls' => array(),
-                        );
-                    }
-
-                    if ( '' !== $related_mtrl ) {
-                        $group_buckets[ $group_key ]['children'][] = $collected_rows[ $index ];
-                        if ( '' !== $softone_mtrl ) {
-                            $group_buckets[ $group_key ]['child_mtrls'][ $softone_mtrl ] = true;
-                        }
-                    } else {
-                        $group_buckets[ $group_key ]['parents'][] = $collected_rows[ $index ];
-                        $group_buckets[ $group_key ]['context']   = $collected_rows[ $index ]['context'];
-                    }
-
-                    if ( ! empty( $child_mtrls ) ) {
-                        foreach ( $child_mtrls as $child_mtrl ) {
-                            if ( '' !== $child_mtrl ) {
-                                $group_buckets[ $group_key ]['child_mtrls'][ $child_mtrl ] = true;
-                            }
-                        }
-                    }
-                }
-
-                $groups_to_process = $standalone_groups;
-
-                foreach ( $group_buckets as $bucket ) {
-                    $group_rows = array();
-                    $child_list = array();
-
-                    if ( ! empty( $bucket['child_mtrls'] ) ) {
-                        $child_list = array_keys( $bucket['child_mtrls'] );
-                        sort( $child_list );
-                    }
-
-                    foreach ( $bucket['parents'] as $parent_row ) {
-                        if ( ! empty( $child_list ) ) {
-                            $parent_row['data']['related_item_mtrls'] = $child_list;
-                        }
-
-                        $group_rows[] = $parent_row;
-                    }
-
-                    foreach ( $bucket['children'] as $idx => $child_row ) {
-                        if ( empty( $bucket['parents'] ) && 0 === (int) $idx && ! empty( $child_list ) ) {
-                            $child_row['data']['related_item_mtrls'] = $child_list;
-                        }
-
-                        $group_rows[] = $child_row;
-                    }
-
-                    if ( empty( $group_rows ) ) {
-                        continue;
-                    }
-
-                    $groups_to_process[] = array(
-                        'rows'    => $group_rows,
-                        'context' => $bucket['context'],
-                    );
-                }
-
-                foreach ( $groups_to_process as $group_payload ) {
-                    if ( empty( $group_payload['rows'] ) ) {
-                        continue;
-                    }
-
-                    $item_context = isset( $group_payload['rows'][0]['context']['item_context'] )
-                        ? (array) $group_payload['rows'][0]['context']['item_context']
-                        : $this->get_item_log_context( $group_payload['rows'][0]['data'] );
-
-                    try {
-                        $result = $this->import_grouped_rows( $group_payload['rows'], $started_at );
+                        $normalized = $this->normalize_row( $row );
+                        $result     = $this->import_row( $normalized, $started_at );
 
                         if ( 'created' === $result ) {
                             $stats['created']++;
@@ -358,14 +219,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                         }
                     } catch ( Exception $exception ) {
                         $stats['skipped']++;
-                        $this->log(
-                            'error',
-                            $exception->getMessage(),
-                            $this->extend_log_context_with_item(
-                                array( 'exception' => $exception ),
-                                $item_context
-                            )
-                        );
+                        $this->log( 'error', $exception->getMessage(), array( 'row' => $row ) );
                     }
                 }
 
@@ -604,320 +458,17 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             return $normalized;
         }
 
-        /**
-         * Group SoftOne rows into a single parent payload and import it.
-         *
-         * @param array $group_rows   Rows sharing the same parent grouping context.
-         * @param int   $run_timestamp Current sync timestamp.
-         *
-         * @throws Exception
-         * @return string created|updated|skipped
-         */
-        protected function import_grouped_rows( array $group_rows, $run_timestamp ) {
-            if ( empty( $group_rows ) ) {
-                return 'skipped';
-            }
-
-            $primary_row = $group_rows[0];
-            if ( empty( $primary_row['data'] ) || ! is_array( $primary_row['data'] ) ) {
-                return 'skipped';
-            }
-
-            $parent_payload   = $primary_row['data'];
-            $colour_values    = array();
-            $colour_seen      = array();
-            $variation_records = array();
-
-            foreach ( $group_rows as $entry ) {
-                if ( empty( $entry['data'] ) || ! is_array( $entry['data'] ) ) {
-                    continue;
-                }
-
-                $row     = $entry['data'];
-                $context = isset( $entry['context'] ) && is_array( $entry['context'] ) ? $entry['context'] : array();
-
-                $colour = isset( $context['colour'] ) ? (string) $context['colour'] : '';
-                if ( '' === $colour && isset( $context['derived_colour'] ) ) {
-                    $colour = (string) $context['derived_colour'];
-                }
-                $colour = $this->normalize_colour_value( $colour );
-
-                $colour_key = '' !== $colour ? strtolower( $colour ) : '';
-                if ( '' !== $colour_key && ! isset( $colour_seen[ $colour_key ] ) ) {
-                    $colour_values[]          = $colour;
-                    $colour_seen[ $colour_key ] = true;
-                }
-
-                $variation_key = ( '' !== $colour_key )
-                    ? $colour_key
-                    : 'colourless_' . md5( wp_json_encode( array( $row, $context ) ) );
-
-                $regular_price_raw = $this->get_value( $row, array( 'retailprice' ) );
-                $regular_price     = '' !== $regular_price_raw ? wc_format_decimal( $regular_price_raw ) : null;
-
-                $variation_records[ $variation_key ] = array(
-                    'colour_label'  => $colour,
-                    'sku'           => $this->determine_sku( $row ),
-                    'regular_price' => $regular_price,
-                    'stock_profile' => $this->build_stock_profile_from_data( $row ),
-                    'barcode'       => $this->extract_barcode( $row ),
-                    'mtrl'          => $this->extract_softone_mtrl( $row ),
-                );
-            }
-
-            if ( ! empty( $variation_records ) ) {
-                $parent_payload['__group_variations'] = array_values( $variation_records );
-
-                if ( ! empty( $colour_values ) ) {
-                    $parent_payload['__colour_values'] = array_values( $colour_values );
-                }
-
-                $group_context = isset( $primary_row['context'] ) && is_array( $primary_row['context'] )
-                    ? $primary_row['context']
-                    : array();
-                $parent_code   = isset( $group_context['code'] ) ? (string) $group_context['code'] : '';
-                if ( '' === $parent_code && isset( $parent_payload['code'] ) ) {
-                    $parent_code = (string) $parent_payload['code'];
-                }
-                if ( '' !== $parent_code ) {
-                    $parent_payload['__parent_sku_override'] = $parent_code;
-                }
-            }
-
-            return $this->import_row( $parent_payload, $run_timestamp );
-        }
-
-        /**
-         * Build the grouping context for a normalised SoftOne row.
-         *
-         * @param array $data Normalised row data.
-         * @return array
-         */
-        protected function prepare_group_context( array $data ) {
-            $name_source     = $this->get_value( $data, array( 'varchar02', 'desc', 'description', 'code' ) );
-            $clean_name      = $name_source;
-            $derived_colour  = '';
-            if ( '' !== $name_source ) {
-                list( $maybe_clean_name, $maybe_colour ) = $this->split_product_name_and_colour( $name_source );
-                if ( '' !== $maybe_clean_name ) {
-                    $clean_name = $maybe_clean_name;
-                }
-                if ( '' !== $maybe_colour ) {
-                    $derived_colour = $maybe_colour;
-                }
-            }
-
-            $explicit_colour = $this->normalize_colour_value(
-                $this->get_value( $data, array( 'colour_name', 'color_name', 'colour', 'color' ) )
-            );
-            $final_colour = '' !== $explicit_colour ? $explicit_colour : $derived_colour;
-
-            $brand = trim( $this->get_value( $data, array( 'brand_name', 'brand' ) ) );
-            $code  = trim( $this->get_value( $data, array( 'code' ) ) );
-
-            return array(
-                'group_key'      => $this->build_parent_group_key( $brand, $clean_name, $code ),
-                'clean_name'     => $clean_name,
-                'colour'         => $final_colour,
-                'derived_colour' => $derived_colour,
-                'brand'          => $brand,
-                'code'           => $code,
-                'item_context'   => $this->get_item_log_context( $data ),
-            );
-        }
-
-        /**
-         * Construct a stable key for a group of SoftOne rows representing the same parent product.
-         *
-         * @param string $brand
-         * @param string $name
-         * @param string $code
-         * @return string
-         */
-        protected function build_parent_group_key( $brand, $name, $code ) {
-            $brand_component = $this->normalise_group_component( $brand );
-            $name_component  = $this->normalise_group_component( $name );
-            $code_component  = $this->normalise_group_component( $code );
-
-            if ( '' === $brand_component && '' === $name_component && '' === $code_component ) {
-                return '';
-            }
-
-            return md5( implode( '|', array( $brand_component, $name_component, $code_component ) ) );
-        }
-
-        /**
-         * Build a grouping key for Softone relations based on a parent MTRL value.
-         *
-         * @param string $mtrl
-         * @return string
-         */
-        protected function build_related_group_key( $mtrl ) {
-            $mtrl = strtolower( trim( (string) $mtrl ) );
-            if ( '' === $mtrl ) {
-                return '';
-            }
-
-            return 'related:' . md5( $mtrl );
-        }
-
-        /**
-         * Extract the Softone MTRL identifier from a normalised row.
-         *
-         * @param array $data
-         * @return string
-         */
-        protected function extract_softone_mtrl( array $data ) {
-            return trim( (string) $this->get_value( $data, array( 'mtrl', 'MTRL', 'mtrl_code', 'MTRL_CODE' ) ) );
-        }
-
-        /**
-         * Extract the Softone barcode/GTIN value from a row.
-         *
-         * @param array $data
-         * @return string
-         */
-        protected function extract_barcode( array $data ) {
-            return trim( (string) $this->get_value( $data, array( 'barcode', 'BARCODE' ) ) );
-        }
-
-        /**
-         * Extract the related parent Softone MTRL from a normalised row.
-         *
-         * @param array $data
-         * @return string
-         */
-        protected function extract_related_parent_mtrl( array $data ) {
-            return trim( (string) $this->get_value( $data, array( 'related_item_mtrl', 'related_mtrl', 'rel_mtrl' ) ) );
-        }
-
-        /**
-         * Extract declared related Softone MTRL identifiers from a row.
-         *
-         * @param array $data
-         * @return array<int, string>
-         */
-        protected function extract_related_item_mtrls_from_row( array $data ) {
-            $values = array();
-
-            if ( isset( $data['related_item_mtrls'] ) ) {
-                $values = $this->normalise_related_item_mtrl_list( $data['related_item_mtrls'] );
-            }
-
-            return $values;
-        }
-
-        /**
-         * Normalise a list of related Softone MTRL identifiers.
-         *
-         * @param mixed $raw
-         * @return array<int, string>
-         */
-        protected function normalise_related_item_mtrl_list( $raw ) {
-            $normalized = array();
-
-            if ( is_array( $raw ) ) {
-                $candidates = $raw;
-            } else {
-                $raw        = trim( (string) $raw );
-                $candidates = ( '' === $raw ) ? array() : preg_split( '/[\s,|;]+/', $raw );
-            }
-
-            foreach ( (array) $candidates as $candidate ) {
-                $candidate = trim( (string) $candidate );
-                if ( '' === $candidate ) {
-                    continue;
-                }
-
-                $normalized[ $candidate ] = $candidate;
-            }
-
-            return array_values( $normalized );
-        }
-
-        /**
-         * Normalise a value for grouping purposes.
-         *
-         * @param string $value
-         * @return string
-         */
-        protected function normalise_group_component( $value ) {
-            $value = strtolower( trim( (string) $value ) );
-            $value = preg_replace( '/\s+/', ' ', $value );
-            return (string) $value;
-        }
-
-        /**
-         * Create a stock profile array from the SoftOne payload.
-         *
-         * @param array $data
-         * @return array
-         */
-        protected function build_stock_profile_from_data( array $data ) {
-            $profile = array(
-                'manage_stock'   => false,
-                'stock_quantity' => null,
-                'backorders'     => 'no',
-                'stock_status'   => 'instock',
-            );
-
-            $stock_quantity = $this->get_value( $data, array( 'stock_qty', 'qty1' ) );
-            if ( '' === $stock_quantity ) {
-                return $profile;
-            }
-
-            $stock_amount = wc_stock_amount( $stock_quantity );
-            if ( 0 === $stock_amount && softone_wc_integration_should_force_minimum_stock() ) {
-                $stock_amount = 1;
-            }
-
-            $profile['manage_stock']   = true;
-            $profile['stock_quantity'] = $stock_amount;
-
-            $should_backorder = softone_wc_integration_should_backorder_out_of_stock();
-
-            if ( $should_backorder && $stock_amount <= 0 ) {
-                $profile['backorders']   = 'notify';
-                $profile['stock_status'] = 'onbackorder';
-            } else {
-                $profile['backorders']   = 'no';
-                $profile['stock_status'] = ( $stock_amount > 0 ) ? 'instock' : 'outofstock';
-            }
-
-            return $profile;
-        }
-
 /**
  * @throws Exception
  * @return string created|updated|skipped
  */
-        protected function import_row( array $data, $run_timestamp ) {
-            $group_variations    = array();
-            $colour_value_overrides = array();
-            $parent_sku_override = '';
+protected function import_row( array $data, $run_timestamp ) {
+    $mtrl         = isset( $data['mtrl'] ) ? (string) $data['mtrl'] : '';
+    $sku_requested = $this->determine_sku( $data );
 
-            if ( isset( $data['__group_variations'] ) && is_array( $data['__group_variations'] ) ) {
-                $group_variations = $data['__group_variations'];
-            }
-
-            if ( isset( $data['__colour_values'] ) && is_array( $data['__colour_values'] ) ) {
-                $colour_value_overrides = $data['__colour_values'];
-            }
-
-            if ( isset( $data['__parent_sku_override'] ) ) {
-                $parent_sku_override = (string) $data['__parent_sku_override'];
-            }
-
-            $mtrl          = isset( $data['mtrl'] ) ? (string) $data['mtrl'] : '';
-            $child_mtrls   = $this->extract_related_item_mtrls_from_row( $data );
-            $barcode_value = $this->extract_barcode( $data );
-            $sku_requested = '' !== $parent_sku_override
-                ? $parent_sku_override
-                : $this->determine_sku( $data );
-
-            if ( '' === $mtrl && '' === $sku_requested ) {
-                throw new Exception( __( 'Unable to determine a product identifier for the imported row.', 'softone-woocommerce-integration' ) );
-            }
+    if ( '' === $mtrl && '' === $sku_requested ) {
+        throw new Exception( __( 'Unable to determine a product identifier for the imported row.', 'softone-woocommerce-integration' ) );
+    }
 
     // DE-DUPE: if the SKU already exists on ANY product, we will update THAT product (no duplicate products)
     $existing_by_sku_id = 0;
@@ -949,14 +500,6 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
     if ( ! $product ) {
         throw new Exception( __( 'Failed to load the matching WooCommerce product.', 'softone-woocommerce-integration' ) );
     }
-
-    $regular_price_value = null;
-    $stock_profile       = array(
-        'manage_stock'   => false,
-        'stock_quantity' => null,
-        'backorders'     => 'no',
-        'stock_status'   => 'instock',
-    );
 
     $category_ids = $this->prepare_category_ids( $data );
 
@@ -1016,22 +559,14 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         }
     }
 
-            if ( '' !== $derived_colour ) {
-                $fallback_metadata['colour'] = $derived_colour;
-            }
+    if ( '' !== $derived_colour ) {
+        $fallback_metadata['colour'] = $derived_colour;
+    }
 
-            if ( empty( $fallback_metadata['colour'] ) && ! empty( $colour_value_overrides ) ) {
-                $first_override = reset( $colour_value_overrides );
-                if ( false !== $first_override ) {
-                    $normalized_override             = $this->normalize_colour_value( (string) $first_override );
-                    $fallback_metadata['colour'] = $normalized_override;
-                }
-            }
-
-            // ---------- DESCRIPTIONS ----------
-            $description = $this->get_value(
-                $data,
-                array( 'long_description', 'longdescription', 'cccsocylodes', 'remarks', 'remark', 'notes' )
+    // ---------- DESCRIPTIONS ----------
+    $description = $this->get_value(
+        $data,
+        array( 'long_description', 'longdescription', 'cccsocylodes', 'remarks', 'remark', 'notes' )
     );
     if ( '' !== $description ) {
         $product->set_description( $description );
@@ -1045,8 +580,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
     // ---------- PRICE ----------
     $price = $this->get_value( $data, array( 'retailprice' ) );
     if ( '' !== $price ) {
-        $regular_price_value = wc_format_decimal( $price );
-        $product->set_regular_price( $regular_price_value );
+        $product->set_regular_price( wc_format_decimal( $price ) );
     }
 
     // ---------- SKU (ensure unique, but if someone else owns it, we UPDATE THAT product) ----------
@@ -1092,9 +626,6 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $stock_amount = 1;
         }
 
-        $stock_profile['manage_stock']   = true;
-        $stock_profile['stock_quantity'] = $stock_amount;
-
         $product->set_manage_stock( true );
         $product->set_stock_quantity( $stock_amount );
 
@@ -1103,22 +634,11 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         if ( $should_backorder && $stock_amount <= 0 && method_exists( $product, 'set_backorders' ) ) {
             $product->set_backorders( 'notify' );
             $product->set_stock_status( 'onbackorder' );
-            $stock_profile['backorders']   = 'notify';
-            $stock_profile['stock_status'] = 'onbackorder';
         } else {
             if ( method_exists( $product, 'set_backorders' ) ) {
                 $product->set_backorders( 'no' );
             }
-            $stock_profile['backorders']   = 'no';
-            $stock_profile['stock_status'] = ( $stock_amount > 0 ) ? 'instock' : 'outofstock';
             $product->set_stock_status( $stock_amount > 0 ? 'instock' : 'outofstock' );
-        }
-    }
-
-    if ( method_exists( $product, 'get_stock_status' ) ) {
-        $current_status = (string) $product->get_stock_status();
-        if ( '' !== $current_status ) {
-            $stock_profile['stock_status'] = $current_status;
         }
     }
 
@@ -1130,26 +650,11 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
     // ---------- ATTRIBUTES ----------
     $brand_value           = trim( $this->get_value( $data, array( 'brand_name', 'brand' ) ) );
     $attribute_assignments = $this->prepare_attribute_assignments( $data, $product, $fallback_metadata );
-    $variation_taxonomies  = isset( $attribute_assignments['variation_taxonomies'] )
-        ? (array) $attribute_assignments['variation_taxonomies']
-        : array();
-    $should_create_variation = ! empty( $variation_taxonomies );
 
     if ( ! empty( $attribute_assignments['attributes'] ) ) {
         $product->set_attributes( $attribute_assignments['attributes'] );
     } elseif ( empty( $attribute_assignments['attributes'] ) && $is_new ) {
         $product->set_attributes( array() );
-    }
-
-    if ( $should_create_variation && method_exists( $product, 'set_type' ) ) {
-        $product->set_type( 'variable' );
-    }
-    if ( $should_create_variation && method_exists( $product, 'set_manage_stock' ) ) {
-        $product->set_manage_stock( false );
-        $product->set_stock_quantity( null );
-    }
-    if ( $should_create_variation && method_exists( $product, 'set_backorders' ) ) {
-        $product->set_backorders( 'no' );
     }
 
     // ---------- SAVE FIRST ----------
@@ -1158,19 +663,9 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         throw new Exception( __( 'Unable to save the WooCommerce product.', 'softone-woocommerce-integration' ) );
     }
 
-    if ( $should_create_variation && function_exists( 'wp_set_object_terms' ) ) {
-        wp_set_object_terms( (int) $product_id, 'variable', 'product_type' );
-    }
-
     // If we learned MTRL during import, ensure it’s set on reused products too
     if ( $mtrl ) {
         update_post_meta( $product_id, self::META_MTRL, $mtrl );
-    }
-
-    $this->assign_gtin_meta( $product_id, $barcode_value );
-
-    if ( ! empty( $child_mtrls ) ) {
-        $this->convert_child_products_to_variations( $product_id, $child_mtrls, $mtrl );
     }
 
     // ---------- IMAGES (after save) ----------
@@ -1231,26 +726,6 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
         wp_set_object_terms( $product_id, $normalized_term_ids, $taxonomy );
     }
-
-            if ( $should_create_variation ) {
-                if ( ! empty( $group_variations ) ) {
-                    $this->sync_group_variations(
-                        $product_id,
-                        $product,
-                        $attribute_assignments,
-                        $group_variations,
-                        $regular_price_value
-                    );
-                } else {
-                    $this->sync_single_variation(
-                        $product_id,
-                        $product,
-                        $attribute_assignments,
-                        $regular_price_value,
-                        $stock_profile
-                    );
-                }
-            }
 
     // ---------- CLEAR TAXONOMIES ----------
     foreach ( $attribute_assignments['clear'] as $taxonomy ) {
@@ -1385,144 +860,13 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
         /** @return string */
         protected function determine_sku( array $data ) {
-            $candidates = array( 'sku', 'code' );
+            $candidates = array( 'sku', 'barcode', 'code' );
             foreach ( $candidates as $key ) {
                 if ( isset( $data[ $key ] ) && '' !== trim( (string) $data[ $key ] ) ) {
                     return (string) $data[ $key ];
                 }
             }
             return '';
-        }
-
-        /**
-         * Assign the Softone barcode value to WooCommerce GTIN-compatible meta keys.
-         *
-         * @param int    $product_id
-         * @param string $barcode
-         * @return void
-         */
-        protected function assign_gtin_meta( $product_id, $barcode ) {
-            $product_id = (int) $product_id;
-            if ( $product_id <= 0 ) {
-                return;
-            }
-
-            $barcode = trim( (string) $barcode );
-
-            $meta_keys = apply_filters( 'softone_wc_integration_gtin_meta_keys', array( '_barcode' ), $product_id, $barcode );
-            if ( ! is_array( $meta_keys ) ) {
-                $meta_keys = array( $meta_keys );
-            }
-
-            foreach ( $meta_keys as $meta_key ) {
-                $meta_key = is_string( $meta_key ) ? trim( $meta_key ) : '';
-                if ( '' === $meta_key ) {
-                    continue;
-                }
-
-                if ( '' === $barcode ) {
-                    delete_post_meta( $product_id, $meta_key );
-                } else {
-                    update_post_meta( $product_id, $meta_key, $barcode );
-                }
-            }
-        }
-
-        /**
-         * Convert existing Softone-linked simple products into variations of the parent product.
-         *
-         * @param int        $parent_product_id
-         * @param array<int, string> $child_mtrls
-         * @param string     $parent_mtrl
-         * @return void
-         */
-        protected function convert_child_products_to_variations( $parent_product_id, array $child_mtrls, $parent_mtrl ) {
-            $parent_product_id = (int) $parent_product_id;
-            if ( $parent_product_id <= 0 ) {
-                return;
-            }
-
-            if ( empty( $child_mtrls ) ) {
-                return;
-            }
-
-            if ( ! class_exists( 'WP_Query' ) ) {
-                return;
-            }
-
-            $normalized_mtrls = array();
-            $parent_mtrl      = trim( (string) $parent_mtrl );
-
-            foreach ( $child_mtrls as $child_mtrl ) {
-                $child_mtrl = trim( (string) $child_mtrl );
-                if ( '' === $child_mtrl ) {
-                    continue;
-                }
-
-                if ( '' !== $parent_mtrl && 0 === strcasecmp( $parent_mtrl, $child_mtrl ) ) {
-                    continue;
-                }
-
-                $normalized_mtrls[ $child_mtrl ] = $child_mtrl;
-            }
-
-            if ( empty( $normalized_mtrls ) ) {
-                return;
-            }
-
-            $query = new WP_Query(
-                array(
-                    'post_type'      => array( 'product', 'product_variation' ),
-                    'post_status'    => array( 'publish', 'pending', 'draft', 'private' ),
-                    'posts_per_page' => -1,
-                    'fields'         => 'ids',
-                    'meta_query'     => array(
-                        array(
-                            'key'     => self::META_MTRL,
-                            'value'   => array_values( $normalized_mtrls ),
-                            'compare' => 'IN',
-                        ),
-                    ),
-                )
-            );
-
-            if ( ! $query->have_posts() ) {
-                wp_reset_postdata();
-                return;
-            }
-
-            foreach ( $query->posts as $child_id ) {
-                $child_id = (int) $child_id;
-                if ( $child_id <= 0 || $child_id === $parent_product_id ) {
-                    continue;
-                }
-
-                $post_type   = get_post_type( $child_id );
-                $post_parent = (int) get_post_field( 'post_parent', $child_id );
-
-                $update_data  = array( 'ID' => $child_id );
-                $needs_update = false;
-
-                if ( 'product_variation' !== $post_type ) {
-                    $update_data['post_type']   = 'product_variation';
-                    $update_data['post_status'] = 'publish';
-                    $needs_update               = true;
-                }
-
-                if ( $post_parent !== $parent_product_id ) {
-                    $update_data['post_parent'] = $parent_product_id;
-                    $needs_update               = true;
-                }
-
-                if ( $needs_update ) {
-                    wp_update_post( $update_data );
-                    if ( function_exists( 'clean_post_cache' ) ) {
-                        clean_post_cache( $child_id );
-                    }
-                }
-            }
-
-            wp_reset_postdata();
         }
 
         /**
@@ -1799,16 +1143,14 @@ protected function find_existing_product( $sku, $mtrl ) {
  * @param WC_Product  $product
  * @param array       $fallback_attributes e.g. ['colour' => 'Red'].
  *
- * @return array{attributes: array<int,WC_Product_Attribute>, terms: array, values: array, clear: array, variation_taxonomies: array, term_slugs: array}
+ * @return array{attributes: array<int,WC_Product_Attribute>, terms: array, values: array, clear: array}
  */
 protected function prepare_attribute_assignments( array $data, $product, array $fallback_attributes = array() ) {
     $assignments = array(
-        'attributes'           => array(),
-        'terms'                => array(),
-        'values'               => array(),
-        'clear'                => array(),
-        'variation_taxonomies' => array(),
-        'term_slugs'           => array(),
+        'attributes' => array(),
+        'terms'      => array(),
+        'values'     => array(),
+        'clear'      => array(),
     );
 
     // ---------------- Hidden custom attribute: softone_mtrl ----------------
@@ -1855,163 +1197,47 @@ protected function prepare_attribute_assignments( array $data, $product, array $
         }
     }
 
-    // ---------------- Hidden custom attribute: related_item_mtrls ----------------
-    $related_mtrls = array();
-    if ( isset( $data['related_item_mtrls'] ) ) {
-        $related_mtrls = $this->normalise_related_item_mtrl_list( $data['related_item_mtrls'] );
-    }
-
-    if ( ! empty( $related_mtrls ) && class_exists( 'WC_Product_Attribute' ) ) {
-        try {
-            $attr = new WC_Product_Attribute();
-            $attr->set_id( 0 );
-            $attr->set_name( 'related_item_mtrls' );
-            $attr->set_options( array_values( $related_mtrls ) );
-            $attr->set_visible( false );
-            $attr->set_variation( false );
-            $assignments['attributes'][] = $attr;
-        } catch ( \Throwable $e ) {
-            if ( method_exists( $product, 'get_id' ) ) {
-                $pid = (int) $product->get_id();
-                if ( $pid > 0 ) {
-                    update_post_meta( $pid, '_softone_related_item_mtrls', array_values( $related_mtrls ) );
-                }
-            }
-        }
-    }
-
     // ---------------- Visible taxonomy attributes: Colour, Size, Brand ----------------
-    $colour_values = array();
-    if ( isset( $data['__colour_values'] ) && is_array( $data['__colour_values'] ) ) {
-        foreach ( $data['__colour_values'] as $value ) {
-            $normalized = $this->normalize_colour_value( (string) $value );
-            if ( '' !== $normalized ) {
-                $colour_values[] = $normalized;
-            }
-        }
+    $colour_value = $this->normalize_colour_value(
+        trim( $this->get_value( $data, array( 'colour_name', 'color_name', 'colour', 'color' ) ) )
+    );
+    if ( $colour_value === '' && isset( $fallback_attributes['colour'] ) ) {
+        $colour_value = $this->normalize_colour_value( (string) $fallback_attributes['colour'] );
     }
-
-    if ( empty( $colour_values ) && isset( $data['__group_variations'] ) && is_array( $data['__group_variations'] ) ) {
-        foreach ( $data['__group_variations'] as $variation_payload ) {
-            if ( ! is_array( $variation_payload ) ) {
-                continue;
-            }
-
-            $label = '';
-            if ( isset( $variation_payload['colour_label'] ) ) {
-                $label = (string) $variation_payload['colour_label'];
-            } elseif ( isset( $variation_payload['color_label'] ) ) {
-                $label = (string) $variation_payload['color_label'];
-            }
-
-            $normalized = $this->normalize_colour_value( $label );
-            if ( '' !== $normalized ) {
-                $colour_values[] = $normalized;
-            }
-        }
-    }
-
-    if ( empty( $colour_values ) ) {
-        $single_colour = $this->normalize_colour_value(
-            trim( $this->get_value( $data, array( 'colour_name', 'color_name', 'colour', 'color' ) ) )
-        );
-        if ( '' !== $single_colour ) {
-            $colour_values[] = $single_colour;
-        }
-    }
-
-    if ( empty( $colour_values ) && isset( $fallback_attributes['colour'] ) ) {
-        $fallback_colour = $this->normalize_colour_value( (string) $fallback_attributes['colour'] );
-        if ( '' !== $fallback_colour ) {
-            $colour_values[] = $fallback_colour;
-        }
-    }
-
-    $unique_colour_values = array();
-    foreach ( $colour_values as $colour ) {
-        $key = strtolower( $colour );
-        if ( ! isset( $unique_colour_values[ $key ] ) ) {
-            $unique_colour_values[ $key ] = $colour;
-        }
-    }
-    $colour_values = array_values( $unique_colour_values );
 
     $size_value  = trim( $this->get_value( $data, array( 'size_name', 'size' ) ) );
     $brand_value = trim( $this->get_value( $data, array( 'brand_name', 'brand' ) ) );
 
-    $colour_slug = $this->resolve_colour_attribute_slug();
-    if ( function_exists( 'wc_attribute_taxonomy_name' ) ) {
-        $colour_taxonomy = wc_attribute_taxonomy_name( $colour_slug );
-        if ( '' !== $colour_taxonomy ) {
-            $this->ensure_attribute_taxonomy( $colour_slug, __( 'Colour', 'softone-woocommerce-integration' ) );
-        }
-    }
-
+    // (slug => [Label, Value, Position])
+    // For colour we resolve to pa_colour or pa_color safely
+    $colour_slug = $this->resolve_colour_attribute_slug(); // 'colour' or 'color'
     $attribute_map = array(
-        $colour_slug => array(
-            'label'        => __( 'Colour', 'softone-woocommerce-integration' ),
-            'values'       => $colour_values,
-            'position'     => 0,
-            'is_variation' => true,
-        ),
-        'size'       => array(
-            'label'        => __( 'Size', 'softone-woocommerce-integration' ),
-            'values'       => '' !== $size_value ? array( $size_value ) : array(),
-            'position'     => 1,
-            'is_variation' => false,
-        ),
-        'brand'      => array(
-            'label'        => __( 'Brand', 'softone-woocommerce-integration' ),
-            'values'       => '' !== $brand_value ? array( $brand_value ) : array(),
-            'position'     => 2,
-            'is_variation' => false,
-        ),
+        $colour_slug => array( __( 'Colour', 'softone-woocommerce-integration' ), $colour_value, 0 ),
+        'size'       => array( __( 'Size',   'softone-woocommerce-integration' ), $size_value,   1 ),
+        'brand'      => array( __( 'Brand',  'softone-woocommerce-integration' ), $brand_value,  2 ),
     );
 
-    foreach ( $attribute_map as $slug => $config ) {
-        $values = array();
-        foreach ( (array) $config['values'] as $candidate ) {
-            $candidate = trim( (string) $candidate );
-            if ( '' !== $candidate ) {
-                $values[] = $candidate;
-            }
-        }
+    foreach ( $attribute_map as $slug => $tuple ) {
+        list( $label, $value, $position ) = $tuple;
 
         $taxonomy = function_exists( 'wc_attribute_taxonomy_name' )
             ? wc_attribute_taxonomy_name( $slug )
             : '';
 
-        if ( empty( $values ) ) {
-            if ( '' !== $taxonomy ) {
+        if ( '' === $value ) {
+            if ( $taxonomy !== '' ) {
                 $assignments['clear'][] = $taxonomy;
             }
             continue;
         }
 
-        $attribute_id = $this->ensure_attribute_taxonomy( $slug, $config['label'] );
+        $attribute_id = $this->ensure_attribute_taxonomy( $slug, $label );
         if ( ! $attribute_id ) {
             continue;
         }
 
-        $term_ids   = array();
-        $term_slugs = array();
-        foreach ( $values as $value ) {
-            $term_id = $this->ensure_attribute_term( $taxonomy, $value );
-            if ( ! $term_id ) {
-                continue;
-            }
-
-            $term_ids[] = (int) $term_id;
-
-            if ( function_exists( 'get_term' ) ) {
-                $term = get_term( $term_id, $taxonomy );
-                if ( $term && ! is_wp_error( $term ) ) {
-                    $term_slugs[ $value ] = (string) $term->slug;
-                }
-            }
-        }
-
-        if ( empty( $term_ids ) ) {
+        $term_id = $this->ensure_attribute_term( $taxonomy, $value );
+        if ( ! $term_id ) {
             continue;
         }
 
@@ -2019,434 +1245,31 @@ protected function prepare_attribute_assignments( array $data, $product, array $
             $attr = new WC_Product_Attribute();
             $attr->set_id( (int) $attribute_id );
             $attr->set_name( $taxonomy );
-            $attr->set_options( array_map( 'intval', $term_ids ) );
-            $attr->set_position( (int) $config['position'] );
+            $attr->set_options( array( (int) $term_id ) );
+            $attr->set_position( (int) $position );
             $attr->set_visible( true );
+            $attr->set_variation( false );
 
-            $is_colour_attribute = ! empty( $config['is_variation'] );
-            $attr->set_variation( $is_colour_attribute );
-
-            if ( $is_colour_attribute ) {
-                $assignments['variation_taxonomies'][ $taxonomy ] = true;
-            }
-
-            $assignments['attributes'][ $taxonomy ] = $attr;
-            $assignments['terms'][ $taxonomy ]      = array_map( 'intval', $term_ids );
-            $assignments['values'][ $taxonomy ]     = implode( ', ', $values );
-
-            if ( ! empty( $term_slugs ) ) {
-                $assignments['term_slugs'][ $taxonomy ] = $term_slugs;
-            }
+            $assignments['attributes'][]      = $attr;
+            $assignments['terms'][ $taxonomy ] = array( (int) $term_id );
+            $assignments['values'][ $taxonomy ] = $value;
         }
     }
 
     return $assignments;
 }
 
-        /**
-         * Synchronise multiple colour-based variations for a parent product.
-         *
-         * @param int        $product_id            Product identifier.
-         * @param WC_Product $product               Parent product instance.
-         * @param array      $attribute_assignments Prepared attribute assignments.
-         * @param array      $group_variations      Variation payloads derived from SoftOne.
-         * @param string|null $default_regular_price Fallback regular price.
-         *
-         * @return void
-         */
-        protected function sync_group_variations( $product_id, $product, array $attribute_assignments, array $group_variations, $default_regular_price ) {
-            if ( empty( $attribute_assignments['variation_taxonomies'] ) || empty( $group_variations ) ) {
-                return;
-            }
-
-            if ( ! function_exists( 'wc_get_product' ) || ! class_exists( 'WC_Product_Variation' ) ) {
-                return;
-            }
-
-            $variation_taxonomies = array_keys( $attribute_assignments['variation_taxonomies'] );
-            if ( empty( $variation_taxonomies ) ) {
-                return;
-            }
-
-            $variation_taxonomy = (string) reset( $variation_taxonomies );
-            if ( '' === $variation_taxonomy ) {
-                return;
-            }
-
-            $term_slug_map = array();
-            if ( isset( $attribute_assignments['term_slugs'][ $variation_taxonomy ] ) && is_array( $attribute_assignments['term_slugs'][ $variation_taxonomy ] ) ) {
-                $term_slug_map = $attribute_assignments['term_slugs'][ $variation_taxonomy ];
-            }
-
-            $variable_product = wc_get_product( $product_id );
-            if ( ! $variable_product ) {
-                return;
-            }
-
-            if ( method_exists( $variable_product, 'set_type' ) ) {
-                $variable_product->set_type( 'variable' );
-            }
-            if ( method_exists( $variable_product, 'set_manage_stock' ) ) {
-                $variable_product->set_manage_stock( false );
-                $variable_product->set_stock_quantity( null );
-            }
-
-            $existing_variations = array();
-            if ( method_exists( $variable_product, 'get_children' ) ) {
-                foreach ( (array) $variable_product->get_children() as $child_id ) {
-                    $child_id = (int) $child_id;
-                    if ( $child_id <= 0 ) {
-                        continue;
-                    }
-
-                    $child = wc_get_product( $child_id );
-                    if ( ! $child ) {
-                        continue;
-                    }
-
-                    $attribute_slug = '';
-                    if ( method_exists( $child, 'get_attribute' ) ) {
-                        $attribute_slug = (string) $child->get_attribute( $variation_taxonomy );
-                    }
-                    if ( '' === $attribute_slug ) {
-                        $attributes = $child->get_attributes();
-                        if ( isset( $attributes[ 'attribute_' . $variation_taxonomy ] ) ) {
-                            $attribute_slug = (string) $attributes[ 'attribute_' . $variation_taxonomy ];
-                        }
-                    }
-
-                    $existing_variations[ $child_id ] = array(
-                        'product' => $child,
-                        'slug'    => $attribute_slug,
-                        'sku'     => strtolower( (string) $child->get_sku() ),
-                        'mtrl'    => strtolower( (string) get_post_meta( $child_id, self::META_MTRL, true ) ),
-                    );
-                }
-            }
-
-            $default_attributes   = array();
-            $parent_stock_status  = 'outofstock';
-            $variation_position   = 0;
-
-            foreach ( $group_variations as $variation_payload ) {
-                if ( ! is_array( $variation_payload ) ) {
-                    continue;
-                }
-
-                $colour_label = isset( $variation_payload['colour_label'] ) ? (string) $variation_payload['colour_label'] : '';
-                if ( '' === $colour_label ) {
-                    continue;
-                }
-
-                $variation_mtrl_raw = isset( $variation_payload['mtrl'] ) ? (string) $variation_payload['mtrl'] : '';
-                $normalized_mtrl    = strtolower( trim( $variation_mtrl_raw ) );
-
-                $colour_slug = '';
-                if ( ! empty( $term_slug_map ) ) {
-                    foreach ( $term_slug_map as $label => $slug ) {
-                        if ( 0 === strcasecmp( (string) $label, $colour_label ) ) {
-                            $colour_slug = (string) $slug;
-                            break;
-                        }
-                    }
-                }
-
-                if ( '' === $colour_slug && function_exists( 'get_term_by' ) ) {
-                    $term = get_term_by( 'name', $colour_label, $variation_taxonomy );
-                    if ( $term && ! is_wp_error( $term ) ) {
-                        $colour_slug = (string) $term->slug;
-                    }
-                }
-
-                if ( '' === $colour_slug ) {
-                    continue;
-                }
-
-                $matched_variation_id = 0;
-                foreach ( $existing_variations as $existing_id => $existing_data ) {
-                    if ( '' !== $existing_data['slug'] && 0 === strcasecmp( $existing_data['slug'], $colour_slug ) ) {
-                        $matched_variation_id = (int) $existing_id;
-                        break;
-                    }
-                }
-
-                $base_sku      = isset( $variation_payload['sku'] ) ? (string) $variation_payload['sku'] : '';
-                $normalized_sku = strtolower( $base_sku );
-                if ( 0 === $matched_variation_id && '' !== $normalized_sku ) {
-                    foreach ( $existing_variations as $existing_id => $existing_data ) {
-                        if ( '' !== $existing_data['sku'] && $existing_data['sku'] === $normalized_sku ) {
-                            $matched_variation_id = (int) $existing_id;
-                            break;
-                        }
-                    }
-                }
-
-                if ( 0 === $matched_variation_id && '' !== $normalized_mtrl ) {
-                    foreach ( $existing_variations as $existing_id => $existing_data ) {
-                        if ( '' !== $existing_data['mtrl'] && $existing_data['mtrl'] === $normalized_mtrl ) {
-                            $matched_variation_id = (int) $existing_id;
-                            break;
-                        }
-                    }
-                }
-
-                $variation = null;
-                if ( 0 !== $matched_variation_id && isset( $existing_variations[ $matched_variation_id ]['product'] ) ) {
-                    $variation = $existing_variations[ $matched_variation_id ]['product'];
-                    unset( $existing_variations[ $matched_variation_id ] );
-                } else {
-                    $variation = new WC_Product_Variation();
-                    $variation->set_parent_id( $product_id );
-                }
-
-                $status = method_exists( $product, 'get_status' ) ? (string) $product->get_status() : 'publish';
-                if ( '' === $status ) {
-                    $status = 'publish';
-                }
-                $variation->set_status( $status );
-
-                $variation->set_attributes( array( 'attribute_' . $variation_taxonomy => $colour_slug ) );
-
-                if ( '' !== $base_sku ) {
-                    $variation_id  = $variation->get_id();
-                    $effective_sku = $this->ensure_unique_sku(
-                        $base_sku,
-                        $variation_id ? (int) $variation_id : 0,
-                        array( $colour_slug )
-                    );
-                    if ( '' !== $effective_sku ) {
-                        $variation->set_sku( $effective_sku );
-                    }
-                } else {
-                    $variation->set_sku( '' );
-                }
-
-                $regular_price = isset( $variation_payload['regular_price'] ) ? $variation_payload['regular_price'] : null;
-                if ( null === $regular_price || '' === $regular_price ) {
-                    $regular_price = $default_regular_price;
-                }
-                if ( null !== $regular_price && '' !== $regular_price ) {
-                    $variation->set_regular_price( $regular_price );
-                }
-
-                if ( isset( $variation_payload['stock_profile'] ) && is_array( $variation_payload['stock_profile'] ) && method_exists( $variation, 'set_manage_stock' ) ) {
-                    $profile       = $variation_payload['stock_profile'];
-                    $manage_stock  = ! empty( $profile['manage_stock'] );
-                    $backorder_val = isset( $profile['backorders'] ) ? (string) $profile['backorders'] : 'no';
-
-                    $variation->set_manage_stock( $manage_stock );
-                    if ( $manage_stock ) {
-                        $quantity = isset( $profile['stock_quantity'] ) ? (int) $profile['stock_quantity'] : 0;
-                        $variation->set_stock_quantity( $quantity );
-
-                        if ( method_exists( $variation, 'set_backorders' ) ) {
-                            $variation->set_backorders( $backorder_val );
-                        }
-                    } else {
-                        $variation->set_stock_quantity( null );
-                        if ( method_exists( $variation, 'set_backorders' ) ) {
-                            $variation->set_backorders( 'no' );
-                        }
-                    }
-
-                    if ( isset( $profile['stock_status'] ) ) {
-                        $variation->set_stock_status( (string) $profile['stock_status'] );
-                        if ( in_array( $profile['stock_status'], array( 'instock', 'onbackorder' ), true ) ) {
-                            $parent_stock_status = 'instock';
-                        }
-                    }
-                }
-
-                $variation->save();
-                $variation_id = $variation->get_id();
-
-                if ( $variation_id > 0 ) {
-                    if ( '' !== $variation_mtrl_raw ) {
-                        update_post_meta( $variation_id, self::META_MTRL, $variation_mtrl_raw );
-                    }
-
-                    if ( array_key_exists( 'barcode', $variation_payload ) ) {
-                        $this->assign_gtin_meta( $variation_id, $variation_payload['barcode'] );
-                    }
-                }
-
-                if ( 0 === $variation_position && '' !== $colour_slug ) {
-                    $default_attributes[ $variation_taxonomy ] = $colour_slug;
-                }
-
-                $variation_position++;
-            }
-
-            if ( function_exists( 'wp_delete_post' ) ) {
-                foreach ( $existing_variations as $existing_data ) {
-                    if ( isset( $existing_data['product'] ) && $existing_data['product'] instanceof WC_Product_Variation ) {
-                        wp_delete_post( $existing_data['product']->get_id(), true );
-                    }
-                }
-            }
-
-            if ( method_exists( $variable_product, 'set_default_attributes' ) && ! empty( $default_attributes ) ) {
-                $variable_product->set_default_attributes( $default_attributes );
-            }
-
-            if ( 'instock' !== $parent_stock_status ) {
-                $parent_stock_status = 'outofstock';
-            }
-
-            if ( method_exists( $variable_product, 'set_stock_status' ) ) {
-                $variable_product->set_stock_status( $parent_stock_status );
-            }
-
-            if ( method_exists( $variable_product, 'save' ) ) {
-                $variable_product->save();
-            }
-
-            if ( class_exists( 'WC_Product_Variable' ) && method_exists( 'WC_Product_Variable', 'sync' ) ) {
-                \WC_Product_Variable::sync( $product_id );
-            }
-
-            if ( function_exists( 'wc_delete_product_transients' ) ) {
-                wc_delete_product_transients( $product_id );
-            }
-        }
-
-        /**
-         * Ensure the product exposes a single variation reflecting the assigned attributes.
-         *
-         * @param int        $product_id            Product identifier.
-         * @param WC_Product $product               Parent product instance.
-         * @param array      $attribute_assignments Prepared attribute assignments.
-         * @param string|null $regular_price_value  Regular price captured from the payload.
-         * @param array      $stock_profile         Normalised stock information.
-         *
-         * @return void
-         */
-        protected function sync_single_variation( $product_id, $product, array $attribute_assignments, $regular_price_value, array $stock_profile ) {
-            if ( empty( $attribute_assignments['variation_taxonomies'] ) ) {
-                return;
-            }
-
-    if ( ! function_exists( 'wc_get_product' ) || ! class_exists( 'WC_Product_Variation' ) ) {
-        return;
-    }
-
-    $variation_taxonomies = array_keys( $attribute_assignments['variation_taxonomies'] );
-    if ( empty( $variation_taxonomies ) ) {
-        return;
-    }
-
-    $variable_product = wc_get_product( $product_id );
-    if ( ! $variable_product ) {
-        return;
-    }
-
-    if ( method_exists( $variable_product, 'set_type' ) ) {
-        $variable_product->set_type( 'variable' );
-    }
-
-    $variation_attributes = array();
-    $default_attributes   = array();
-
-    foreach ( $variation_taxonomies as $taxonomy ) {
-        if ( empty( $attribute_assignments['terms'][ $taxonomy ] ) ) {
-            continue;
-        }
-
-        $term_id = (int) $attribute_assignments['terms'][ $taxonomy ][0];
-        if ( $term_id <= 0 ) {
-            continue;
-        }
-
-        $term = get_term( $term_id, $taxonomy );
-        if ( ! $term || is_wp_error( $term ) ) {
-            continue;
-        }
-
-        $variation_attributes[ 'attribute_' . $taxonomy ] = $term->slug;
-        $default_attributes[ $taxonomy ]                  = $term->slug;
-    }
-
-    if ( empty( $variation_attributes ) ) {
-        return;
-    }
-
-    $existing_variation_ids = array();
-    if ( method_exists( $variable_product, 'get_children' ) ) {
-        $existing_variation_ids = array_map( 'intval', (array) $variable_product->get_children() );
-    }
-
-    $variation = null;
-    if ( ! empty( $existing_variation_ids ) ) {
-        $variation = wc_get_product( (int) $existing_variation_ids[0] );
-    }
-
-    if ( ! $variation ) {
-        $variation = new WC_Product_Variation();
-        $variation->set_parent_id( $product_id );
-    }
-
-    $status = method_exists( $product, 'get_status' ) ? (string) $product->get_status() : 'publish';
-    if ( '' === $status ) {
-        $status = 'publish';
-    }
-    $variation->set_status( $status );
-    $variation->set_attributes( $variation_attributes );
-
-    if ( null === $regular_price_value ) {
-        $regular_price_value = $product->get_regular_price();
-    }
-
-    if ( null !== $regular_price_value && '' !== $regular_price_value ) {
-        $variation->set_regular_price( $regular_price_value );
-    }
-
-    if ( method_exists( $variation, 'set_manage_stock' ) ) {
-        $manage_stock = ! empty( $stock_profile['manage_stock'] );
-        $variation->set_manage_stock( $manage_stock );
-
-        if ( $manage_stock ) {
-            $quantity = isset( $stock_profile['stock_quantity'] ) ? (int) $stock_profile['stock_quantity'] : 0;
-            $variation->set_stock_quantity( $quantity );
-
-            if ( method_exists( $variation, 'set_backorders' ) ) {
-                $variation->set_backorders(
-                    isset( $stock_profile['backorders'] ) ? (string) $stock_profile['backorders'] : 'no'
-                );
-            }
-        } else {
-            $variation->set_stock_quantity( null );
-
-            if ( method_exists( $variation, 'set_backorders' ) ) {
-                $variation->set_backorders( 'no' );
-            }
-        }
-    }
-
-    if ( isset( $stock_profile['stock_status'] ) ) {
-        $variation->set_stock_status( (string) $stock_profile['stock_status'] );
-    }
-
-    $variation_id = $variation->save();
-
-    if ( method_exists( $variable_product, 'set_default_attributes' ) ) {
-        $variable_product->set_default_attributes( $default_attributes );
-    }
-
-    if ( method_exists( $variable_product, 'save' ) ) {
-        $variable_product->save();
-    }
-
-    if ( class_exists( 'WC_Product_Variable' ) && method_exists( 'WC_Product_Variable', 'sync' ) ) {
-        \WC_Product_Variable::sync( $product_id );
-    }
-
-    if ( function_exists( 'wc_delete_product_transients' ) ) {
-        wc_delete_product_transients( $product_id );
-    }
-}
-
-/** @return string */
+/** @return string 'colour' or 'color' */
 protected function resolve_colour_attribute_slug() {
+    // If pa_colour already exists, use 'colour'
+    if ( function_exists( 'wc_attribute_taxonomy_id_by_name' ) && wc_attribute_taxonomy_id_by_name( 'colour' ) ) {
+        return 'colour';
+    }
+    // If pa_color exists (some stores use US spelling), use 'color'
+    if ( function_exists( 'wc_attribute_taxonomy_id_by_name' ) && wc_attribute_taxonomy_id_by_name( 'color' ) ) {
+        return 'color';
+    }
+    // Default to creating 'colour'
     return 'colour';
 }
 
@@ -2477,18 +1300,6 @@ protected function resolve_colour_attribute_slug() {
         protected function normalize_colour_value( $colour ) {
             $colour = trim( (string) $colour );
             if ( '' === $colour ) { return ''; }
-
-            $normalized_placeholder = strtolower( preg_replace( '/\s+/', ' ', $colour ) );
-            $placeholder_values     = array( '-', 'n/a', 'na', 'none', 'not applicable', 'no colour', 'no color' );
-
-            if ( in_array( $normalized_placeholder, $placeholder_values, true ) ) {
-                return '';
-            }
-
-            if ( preg_match( '/^[-]+$/', $colour ) ) {
-                return '';
-            }
-
             if ( function_exists( 'mb_convert_case' ) ) {
                 return mb_convert_case( $colour, MB_CASE_TITLE, 'UTF-8' );
             }
