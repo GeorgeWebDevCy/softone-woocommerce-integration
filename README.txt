@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.8.51
+Stable tag: 1.8.47
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -78,23 +78,8 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 
 == Changelog ==
 
-= 1.8.51 =
-* Restore legacy Softone item import helpers used by regression tests and guard admin menu batching against missing WordPress constants.
-
-= 1.8.50 =
-* Ensure the manual "Run Item Import" action delegates to the admin handler so notices are displayed after completion.
-* Provide a public `sync()` method on the item sync service that returns a summary for the settings screen and logs the outcome.
-
-= 1.8.49 =
-* Prevent fatal errors that stopped product synchronisation by allowing the item sync service to register hooks via the plugin loader.
-* Add activity logging when the loader fallback is triggered and when cron events are scheduled or cleared for the item sync.
-
-= 1.8.48 =
-* Fix fatal errors triggered when the item sync service logs activity by updating calls to the shared activity logger to use the
-  expanded signature.
-
 = 1.8.47 =
-* Define the item sync last-run option constant to prevent fatal errors on the settings screen when the value is referenced.
+* Revert the plugin codebase to the logic deployed in commit 2ae9c8e to restore stable item synchronisation behaviour.
 
 = 1.8.46 =
 * Ensure WooCommerce category terms are created and assigned even when the Softone payload hash has not changed so taxonomy sync runs for legacy imports.
