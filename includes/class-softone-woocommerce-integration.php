@@ -172,6 +172,9 @@ class Softone_Woocommerce_Integration {
                  */
                 require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-order-sync.php';
 
+				require_once __DIR__ . '/class-softone-customer-sync.php';
+
+
                 /**
                  * Helper for dynamically populating navigation menus.
                  */
