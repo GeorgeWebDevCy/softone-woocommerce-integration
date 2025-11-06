@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.8.48
+Stable tag: 1.8.49
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -77,6 +77,10 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Sync::schedule_event()`.
 
 == Changelog ==
+
+= 1.8.49 =
+* Prevent fatal errors that stopped product synchronisation by allowing the item sync service to register hooks via the plugin loader.
+* Add activity logging when the loader fallback is triggered and when cron events are scheduled or cleared for the item sync.
 
 = 1.8.48 =
 * Fix fatal errors triggered when the item sync service logs activity by updating calls to the shared activity logger to use the
