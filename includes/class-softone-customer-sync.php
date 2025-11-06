@@ -1,21 +1,31 @@
 <?php
 /**
- * SoftOne customer synchronisation – ONLY on Woo "order completed".
+ * SoftOne customer synchronisation – ONLY when WooCommerce orders become "completed".
  *
- * Guarantees:
- * - Runs ONLY on `woocommerce_order_status_completed`.
- * - Never re-runs for the same order (uses a meta guard).
- * - Does NOT create WP users; this is only for SoftOne (external) customer creation/update.
- * - Provides a safe place to call your SoftOne API client.
+ * Calls SoftOne:
+ *   service: setData
+ *   object : CUSTOMER
+ *   data   : { CUSTOMER: [ { ... } ], CUSEXTRA: [ { BOOL01: "1" } ] }
  *
- * Extensibility:
- * - Filter:  softone_wc_should_sync_customer (bool, $order) – default true
- * - Action:  softone_wc_before_sync_customer ($order, $prepared)
- * - Action:  softone_wc_after_sync_customer  ($order, $prepared, $result)
- * - Filter:  softone_wc_customer_payload     (array $prepared, $order)
+ * Behavior:
+ * - Runs only on woocommerce_order_status_completed
+ * - One-time guard per order via _softone_customer_synced = yes
+ * - Stores SoftOne returned id into _softone_customer_id
+ * - Does NOT create WordPress users; external SoftOne only
  *
- * Logging:
- * - WooCommerce logger source: softone-customer-sync
+ * Filters (to adapt IDs/mappings without editing this file again):
+ * - softone_wc_should_sync_customer( bool $should, WC_Order $order ) : default true
+ * - softone_wc_country_to_id( int $id, string $wc_country, WC_Order $order ) : default 0
+ * - softone_wc_area_to_id( int $id, string $wc_country, string $wc_state, WC_Order $order ) : default 0
+ * - softone_wc_currency_to_id( int $id, string $wc_currency, WC_Order $order ) : default 0
+ * - softone_wc_trdcategory( int $id, WC_Order $order ) : default 1
+ * - softone_wc_customer_code( string $code, WC_Order $order ) : default "WEB" . $order->get_id()
+ * - softone_wc_customer_payload( array $payloadRow, WC_Order $order ) : mutate CUSTOMER row
+ * - softone_wc_customer_extra_payload( array $cuExtraRow, WC_Order $order ) : mutate CUSEXTRA row
+ *
+ * Actions:
+ * - softone_wc_before_sync_customer( WC_Order $order, array $preparedEnvelope )
+ * - softone_wc_after_sync_customer(  WC_Order $order, array $preparedEnvelope, mixed $result )
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -26,36 +36,42 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
 
     class Softone_Customer_Sync {
 
-        const META_DONE = '_softone_customer_synced'; // "once" guard per order
+        /** Meta guard to ensure we only sync once per order */
+        const META_DONE = '_softone_customer_synced';
+        /** Save the SoftOne returned id here */
+        const META_SOFTONE_ID = '_softone_customer_id';
 
         /** @var Softone_API_Client|null */
-        protected static $api_client = null;
+        protected $api_client;
 
         /** @var WC_Logger|Psr\Log\LoggerInterface|null */
-        protected static $logger = null;
+        protected $logger;
 
-        /**
-         * Bootstrap the handler. Call once (e.g. from your main plugin loader).
-         *
-         * @param Softone_API_Client|null $api_client
-         * @param mixed                   $logger
-         * @return void
-         */
-        public static function init( $api_client = null, $logger = null ) {
-            self::$api_client = $api_client instanceof Softone_API_Client ? $api_client : ( class_exists( 'Softone_API_Client' ) ? new Softone_API_Client() : null );
-            self::$logger     = ( $logger && method_exists( $logger, 'log' ) ) ? $logger : ( function_exists( 'wc_get_logger' ) ? wc_get_logger() : null );
+        public function __construct( $api_client = null, $logger = null ) {
+            $this->api_client = ( $api_client instanceof Softone_API_Client )
+                ? $api_client
+                : ( class_exists( 'Softone_API_Client' ) ? new Softone_API_Client() : null );
 
-            // Hard gate: ONLY run when orders move to status "completed".
-            add_action( 'woocommerce_order_status_completed', array( __CLASS__, 'on_order_completed' ), 10, 1 );
+            $this->logger = ( $logger && method_exists( $logger, 'log' ) )
+                ? $logger
+                : ( function_exists( 'wc_get_logger' ) ? wc_get_logger() : null );
         }
 
         /**
-         * Runs ONLY when an order becomes "completed".
-         *
+         * Register hooks with your loader (matches your other components).
+         * @param Softone_Woocommerce_Integration_Loader $loader
+         * @return void
+         */
+        public function register_hooks( $loader ) {
+            $loader->add_action( 'woocommerce_order_status_completed', $this, 'on_order_completed', 10, 1 );
+        }
+
+        /**
+         * Executed when an order becomes "completed".
          * @param int $order_id
          * @return void
          */
-        public static function on_order_completed( $order_id ) {
+        public function on_order_completed( $order_id ) {
             $order_id = (int) $order_id;
             if ( $order_id <= 0 ) {
                 return;
@@ -66,120 +82,191 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
                 return;
             }
 
-            // Guard: never run twice on the same order
+            // One-time guard
             if ( 'yes' === get_post_meta( $order_id, self::META_DONE, true ) ) {
-                self::log( 'debug', 'Customer sync already completed for this order, skipping.', array( 'order_id' => $order_id ) );
+                $this->log( 'debug', 'Customer sync already completed for this order, skipping.', array( 'order_id' => $order_id ) );
                 return;
             }
 
-            // Allow last-minute veto or conditional control (e.g., store channel)
+            // Allow store owners to veto
             $should = apply_filters( 'softone_wc_should_sync_customer', true, $order );
             if ( ! $should ) {
-                self::log( 'info', 'Customer sync vetoed by filter.', array( 'order_id' => $order_id ) );
+                $this->log( 'info', 'Customer sync vetoed by filter.', array( 'order_id' => $order_id ) );
                 return;
             }
 
-            // Build a clean customer payload from the order
-            $prepared = self::prepare_from_order( $order );
-            $prepared = apply_filters( 'softone_wc_customer_payload', $prepared, $order );
+            // Build SoftOne envelope exactly like the "setData -> CUSTOMER" contract
+            $envelope = $this->build_envelope( $order );
 
-            do_action( 'softone_wc_before_sync_customer', $order, $prepared );
+            do_action( 'softone_wc_before_sync_customer', $order, $envelope );
 
-            // Call out to SoftOne. If your client/service name differs, adjust below.
             $result = null;
             $error  = null;
 
             try {
-                if ( self::$api_client && method_exists( self::$api_client, 'sql_data' ) ) {
-                    // Example: adjust to your service name/contract. Many SoftOne setups use a "setCustomer" or "createOrUpdateCustomer".
-                    // Here we send a generic 'setCustomer' with one row (your endpoint may differ – change as needed).
-                    $result = self::$api_client->sql_data( 'setCustomer', array( 'rows' => array( $prepared ) ) );
-                } else {
-                    // If there is no API client, we still mark as done to avoid re-trigger storms.
-                    self::log( 'warning', 'SoftOne API client not available; marking as synced without remote call.', array( 'order_id' => $order_id, 'prepared' => $prepared ) );
+                if ( ! $this->api_client || ! method_exists( $this->api_client, 'sql_data' ) ) {
+                    throw new \RuntimeException( 'SoftOne API client is not available.' );
+                }
+
+                /**
+                 * Your SoftOne client earlier used: sql_data('getItems', array(), $extra)
+                 * For setData we pass the request body in the 2nd parameter to stay consistent:
+                 *
+                 * {
+                 *   "service":"setData",
+                 *   "object":"CUSTOMER",
+                 *   "data": { "CUSTOMER":[{...}], "CUSEXTRA":[{...}] }
+                 * }
+                 *
+                 * clientID/appID are typically handled inside your Softone_API_Client.
+                 */
+                $result = $this->api_client->sql_data(
+                    'setData',
+                    array(
+                        'object' => 'CUSTOMER',
+                        'data'   => $envelope['data'],
+                    ),
+                    array() // no extras
+                );
+
+                // Try to capture SoftOne returned id if present (per your example: {"success":true,"id":"2937"})
+                if ( is_array( $result ) && isset( $result['id'] ) && $result['id'] !== '' ) {
+                    update_post_meta( $order_id, self::META_SOFTONE_ID, (string) $result['id'] );
                 }
             } catch ( \Throwable $e ) {
                 $error = $e->getMessage();
-                self::log( 'error', 'SoftOne customer create/update failed.', array( 'order_id' => $order_id, 'error' => $error, 'prepared' => $prepared ) );
+                $this->log( 'error', 'SoftOne customer setData failed.', array(
+                    'order_id' => $order_id,
+                    'error'    => $error,
+                    'payload'  => $envelope,
+                ) );
             }
 
-            // Mark done (even if failed – if you want retries, change this logic to only mark done on success).
+            // Mark done (prevents duplicate attempts). If you want retries on failure, only mark on success.
             update_post_meta( $order_id, self::META_DONE, 'yes' );
 
-            do_action( 'softone_wc_after_sync_customer', $order, $prepared, $result );
+            do_action( 'softone_wc_after_sync_customer', $order, $envelope, $result );
 
             if ( $error ) {
                 return; // already logged
             }
 
-            self::log( 'info', 'SoftOne customer sync completed for order.', array( 'order_id' => $order_id, 'result' => $result ) );
+            $this->log( 'info', 'SoftOne customer sync completed for order.', array(
+                'order_id' => $order_id,
+                'result'   => $result,
+            ) );
         }
 
         /**
-         * Build a portable payload from an order's billing data.
-         * Map/rename fields to match your SoftOne service expectations.
+         * Build the SoftOne data envelope for setData/CUSTOMER.
+         *
+         * Shape:
+         * [
+         *   'data' => [
+         *     'CUSTOMER' => [ { CODE, NAME, COUNTRY, AREAS, PHONE01, PHONE02, SOCURRENCY, EMAIL, ADDRESS, CITY, ZIP, TRDCATEGORY } ],
+         *     'CUSEXTRA' => [ { BOOL01: "1" } ]
+         *   ]
+         * ]
          *
          * @param WC_Order $order
          * @return array
          */
-        protected static function prepare_from_order( $order ) {
+        protected function build_envelope( $order ) {
             /** @var WC_Order $order */
-            $email   = (string) $order->get_billing_email();
-            $phone   = (string) $order->get_billing_phone();
-            $fname   = (string) $order->get_billing_first_name();
-            $lname   = (string) $order->get_billing_last_name();
-            $company = (string) $order->get_billing_company();
+            $email    = (string) $order->get_billing_email();
+            $phone    = (string) $order->get_billing_phone();
+            $fname    = (string) $order->get_billing_first_name();
+            $lname    = (string) $order->get_billing_last_name();
+            $company  = (string) $order->get_billing_company();
+            $addr1    = (string) $order->get_billing_address_1();
+            $addr2    = (string) $order->get_billing_address_2();
+            $city     = (string) $order->get_billing_city();
+            $state    = (string) $order->get_billing_state();
+            $postcode = (string) $order->get_billing_postcode();
+            $country  = (string) $order->get_billing_country();
+            $wc_curr  = (string) get_woocommerce_currency();
 
-            $addr1 = (string) $order->get_billing_address_1();
-            $addr2 = (string) $order->get_billing_address_2();
-            $city  = (string) $order->get_billing_city();
-            $state = (string) $order->get_billing_state();
-            $pc    = (string) $order->get_billing_postcode();
-            $country = (string) $order->get_billing_country();
+            // Build CODE – must be unique, stable. Default: WEB + order_id (override via filter).
+            $code = apply_filters( 'softone_wc_customer_code', 'WEB' . $order->get_id(), $order );
 
-            // If you store VAT/Tax ID in a custom field, pull it here (common: _billing_vat, _billing_afm, etc.)
-            $vat = (string) $order->get_meta( '_billing_vat' );
-            if ( '' === $vat ) {
-                $vat = (string) $order->get_meta( 'billing_vat' );
+            // Resolve SoftOne numeric IDs via filters (site owner can map properly in theme/plugin).
+            $country_id   = apply_filters( 'softone_wc_country_to_id', 0, $country, $order );
+            $area_id      = apply_filters( 'softone_wc_area_to_id', 0, $country, $state, $order );
+            $currency_id  = apply_filters( 'softone_wc_currency_to_id', 0, $wc_curr, $order );
+            $trdcategory  = apply_filters( 'softone_wc_trdcategory', 1, $order );
+
+            // Name priority: company or first+last
+            $name = trim( $company ) !== '' ? $company : trim( $fname . ' ' . $lname );
+
+            // PHONE02 is optional; we’ll put the same as billing phone if nothing else is available.
+            $phone02 = (string) $order->get_billing_phone();
+            // If you store a second phone in meta, you can fetch it here:
+            $meta_phone2 = (string) $order->get_meta( '_billing_phone2' );
+            if ( $meta_phone2 !== '' ) {
+                $phone02 = $meta_phone2;
             }
 
-            // EXAMPLE payload keys – change to your SoftOne schema (TRDR name, AFM for VAT, etc.)
-            $prepared = array(
-                'TRDR_NAME'      => trim( $company ) !== '' ? $company : trim( $fname . ' ' . $lname ),
-                'FIRSTNAME'      => $fname,
-                'LASTNAME'       => $lname,
-                'EMAIL'          => $email,
-                'PHONE01'        => $phone,
-                'AFM'            => $vat,          // VAT/Tax ID if applicable
-                'ADDRESS'        => $addr1,
-                'ADDRESS2'       => $addr2,
-                'ZIP'            => $pc,
-                'CITY'           => $city,
-                'STATE'          => $state,
-                'COUNTRY'        => $country,
-                // A reference to Woo order/customer for idempotency on SoftOne side:
-                'VARCHAR01'      => 'WC-ORDER-' . $order->get_id(),
-                'COMMENTS'       => 'Auto-created by Woo on order completed',
+            // ADDRESS – combine address_1 + address_2 if both exist
+            $address = $addr1;
+            if ( $addr2 !== '' ) {
+                $address .= ' ' . $addr2;
+            }
+            if ( $address === '' ) {
+                $address = 'No address';
+            }
+            if ( $city === '' ) {
+                $city = 'City';
+            }
+            if ( $postcode === '' ) {
+                $postcode = '0000';
+            }
+
+            // Build base CUSTOMER row (match your example keys exactly)
+            $customer_row = array(
+                'CODE'        => (string) $code,
+                'NAME'        => (string) $name,
+                'COUNTRY'     => (int) $country_id,  // e.g. 57 (map via filter)
+                'AREAS'       => (int) $area_id,     // e.g. 22 (map via filter)
+                'PHONE01'     => (string) $phone,
+                'PHONE02'     => (string) $phone02,
+                'SOCURRENCY'  => (int) $currency_id, // e.g. 47 (map via filter)
+                'EMAIL'       => (string) $email,
+                'ADDRESS'     => (string) $address,
+                'CITY'        => (string) $city,
+                'ZIP'         => (string) $postcode,
+                'TRDCATEGORY' => (int) $trdcategory, // e.g. 1
             );
 
-            return array_filter( $prepared, static function( $v ) { return $v !== null; } );
+            // Allow last-mile edits to the core row
+            $customer_row = apply_filters( 'softone_wc_customer_payload', $customer_row, $order );
+
+            // CUSEXTRA defaults – your example sets BOOL01 to "1"
+            $cusextra_row = array(
+                'BOOL01' => '1',
+            );
+            $cusextra_row = apply_filters( 'softone_wc_customer_extra_payload', $cusextra_row, $order );
+
+            return array(
+                'data' => array(
+                    'CUSTOMER' => array( $customer_row ),
+                    'CUSEXTRA' => array( $cusextra_row ),
+                ),
+            );
         }
 
         /**
          * Logger helper.
-         *
          * @param string $level
          * @param string $message
          * @param array  $context
          * @return void
          */
-        protected static function log( $level, $message, array $context = array() ) {
-            if ( self::$logger && method_exists( self::$logger, 'log' ) ) {
+        protected function log( $level, $message, array $context = array() ) {
+            if ( $this->logger && method_exists( $this->logger, 'log' ) ) {
                 $context['source'] = 'softone-customer-sync';
-                self::$logger->log( $level, $message, $context );
+                $this->logger->log( $level, $message, $context );
                 return;
             }
-
             if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
                 error_log( '[softone-customer-sync][' . strtoupper( $level ) . '] ' . $message . ' ' . wp_json_encode( $context ) );
             }
