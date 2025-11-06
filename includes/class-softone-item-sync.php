@@ -35,9 +35,21 @@ class Softone_Item_Sync {
     /**
      * Back-compat for older loader code that expects register_hooks().
      * (Your loader is calling ->register_hooks(); keep it working.)
+     *
+     * @param mixed $loader Optional loader helper used by the plugin bootstrap.
+     *
+     * @return void
      */
-    public function register_hooks() {
+    public function register_hooks( $loader = null ) {
+        if ( $this->register_hooks_with_loader( $loader ) ) {
+            return;
+        }
+
         $this->init();
+
+        if ( null !== $loader ) {
+            $this->log_loader_fallback( $loader );
+        }
     }
 
     /**
@@ -51,6 +63,50 @@ class Softone_Item_Sync {
     }
 
     /**
+     * Attempt to register hooks via the plugin loader helper when available.
+     *
+     * @param mixed $loader Potential loader instance.
+     *
+     * @return bool True when hooks were registered using the loader, false otherwise.
+     */
+    protected function register_hooks_with_loader( $loader ) : bool {
+        if ( ! is_object( $loader ) || ! method_exists( $loader, 'add_action' ) ) {
+            return false;
+        }
+
+        $loader->add_action( self::CRON_HOOK, $this, 'run' );
+        $loader->add_action( 'admin_post_' . self::ADMIN_ACTION, $this, 'run_from_admin' );
+        $loader->add_action( 'init', $this, 'ensure_colour_taxonomy', 11 );
+
+        return true;
+    }
+
+    /**
+     * Log when the loader fallback path is triggered.
+     *
+     * @param mixed $loader Loader value that could not be used.
+     *
+     * @return void
+     */
+    protected function log_loader_fallback( $loader ) {
+        if ( ! class_exists( 'Softone_Sync_Activity_Logger' ) ) {
+            return;
+        }
+
+        $context = array(
+            'loader_type' => is_object( $loader ) ? get_class( $loader ) : gettype( $loader ),
+        );
+
+        $logger = new Softone_Sync_Activity_Logger();
+        $logger->log(
+            'item_sync',
+            'loader_fallback',
+            'SoftOne item sync registered hooks directly because the loader helper was unavailable.',
+            $context
+        );
+    }
+
+    /**
      * Manual trigger from wp-admin action.
      */
     public function run_from_admin() {
@@ -59,6 +115,98 @@ class Softone_Item_Sync {
             wp_safe_redirect( wp_get_referer() ? wp_get_referer() : admin_url() );
         }
         exit;
+    }
+
+    /**
+     * Schedule the recurring cron event that runs the item synchronisation.
+     *
+     * @return bool True when the event was scheduled, false otherwise.
+     */
+    public static function schedule_event() {
+        if ( ! function_exists( 'wp_next_scheduled' ) || ! function_exists( 'wp_schedule_event' ) ) {
+            self::log_cron_event(
+                'cron_schedule_unsupported',
+                'Failed to schedule the SoftOne item sync because WordPress cron helpers are unavailable.'
+            );
+
+            return false;
+        }
+
+        $next_run = wp_next_scheduled( self::CRON_HOOK );
+        if ( $next_run ) {
+            self::log_cron_event(
+                'cron_schedule_skipped',
+                'Skipped scheduling the SoftOne item sync because an event already exists.',
+                array( 'scheduled_for' => (int) $next_run )
+            );
+
+            return false;
+        }
+
+        $scheduled = wp_schedule_event( time(), 'hourly', self::CRON_HOOK );
+
+        if ( false === $scheduled ) {
+            self::log_cron_event(
+                'cron_schedule_failed',
+                'WordPress failed to schedule the SoftOne item sync event.'
+            );
+
+            return false;
+        }
+
+        self::log_cron_event(
+            'cron_scheduled',
+            'Scheduled the SoftOne item sync hourly cron event.'
+        );
+
+        return true;
+    }
+
+    /**
+     * Remove the scheduled cron event used by the item synchronisation.
+     *
+     * @return bool True when an event was removed, false otherwise.
+     */
+    public static function clear_scheduled_event() {
+        if ( ! function_exists( 'wp_next_scheduled' ) || ! function_exists( 'wp_unschedule_event' ) ) {
+            self::log_cron_event(
+                'cron_clear_unsupported',
+                'Failed to clear the SoftOne item sync because WordPress cron helpers are unavailable.'
+            );
+
+            return false;
+        }
+
+        $timestamp = wp_next_scheduled( self::CRON_HOOK );
+
+        if ( ! $timestamp ) {
+            self::log_cron_event(
+                'cron_clear_skipped',
+                'Skipped clearing the SoftOne item sync because no event was scheduled.'
+            );
+
+            return false;
+        }
+
+        $cleared = wp_unschedule_event( $timestamp, self::CRON_HOOK );
+
+        if ( false === $cleared ) {
+            self::log_cron_event(
+                'cron_clear_failed',
+                'WordPress failed to clear the SoftOne item sync cron event.',
+                array( 'scheduled_for' => (int) $timestamp )
+            );
+
+            return false;
+        }
+
+        self::log_cron_event(
+            'cron_cleared',
+            'Cleared the scheduled SoftOne item sync cron event.',
+            array( 'scheduled_for' => (int) $timestamp )
+        );
+
+        return true;
     }
 
     /**
@@ -480,6 +628,24 @@ class Softone_Item_Sync {
             return (int) $q->posts[0];
         }
         return 0;
+    }
+
+    /**
+     * Persist cron related log entries.
+     *
+     * @param string               $action  Log action key.
+     * @param string               $message Human readable summary.
+     * @param array<string, mixed> $context Additional context for the log entry.
+     *
+     * @return void
+     */
+    protected static function log_cron_event( $action, $message, array $context = array() ) {
+        if ( ! class_exists( 'Softone_Sync_Activity_Logger' ) ) {
+            return;
+        }
+
+        $logger = new Softone_Sync_Activity_Logger();
+        $logger->log( 'item_sync', (string) $action, (string) $message, $context );
     }
 }
 
