@@ -442,6 +442,27 @@ if ( ! function_exists( 'wp_set_object_terms' ) ) {
     }
 }
 
+if ( ! function_exists( 'wp_get_object_terms' ) ) {
+    /**
+     * Retrieve taxonomy assignments from the in-memory store.
+     *
+     * @param int    $object_id Object identifier.
+     * @param string $taxonomy  Taxonomy slug.
+     * @param array  $args      Query arguments (unused).
+     * @return array<int>
+     */
+    function wp_get_object_terms( $object_id, $taxonomy, $args = array() ) {
+        $taxonomy = (string) $taxonomy;
+        $object_id = (int) $object_id;
+
+        if ( isset( $GLOBALS['softone_object_terms'][ $taxonomy ][ $object_id ] ) ) {
+            return $GLOBALS['softone_object_terms'][ $taxonomy ][ $object_id ];
+        }
+
+        return array();
+    }
+}
+
 if ( ! function_exists( 'get_post_meta' ) ) {
     /**
      * Retrieve a value from the in-memory post meta store.
@@ -785,6 +806,15 @@ if ( ! class_exists( 'WC_Product_Attribute' ) ) {
         public function get_options() {
             return $this->options;
         }
+
+        /**
+         * Determine whether the attribute is used for variations.
+         *
+         * @return bool
+         */
+        public function get_variation() {
+            return $this->variation;
+        }
     }
 }
 
@@ -1063,6 +1093,14 @@ if ( $attribute_object->get_options() !== array( $expected_term_id ) ) {
     throw new RuntimeException( 'Prepared attribute options should include the reused colour term identifier.' );
 }
 
+if ( ! isset( $assignments['variation_taxonomies'][ $colour_taxonomy ] ) ) {
+    throw new RuntimeException( 'Colour attributes should be marked for variation handling.' );
+}
+
+if ( ! $attribute_object->get_variation() ) {
+    throw new RuntimeException( 'Colour attribute metadata should be flagged as a variation attribute.' );
+}
+
 $term = get_term( $expected_term_id, $colour_taxonomy );
 if ( ! $term || is_wp_error( $term ) ) {
     throw new RuntimeException( 'Failed to retrieve the colour term after ensuring it exists.' );
@@ -1110,6 +1148,14 @@ if ( ! isset( $alias_assignments['attributes'][ $colour_taxonomy ] ) ) {
 $alias_attribute = $alias_assignments['attributes'][ $colour_taxonomy ];
 if ( ! $alias_attribute instanceof WC_Product_Attribute ) {
     throw new RuntimeException( 'Expected a WC_Product_Attribute instance for the colour alias assignment.' );
+}
+
+if ( ! isset( $alias_assignments['variation_taxonomies'][ $colour_taxonomy ] ) ) {
+    throw new RuntimeException( 'Colour alias assignments should be marked for variation handling.' );
+}
+
+if ( ! $alias_attribute->get_variation() ) {
+    throw new RuntimeException( 'Colour alias metadata should be flagged as a variation attribute.' );
 }
 
 if ( $alias_attribute->get_options() !== array( $expected_term_id ) ) {

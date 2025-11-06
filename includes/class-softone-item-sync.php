@@ -501,6 +501,14 @@ protected function import_row( array $data, $run_timestamp ) {
         throw new Exception( __( 'Failed to load the matching WooCommerce product.', 'softone-woocommerce-integration' ) );
     }
 
+    $regular_price_value = null;
+    $stock_profile       = array(
+        'manage_stock'   => false,
+        'stock_quantity' => null,
+        'backorders'     => 'no',
+        'stock_status'   => 'instock',
+    );
+
     $category_ids = $this->prepare_category_ids( $data );
 
     if ( ! $is_new ) {
@@ -580,7 +588,8 @@ protected function import_row( array $data, $run_timestamp ) {
     // ---------- PRICE ----------
     $price = $this->get_value( $data, array( 'retailprice' ) );
     if ( '' !== $price ) {
-        $product->set_regular_price( wc_format_decimal( $price ) );
+        $regular_price_value = wc_format_decimal( $price );
+        $product->set_regular_price( $regular_price_value );
     }
 
     // ---------- SKU (ensure unique, but if someone else owns it, we UPDATE THAT product) ----------
@@ -626,6 +635,9 @@ protected function import_row( array $data, $run_timestamp ) {
             $stock_amount = 1;
         }
 
+        $stock_profile['manage_stock']   = true;
+        $stock_profile['stock_quantity'] = $stock_amount;
+
         $product->set_manage_stock( true );
         $product->set_stock_quantity( $stock_amount );
 
@@ -634,11 +646,22 @@ protected function import_row( array $data, $run_timestamp ) {
         if ( $should_backorder && $stock_amount <= 0 && method_exists( $product, 'set_backorders' ) ) {
             $product->set_backorders( 'notify' );
             $product->set_stock_status( 'onbackorder' );
+            $stock_profile['backorders']   = 'notify';
+            $stock_profile['stock_status'] = 'onbackorder';
         } else {
             if ( method_exists( $product, 'set_backorders' ) ) {
                 $product->set_backorders( 'no' );
             }
+            $stock_profile['backorders']   = 'no';
+            $stock_profile['stock_status'] = ( $stock_amount > 0 ) ? 'instock' : 'outofstock';
             $product->set_stock_status( $stock_amount > 0 ? 'instock' : 'outofstock' );
+        }
+    }
+
+    if ( method_exists( $product, 'get_stock_status' ) ) {
+        $current_status = (string) $product->get_stock_status();
+        if ( '' !== $current_status ) {
+            $stock_profile['stock_status'] = $current_status;
         }
     }
 
@@ -650,11 +673,26 @@ protected function import_row( array $data, $run_timestamp ) {
     // ---------- ATTRIBUTES ----------
     $brand_value           = trim( $this->get_value( $data, array( 'brand_name', 'brand' ) ) );
     $attribute_assignments = $this->prepare_attribute_assignments( $data, $product, $fallback_metadata );
+    $variation_taxonomies  = isset( $attribute_assignments['variation_taxonomies'] )
+        ? (array) $attribute_assignments['variation_taxonomies']
+        : array();
+    $should_create_variation = ! empty( $variation_taxonomies );
 
     if ( ! empty( $attribute_assignments['attributes'] ) ) {
         $product->set_attributes( $attribute_assignments['attributes'] );
     } elseif ( empty( $attribute_assignments['attributes'] ) && $is_new ) {
         $product->set_attributes( array() );
+    }
+
+    if ( $should_create_variation && method_exists( $product, 'set_type' ) ) {
+        $product->set_type( 'variable' );
+    }
+    if ( $should_create_variation && method_exists( $product, 'set_manage_stock' ) ) {
+        $product->set_manage_stock( false );
+        $product->set_stock_quantity( null );
+    }
+    if ( $should_create_variation && method_exists( $product, 'set_backorders' ) ) {
+        $product->set_backorders( 'no' );
     }
 
     // ---------- SAVE FIRST ----------
@@ -725,6 +763,16 @@ protected function import_row( array $data, $run_timestamp ) {
         }
 
         wp_set_object_terms( $product_id, $normalized_term_ids, $taxonomy );
+    }
+
+    if ( $should_create_variation ) {
+        $this->sync_single_variation(
+            $product_id,
+            $product,
+            $attribute_assignments,
+            $regular_price_value,
+            $stock_profile
+        );
     }
 
     // ---------- CLEAR TAXONOMIES ----------
@@ -1147,10 +1195,11 @@ protected function find_existing_product( $sku, $mtrl ) {
  */
 protected function prepare_attribute_assignments( array $data, $product, array $fallback_attributes = array() ) {
     $assignments = array(
-        'attributes' => array(),
-        'terms'      => array(),
-        'values'     => array(),
-        'clear'      => array(),
+        'attributes'           => array(),
+        'terms'                => array(),
+        'values'               => array(),
+        'clear'                => array(),
+        'variation_taxonomies' => array(),
     );
 
     // ---------------- Hidden custom attribute: softone_mtrl ----------------
@@ -1248,15 +1297,156 @@ protected function prepare_attribute_assignments( array $data, $product, array $
             $attr->set_options( array( (int) $term_id ) );
             $attr->set_position( (int) $position );
             $attr->set_visible( true );
-            $attr->set_variation( false );
 
-            $assignments['attributes'][]      = $attr;
-            $assignments['terms'][ $taxonomy ] = array( (int) $term_id );
-            $assignments['values'][ $taxonomy ] = $value;
+            $is_colour_attribute = ( $slug === $colour_slug );
+            $attr->set_variation( $is_colour_attribute );
+
+            if ( $is_colour_attribute ) {
+                $assignments['variation_taxonomies'][ $taxonomy ] = true;
+            }
+
+            $assignments['attributes'][ $taxonomy ] = $attr;
+            $assignments['terms'][ $taxonomy ]      = array( (int) $term_id );
+            $assignments['values'][ $taxonomy ]     = $value;
         }
     }
 
     return $assignments;
+}
+
+/**
+ * Ensure the product exposes a single variation reflecting the assigned attributes.
+ *
+ * @param int        $product_id            Product identifier.
+ * @param WC_Product $product               Parent product instance.
+ * @param array      $attribute_assignments Prepared attribute assignments.
+ * @param string|null $regular_price_value  Regular price captured from the payload.
+ * @param array      $stock_profile         Normalised stock information.
+ *
+ * @return void
+ */
+protected function sync_single_variation( $product_id, $product, array $attribute_assignments, $regular_price_value, array $stock_profile ) {
+    if ( empty( $attribute_assignments['variation_taxonomies'] ) ) {
+        return;
+    }
+
+    if ( ! function_exists( 'wc_get_product' ) || ! class_exists( 'WC_Product_Variation' ) ) {
+        return;
+    }
+
+    $variation_taxonomies = array_keys( $attribute_assignments['variation_taxonomies'] );
+    if ( empty( $variation_taxonomies ) ) {
+        return;
+    }
+
+    $variable_product = wc_get_product( $product_id );
+    if ( ! $variable_product ) {
+        return;
+    }
+
+    if ( method_exists( $variable_product, 'set_type' ) ) {
+        $variable_product->set_type( 'variable' );
+    }
+
+    $variation_attributes = array();
+    $default_attributes   = array();
+
+    foreach ( $variation_taxonomies as $taxonomy ) {
+        if ( empty( $attribute_assignments['terms'][ $taxonomy ] ) ) {
+            continue;
+        }
+
+        $term_id = (int) $attribute_assignments['terms'][ $taxonomy ][0];
+        if ( $term_id <= 0 ) {
+            continue;
+        }
+
+        $term = get_term( $term_id, $taxonomy );
+        if ( ! $term || is_wp_error( $term ) ) {
+            continue;
+        }
+
+        $variation_attributes[ 'attribute_' . $taxonomy ] = $term->slug;
+        $default_attributes[ $taxonomy ]                  = $term->slug;
+    }
+
+    if ( empty( $variation_attributes ) ) {
+        return;
+    }
+
+    $existing_variation_ids = array();
+    if ( method_exists( $variable_product, 'get_children' ) ) {
+        $existing_variation_ids = array_map( 'intval', (array) $variable_product->get_children() );
+    }
+
+    $variation = null;
+    if ( ! empty( $existing_variation_ids ) ) {
+        $variation = wc_get_product( (int) $existing_variation_ids[0] );
+    }
+
+    if ( ! $variation ) {
+        $variation = new WC_Product_Variation();
+        $variation->set_parent_id( $product_id );
+    }
+
+    $status = method_exists( $product, 'get_status' ) ? (string) $product->get_status() : 'publish';
+    if ( '' === $status ) {
+        $status = 'publish';
+    }
+    $variation->set_status( $status );
+    $variation->set_attributes( $variation_attributes );
+
+    if ( null === $regular_price_value ) {
+        $regular_price_value = $product->get_regular_price();
+    }
+
+    if ( null !== $regular_price_value && '' !== $regular_price_value ) {
+        $variation->set_regular_price( $regular_price_value );
+    }
+
+    if ( method_exists( $variation, 'set_manage_stock' ) ) {
+        $manage_stock = ! empty( $stock_profile['manage_stock'] );
+        $variation->set_manage_stock( $manage_stock );
+
+        if ( $manage_stock ) {
+            $quantity = isset( $stock_profile['stock_quantity'] ) ? (int) $stock_profile['stock_quantity'] : 0;
+            $variation->set_stock_quantity( $quantity );
+
+            if ( method_exists( $variation, 'set_backorders' ) ) {
+                $variation->set_backorders(
+                    isset( $stock_profile['backorders'] ) ? (string) $stock_profile['backorders'] : 'no'
+                );
+            }
+        } else {
+            $variation->set_stock_quantity( null );
+
+            if ( method_exists( $variation, 'set_backorders' ) ) {
+                $variation->set_backorders( 'no' );
+            }
+        }
+    }
+
+    if ( isset( $stock_profile['stock_status'] ) ) {
+        $variation->set_stock_status( (string) $stock_profile['stock_status'] );
+    }
+
+    $variation_id = $variation->save();
+
+    if ( method_exists( $variable_product, 'set_default_attributes' ) ) {
+        $variable_product->set_default_attributes( $default_attributes );
+    }
+
+    if ( method_exists( $variable_product, 'save' ) ) {
+        $variable_product->save();
+    }
+
+    if ( class_exists( 'WC_Product_Variable' ) && method_exists( 'WC_Product_Variable', 'sync' ) ) {
+        \WC_Product_Variable::sync( $product_id );
+    }
+
+    if ( function_exists( 'wc_delete_product_transients' ) ) {
+        wc_delete_product_transients( $product_id );
+    }
 }
 
 /** @return string 'colour' or 'color' */
@@ -1300,6 +1490,18 @@ protected function resolve_colour_attribute_slug() {
         protected function normalize_colour_value( $colour ) {
             $colour = trim( (string) $colour );
             if ( '' === $colour ) { return ''; }
+
+            $normalized_placeholder = strtolower( preg_replace( '/\s+/', ' ', $colour ) );
+            $placeholder_values     = array( '-', 'n/a', 'na', 'none', 'not applicable', 'no colour', 'no color' );
+
+            if ( in_array( $normalized_placeholder, $placeholder_values, true ) ) {
+                return '';
+            }
+
+            if ( preg_match( '/^[-]+$/', $colour ) ) {
+                return '';
+            }
+
             if ( function_exists( 'mb_convert_case' ) ) {
                 return mb_convert_case( $colour, MB_CASE_TITLE, 'UTF-8' );
             }
