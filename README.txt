@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.8.52
+Stable tag: 1.8.53
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -77,6 +77,11 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Sync::schedule_event()`.
 
 == Changelog ==
+
+= 1.8.53 =
+* Prefer the SoftOne `SKU` field when assigning WooCommerce SKUs so catalogue records mirror ERP identifiers.
+* Map SoftOne barcodes to WooCommerce's GTIN/UPC/EAN/ISBN field and allow custom GTIN meta keys via a filter.
+* Convert SoftOne items linked via `related_item_mtrl` into true WooCommerce variations, reusing existing simple products as variation records.
 
 = 1.8.52 =
 * Always attach grouped variation payloads to SoftOne parent products so WooCommerce variations are generated during sync.
