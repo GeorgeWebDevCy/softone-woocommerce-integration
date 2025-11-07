@@ -28,6 +28,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         const META_MTRL          = '_softone_mtrl_id';
         const META_LAST_SYNC     = '_softone_last_synced';
         const META_PAYLOAD_HASH  = '_softone_payload_hash';
+        const META_RELATED_ITEM_MTRL  = '_softone_related_item_mtrl';
+        const META_RELATED_ITEM_MTRLS = '_softone_related_item_mtrls';
         const OPTION_LAST_RUN    = 'softone_wc_integration_last_item_sync';
         const LOGGER_SOURCE      = 'softone-item-sync';
         const DEFAULT_CRON_EVENT = 'hourly';
@@ -673,6 +675,10 @@ protected function import_row( array $data, $run_timestamp ) {
     // ---------- ATTRIBUTES ----------
     $brand_value           = trim( $this->get_value( $data, array( 'brand_name', 'brand' ) ) );
     $attribute_assignments = $this->prepare_attribute_assignments( $data, $product, $fallback_metadata );
+    $related_item_mtrl_value = '';
+    if ( isset( $attribute_assignments['related_item_mtrl'] ) ) {
+        $related_item_mtrl_value = (string) $attribute_assignments['related_item_mtrl'];
+    }
 
     if ( function_exists( 'wc_attribute_taxonomy_name' ) ) {
         $colour_taxonomy = wc_attribute_taxonomy_name( $this->resolve_colour_attribute_slug() );
@@ -709,6 +715,8 @@ protected function import_row( array $data, $run_timestamp ) {
     if ( $mtrl ) {
         update_post_meta( $product_id, self::META_MTRL, $mtrl );
     }
+
+    $this->sync_related_item_relationships( $product_id, $mtrl, $related_item_mtrl_value );
 
     // ---------- IMAGES (after save) ----------
     $sku_for_images = ( '' !== $effective_sku ? $effective_sku : $sku_requested );
@@ -979,6 +987,200 @@ protected function import_row( array $data, $run_timestamp ) {
             }
 
             return 0;
+        }
+
+        /**
+         * Ensure related item pointers remain synchronised between Softone products.
+         *
+         * @param int    $product_id         Current product identifier.
+         * @param string $mtrl               Current Softone material identifier.
+         * @param string $related_item_mtrl  Related Softone material identifier from the payload.
+         * @return void
+         */
+        protected function sync_related_item_relationships( $product_id, $mtrl, $related_item_mtrl ) {
+            $product_id         = (int) $product_id;
+            $mtrl               = trim( (string) $mtrl );
+            $related_item_mtrl  = trim( (string) $related_item_mtrl );
+
+            if ( $product_id <= 0 ) {
+                return;
+            }
+
+            $previous_related = (string) get_post_meta( $product_id, self::META_RELATED_ITEM_MTRL, true );
+
+            if ( '' === $related_item_mtrl ) {
+                delete_post_meta( $product_id, self::META_RELATED_ITEM_MTRL );
+            } else {
+                update_post_meta( $product_id, self::META_RELATED_ITEM_MTRL, $related_item_mtrl );
+            }
+
+            if ( '' !== $previous_related && $previous_related !== $related_item_mtrl ) {
+                $this->refresh_related_item_children( $previous_related );
+            }
+
+            if ( '' !== $related_item_mtrl ) {
+                $this->refresh_related_item_children( $related_item_mtrl );
+            }
+
+            if ( '' !== $mtrl ) {
+                $this->refresh_related_item_children( $mtrl );
+            }
+        }
+
+        /**
+         * Refresh the list of Softone materials associated with a parent product.
+         *
+         * @param string $parent_mtrl Parent Softone material identifier.
+         * @return void
+         */
+        protected function refresh_related_item_children( $parent_mtrl ) {
+            $parent_mtrl = trim( (string) $parent_mtrl );
+            if ( '' === $parent_mtrl ) {
+                return;
+            }
+
+            $product_id = $this->find_product_id_by_mtrl( $parent_mtrl );
+            if ( $product_id <= 0 ) {
+                return;
+            }
+
+            $child_mtrls = $this->find_child_mtrls_for_parent( $parent_mtrl );
+
+            if ( empty( $child_mtrls ) ) {
+                delete_post_meta( $product_id, self::META_RELATED_ITEM_MTRLS );
+            } else {
+                update_post_meta( $product_id, self::META_RELATED_ITEM_MTRLS, $child_mtrls );
+            }
+
+            if ( ! function_exists( 'wc_get_product' ) || ! class_exists( 'WC_Product_Attribute' ) ) {
+                return;
+            }
+
+            $product = wc_get_product( $product_id );
+            if ( ! $product ) {
+                return;
+            }
+
+            $attributes       = $product->get_attributes();
+            $related_key      = null;
+            $current_options  = array();
+
+            foreach ( $attributes as $key => $attribute ) {
+                $name = '';
+                if ( $attribute instanceof WC_Product_Attribute ) {
+                    $name = $attribute->get_name();
+                } elseif ( is_array( $attribute ) && isset( $attribute['name'] ) ) {
+                    $name = (string) $attribute['name'];
+                }
+
+                if ( 'related_item_mtrl' === $name ) {
+                    $related_key = $key;
+                    if ( $attribute instanceof WC_Product_Attribute ) {
+                        $current_options = array_map( 'strval', (array) $attribute->get_options() );
+                    } elseif ( is_array( $attribute ) && isset( $attribute['options'] ) ) {
+                        $current_options = array_map( 'strval', (array) $attribute['options'] );
+                    }
+                    break;
+                }
+            }
+
+            $sorted_children = $child_mtrls;
+            sort( $sorted_children, SORT_NATURAL | SORT_FLAG_CASE );
+            $sorted_existing = $current_options;
+            sort( $sorted_existing, SORT_NATURAL | SORT_FLAG_CASE );
+
+            if ( empty( $sorted_children ) ) {
+                if ( null === $related_key ) {
+                    return;
+                }
+
+                unset( $attributes[ $related_key ] );
+                $product->set_attributes( $attributes );
+                $product->save();
+                return;
+            }
+
+            if ( null !== $related_key && $sorted_children === $sorted_existing ) {
+                return;
+            }
+
+            $attribute_object = new WC_Product_Attribute();
+            $attribute_object->set_id( 0 );
+            $attribute_object->set_name( 'related_item_mtrl' );
+            $attribute_object->set_options( $sorted_children );
+            $attribute_object->set_visible( false );
+            $attribute_object->set_variation( false );
+
+            if ( null === $related_key ) {
+                $attributes['related_item_mtrl'] = $attribute_object;
+            } else {
+                $attributes[ $related_key ] = $attribute_object;
+            }
+
+            $product->set_attributes( $attributes );
+            $product->save();
+        }
+
+        /**
+         * Find the product post ID that owns the supplied Softone material identifier.
+         *
+         * @param string $mtrl Softone material identifier.
+         * @return int
+         */
+        protected function find_product_id_by_mtrl( $mtrl ) {
+            global $wpdb;
+
+            $mtrl = trim( (string) $mtrl );
+            if ( '' === $mtrl ) {
+                return 0;
+            }
+
+            $query = $wpdb->prepare(
+                "SELECT p.ID FROM {$wpdb->posts} p INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id WHERE pm.meta_key = %s AND pm.meta_value = %s AND p.post_type = %s ORDER BY p.ID ASC LIMIT 1",
+                self::META_MTRL,
+                $mtrl,
+                'product'
+            );
+
+            return (int) $wpdb->get_var( $query );
+        }
+
+        /**
+         * Locate all Softone materials that reference the supplied parent material.
+         *
+         * @param string $parent_mtrl Softone material identifier referenced by related items.
+         * @return array<int,string>
+         */
+        protected function find_child_mtrls_for_parent( $parent_mtrl ) {
+            global $wpdb;
+
+            $parent_mtrl = trim( (string) $parent_mtrl );
+            if ( '' === $parent_mtrl ) {
+                return array();
+            }
+
+            $query = $wpdb->prepare(
+                "SELECT DISTINCT m.meta_value FROM {$wpdb->postmeta} rel INNER JOIN {$wpdb->posts} p ON p.ID = rel.post_id LEFT JOIN {$wpdb->postmeta} m ON m.post_id = rel.post_id AND m.meta_key = %s WHERE rel.meta_key = %s AND rel.meta_value = %s AND p.post_type = %s",
+                self::META_MTRL,
+                self::META_RELATED_ITEM_MTRL,
+                $parent_mtrl,
+                'product'
+            );
+
+            $results  = (array) $wpdb->get_col( $query );
+            $children = array();
+
+            foreach ( $results as $value ) {
+                $value = trim( (string) $value );
+                if ( '' !== $value ) {
+                    $children[] = $value;
+                }
+            }
+
+            $children = array_values( array_unique( $children ) );
+            sort( $children, SORT_NATURAL | SORT_FLAG_CASE );
+
+            return $children;
         }
 
 
@@ -1374,12 +1576,13 @@ protected function find_existing_product( $sku, $mtrl ) {
  * @return array{attributes: array<int,WC_Product_Attribute>, terms: array, values: array, clear: array}
  */
 protected function prepare_attribute_assignments( array $data, $product, array $fallback_attributes = array() ) {
-    $assignments = array(
-        'attributes' => array(),
-        'terms'      => array(),
-        'values'     => array(),
-        'clear'      => array(),
-    );
+        $assignments = array(
+            'attributes'        => array(),
+            'terms'             => array(),
+            'values'            => array(),
+            'clear'             => array(),
+            'related_item_mtrl' => '',
+        );
 
     // ---------------- Hidden custom attribute: softone_mtrl ----------------
     $mtrl_value = (string) $this->get_value( $data, array( 'mtrl', 'MTRL', 'mtrl_code', 'MTRL_CODE' ) );
@@ -1419,7 +1622,7 @@ protected function prepare_attribute_assignments( array $data, $product, array $
             if ( method_exists( $product, 'get_id' ) ) {
                 $pid = (int) $product->get_id();
                 if ( $pid > 0 ) {
-                    update_post_meta( $pid, '_softone_related_item_mtrl', $related_mtrl );
+                    update_post_meta( $pid, self::META_RELATED_ITEM_MTRL, $related_mtrl );
                 }
             }
         }
@@ -1485,6 +1688,8 @@ protected function prepare_attribute_assignments( array $data, $product, array $
             $assignments['values'][ $taxonomy ] = $value;
         }
     }
+
+    $assignments['related_item_mtrl'] = $related_mtrl;
 
     return $assignments;
 }
