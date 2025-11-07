@@ -545,9 +545,15 @@ protected function import_row( array $data, $run_timestamp ) {
 
     // ---------- PRODUCT NAME ----------
     $name              = $this->get_value( $data, array( 'varchar02','desc', 'description', 'code' ) );
-    $derived_colour    = '';
-    $normalized_name   = '';
-    $fallback_metadata = array();
+    $derived_colour     = '';
+    $normalized_name    = '';
+    $fallback_metadata  = array();
+    $price_value        = null;
+    $stock_amount       = null;
+    $should_backorder   = false;
+    $colour_term_id     = 0;
+    $colour_taxonomy    = '';
+    $should_create_colour_variation = false;
 
     if ( '' !== $name ) {
         list( $normalized_name, $derived_colour ) = $this->split_product_name_and_colour( $name );
@@ -580,7 +586,20 @@ protected function import_row( array $data, $run_timestamp ) {
     // ---------- PRICE ----------
     $price = $this->get_value( $data, array( 'retailprice' ) );
     if ( '' !== $price ) {
-        $product->set_regular_price( wc_format_decimal( $price ) );
+        $price_value = wc_format_decimal( $price );
+        $product->set_regular_price( $price_value );
+    }
+
+    $anticipated_colour = $this->normalize_colour_value(
+        trim( $this->get_value( $data, array( 'colour_name', 'color_name', 'colour', 'color' ) ) )
+    );
+
+    if ( '' === $anticipated_colour && '' !== $derived_colour ) {
+        $anticipated_colour = $derived_colour;
+    }
+
+    if ( '' !== $anticipated_colour ) {
+        $should_create_colour_variation = true;
     }
 
     // ---------- SKU (ensure unique, but if someone else owns it, we UPDATE THAT product) ----------
@@ -605,7 +624,11 @@ protected function import_row( array $data, $run_timestamp ) {
     );
 
     if ( '' !== $effective_sku ) {
-        $product->set_sku( $effective_sku );
+        if ( $should_create_colour_variation ) {
+            $product->set_sku( '' );
+        } else {
+            $product->set_sku( $effective_sku );
+        }
     } else {
         $this->log(
             'warning',
@@ -650,6 +673,25 @@ protected function import_row( array $data, $run_timestamp ) {
     // ---------- ATTRIBUTES ----------
     $brand_value           = trim( $this->get_value( $data, array( 'brand_name', 'brand' ) ) );
     $attribute_assignments = $this->prepare_attribute_assignments( $data, $product, $fallback_metadata );
+
+    if ( function_exists( 'wc_attribute_taxonomy_name' ) ) {
+        $colour_taxonomy = wc_attribute_taxonomy_name( $this->resolve_colour_attribute_slug() );
+    }
+
+    if ( $colour_taxonomy && ! empty( $attribute_assignments['terms'][ $colour_taxonomy ] ) ) {
+        $colour_terms = (array) $attribute_assignments['terms'][ $colour_taxonomy ];
+        $first_term   = reset( $colour_terms );
+        $colour_term_id = (int) $first_term;
+        if ( $colour_term_id > 0 ) {
+            $should_create_colour_variation = true;
+        }
+    } else {
+        $should_create_colour_variation = false;
+    }
+
+    if ( ! $should_create_colour_variation && '' !== $effective_sku && '' === $product->get_sku() ) {
+        $product->set_sku( $effective_sku );
+    }
 
     if ( ! empty( $attribute_assignments['attributes'] ) ) {
         $product->set_attributes( $attribute_assignments['attributes'] );
@@ -733,6 +775,19 @@ protected function import_row( array $data, $run_timestamp ) {
         wp_set_object_terms( $product_id, array(), $taxonomy );
     }
 
+    if ( $should_create_colour_variation ) {
+        $this->ensure_colour_variation(
+            $product_id,
+            $colour_term_id,
+            $colour_taxonomy,
+            $effective_sku,
+            $price_value,
+            $stock_amount,
+            $mtrl,
+            $should_backorder
+        );
+    }
+
     // ---------- BRAND (attribute + WooCommerce Brands taxonomy) ----------
     $this->assign_brand_term( $product_id, $brand_value );               // attribute pa_brand
     $this->assign_product_brand_term( $product_id, $brand_value );       // taxonomy product_brand
@@ -752,6 +807,179 @@ protected function import_row( array $data, $run_timestamp ) {
     return $action;
 }
 
+
+
+        /**
+         * Ensure a variable product exists with a colour variation.
+         *
+         * @param int         $product_id
+         * @param int         $colour_term_id
+         * @param string      $colour_taxonomy
+         * @param string      $sku
+         * @param string|null $price_value
+         * @param int|null    $stock_amount
+         * @param string      $mtrl
+         * @param bool        $should_backorder
+         * @return void
+         */
+        protected function ensure_colour_variation( $product_id, $colour_term_id, $colour_taxonomy, $sku, $price_value, $stock_amount, $mtrl, $should_backorder ) {
+            $product_id      = (int) $product_id;
+            $colour_term_id  = (int) $colour_term_id;
+            $colour_taxonomy = (string) $colour_taxonomy;
+
+            if ( $product_id <= 0 || $colour_term_id <= 0 || '' === $colour_taxonomy ) {
+                return;
+            }
+
+            if ( ! class_exists( 'WC_Product_Variation' ) || ! class_exists( 'WC_Product_Variable' ) ) {
+                return;
+            }
+
+            if ( function_exists( 'wp_set_object_terms' ) ) {
+                wp_set_object_terms( $product_id, 'variable', 'product_type' );
+            }
+
+            $parent_product = wc_get_product( $product_id );
+
+            if ( ! $parent_product ) {
+                return;
+            }
+
+            if ( ! $parent_product instanceof WC_Product_Variable ) {
+                $parent_product = new WC_Product_Variable( $product_id );
+            }
+
+            $attributes = $parent_product->get_attributes();
+            $normalized_key = $colour_taxonomy;
+            if ( function_exists( 'wc_attribute_taxonomy_name' ) ) {
+                $normalized_key = wc_attribute_taxonomy_name( $this->resolve_colour_attribute_slug() );
+            }
+
+            foreach ( $attributes as $key => $attribute ) {
+                if ( $attribute instanceof WC_Product_Attribute ) {
+                    $name = $attribute->get_name();
+                    if ( $name === $colour_taxonomy || $name === $normalized_key ) {
+                        $attribute->set_variation( true );
+                        $attributes[ $key ] = $attribute;
+                    }
+                }
+            }
+
+            $parent_product->set_attributes( $attributes );
+            $parent_product->set_manage_stock( false );
+            $parent_product->set_stock_quantity( null );
+
+            if ( null !== $stock_amount ) {
+                $parent_product->set_stock_status( $stock_amount > 0 ? 'instock' : 'outofstock' );
+            }
+
+            if ( method_exists( $parent_product, 'set_backorders' ) ) {
+                $parent_product->set_backorders( 'no' );
+            }
+
+            $parent_product->save();
+
+            $term = get_term( $colour_term_id, $colour_taxonomy );
+            if ( ! $term || is_wp_error( $term ) ) {
+                return;
+            }
+
+            $variation_id = $this->find_existing_variation_id( $product_id, $sku, $mtrl );
+
+            if ( $variation_id > 0 ) {
+                $variation = new WC_Product_Variation( $variation_id );
+            } else {
+                $variation = new WC_Product_Variation();
+                $variation->set_parent_id( $product_id );
+            }
+
+            $attribute_key = 'attribute_' . ( function_exists( 'sanitize_title' ) ? sanitize_title( $colour_taxonomy ) : strtolower( preg_replace( '/[^a-zA-Z0-9_]+/', '-', $colour_taxonomy ) ) );
+            $variation->set_attributes( array( $attribute_key => $term->slug ) );
+            $variation->set_status( 'publish' );
+
+            if ( '' !== $sku ) {
+                $variation->set_sku( $sku );
+            }
+
+            if ( null !== $price_value ) {
+                $variation->set_regular_price( $price_value );
+            }
+
+            if ( null !== $stock_amount ) {
+                $variation->set_manage_stock( true );
+                $variation->set_stock_quantity( $stock_amount );
+
+                if ( $should_backorder && $stock_amount <= 0 ) {
+                    if ( method_exists( $variation, 'set_backorders' ) ) {
+                        $variation->set_backorders( 'notify' );
+                    }
+                    $variation->set_stock_status( 'onbackorder' );
+                } else {
+                    if ( method_exists( $variation, 'set_backorders' ) ) {
+                        $variation->set_backorders( 'no' );
+                    }
+                    $variation->set_stock_status( $stock_amount > 0 ? 'instock' : 'outofstock' );
+                }
+            } else {
+                $variation->set_manage_stock( false );
+                if ( method_exists( $variation, 'set_backorders' ) ) {
+                    $variation->set_backorders( 'no' );
+                }
+                $variation->set_stock_status( 'instock' );
+            }
+
+            $variation_id = $variation->save();
+
+            if ( $variation_id && $mtrl ) {
+                update_post_meta( $variation_id, self::META_MTRL, $mtrl );
+            }
+
+            if ( class_exists( 'WC_Product_Variable' ) ) {
+                WC_Product_Variable::sync( $product_id );
+            }
+        }
+
+        /**
+         * Locate an existing variation for the product.
+         *
+         * @param int    $product_id
+         * @param string $sku
+         * @param string $mtrl
+         * @return int
+         */
+        protected function find_existing_variation_id( $product_id, $sku, $mtrl ) {
+            $product_id = (int) $product_id;
+            $sku        = trim( (string) $sku );
+            $mtrl       = trim( (string) $mtrl );
+
+            if ( $product_id <= 0 ) {
+                return 0;
+            }
+
+            if ( '' !== $sku && function_exists( 'wc_get_product_id_by_sku' ) ) {
+                $existing = (int) wc_get_product_id_by_sku( $sku );
+                if ( $existing > 0 && (int) wp_get_post_parent_id( $existing ) === $product_id ) {
+                    return $existing;
+                }
+            }
+
+            if ( '' !== $mtrl ) {
+                global $wpdb;
+                $query = $wpdb->prepare(
+                    "SELECT pm.post_id FROM {$wpdb->postmeta} pm INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id WHERE pm.meta_key = %s AND pm.meta_value = %s AND p.post_parent = %d LIMIT 1",
+                    self::META_MTRL,
+                    $mtrl,
+                    $product_id
+                );
+
+                $existing = (int) $wpdb->get_var( $query );
+                if ( $existing > 0 ) {
+                    return $existing;
+                }
+            }
+
+            return 0;
+        }
 
 
         /** @return int */
@@ -1212,13 +1440,15 @@ protected function prepare_attribute_assignments( array $data, $product, array $
     // For colour we resolve to pa_colour or pa_color safely
     $colour_slug = $this->resolve_colour_attribute_slug(); // 'colour' or 'color'
     $attribute_map = array(
-        $colour_slug => array( __( 'Colour', 'softone-woocommerce-integration' ), $colour_value, 0 ),
-        'size'       => array( __( 'Size',   'softone-woocommerce-integration' ), $size_value,   1 ),
-        'brand'      => array( __( 'Brand',  'softone-woocommerce-integration' ), $brand_value,  2 ),
+        $colour_slug => array( __( 'Colour', 'softone-woocommerce-integration' ), $colour_value, 0, true ),
+        'size'       => array( __( 'Size',   'softone-woocommerce-integration' ), $size_value,   1, false ),
+        'brand'      => array( __( 'Brand',  'softone-woocommerce-integration' ), $brand_value,  2, false ),
     );
 
     foreach ( $attribute_map as $slug => $tuple ) {
-        list( $label, $value, $position ) = $tuple;
+        $tuple = array_values( $tuple );
+        $tuple = array_pad( $tuple, 4, false );
+        list( $label, $value, $position, $is_variation ) = $tuple;
 
         $taxonomy = function_exists( 'wc_attribute_taxonomy_name' )
             ? wc_attribute_taxonomy_name( $slug )
@@ -1248,7 +1478,7 @@ protected function prepare_attribute_assignments( array $data, $product, array $
             $attr->set_options( array( (int) $term_id ) );
             $attr->set_position( (int) $position );
             $attr->set_visible( true );
-            $attr->set_variation( false );
+            $attr->set_variation( (bool) $is_variation );
 
             $assignments['attributes'][]      = $attr;
             $assignments['terms'][ $taxonomy ] = array( (int) $term_id );
@@ -1300,6 +1530,12 @@ protected function resolve_colour_attribute_slug() {
         protected function normalize_colour_value( $colour ) {
             $colour = trim( (string) $colour );
             if ( '' === $colour ) { return ''; }
+
+            $placeholders = array( '-', 'n/a', 'na', 'none' );
+            if ( in_array( strtolower( $colour ), $placeholders, true ) ) {
+                return '';
+            }
+
             if ( function_exists( 'mb_convert_case' ) ) {
                 return mb_convert_case( $colour, MB_CASE_TITLE, 'UTF-8' );
             }
