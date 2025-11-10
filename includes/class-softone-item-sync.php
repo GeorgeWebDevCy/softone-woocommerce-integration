@@ -676,8 +676,12 @@ protected function import_row( array $data, $run_timestamp ) {
     $brand_value           = trim( $this->get_value( $data, array( 'brand_name', 'brand' ) ) );
     $attribute_assignments = $this->prepare_attribute_assignments( $data, $product, $fallback_metadata );
     $related_item_mtrl_value = '';
+    $related_item_mtrls      = array();
     if ( isset( $attribute_assignments['related_item_mtrl'] ) ) {
         $related_item_mtrl_value = (string) $attribute_assignments['related_item_mtrl'];
+    }
+    if ( isset( $attribute_assignments['related_item_mtrls'] ) && is_array( $attribute_assignments['related_item_mtrls'] ) ) {
+        $related_item_mtrls = array_values( array_filter( array_map( 'strval', $attribute_assignments['related_item_mtrls'] ) ) );
     }
 
     if ( function_exists( 'wc_attribute_taxonomy_name' ) ) {
@@ -716,7 +720,26 @@ protected function import_row( array $data, $run_timestamp ) {
         update_post_meta( $product_id, self::META_MTRL, $mtrl );
     }
 
-    $this->sync_related_item_relationships( $product_id, $mtrl, $related_item_mtrl_value );
+    $this->sync_related_item_relationships( $product_id, $mtrl, $related_item_mtrl_value, $related_item_mtrls );
+
+    $all_related_item_mtrls = $related_item_mtrls;
+    $stored_related = get_post_meta( $product_id, self::META_RELATED_ITEM_MTRLS, true );
+    if ( is_array( $stored_related ) ) {
+        $all_related_item_mtrls = array_merge( $all_related_item_mtrls, array_map( 'strval', $stored_related ) );
+    } elseif ( is_string( $stored_related ) && '' !== trim( $stored_related ) ) {
+        $all_related_item_mtrls = array_merge( $all_related_item_mtrls, $this->parse_related_item_mtrls( $stored_related ) );
+    }
+
+    $all_related_item_mtrls = array_values( array_unique( array_filter( array_map( 'strval', $all_related_item_mtrls ) ) ) );
+
+    if ( ! empty( $all_related_item_mtrls ) && '' !== $colour_taxonomy ) {
+        $this->sync_related_colour_variations(
+            $product_id,
+            $mtrl,
+            $all_related_item_mtrls,
+            $colour_taxonomy
+        );
+    }
 
     // ---------- IMAGES (after save) ----------
     $sku_for_images = ( '' !== $effective_sku ? $effective_sku : $sku_requested );
@@ -992,39 +1015,318 @@ protected function import_row( array $data, $run_timestamp ) {
         /**
          * Ensure related item pointers remain synchronised between Softone products.
          *
-         * @param int    $product_id         Current product identifier.
-         * @param string $mtrl               Current Softone material identifier.
-         * @param string $related_item_mtrl  Related Softone material identifier from the payload.
+         * @param int    $product_id          Current product identifier.
+         * @param string $mtrl                Current Softone material identifier.
+         * @param string $related_item_mtrl   Related Softone material identifier from the payload.
+         * @param array<int,string> $related_item_mtrls List of related Softone material identifiers from the payload.
          * @return void
          */
-        protected function sync_related_item_relationships( $product_id, $mtrl, $related_item_mtrl ) {
+        protected function sync_related_item_relationships( $product_id, $mtrl, $related_item_mtrl, array $related_item_mtrls = array() ) {
             $product_id         = (int) $product_id;
             $mtrl               = trim( (string) $mtrl );
             $related_item_mtrl  = trim( (string) $related_item_mtrl );
+            $related_item_mtrls = array_values( array_filter( array_map( 'strval', $related_item_mtrls ) ) );
 
             if ( $product_id <= 0 ) {
                 return;
             }
 
-            $previous_related = (string) get_post_meta( $product_id, self::META_RELATED_ITEM_MTRL, true );
-
-            if ( '' === $related_item_mtrl ) {
-                delete_post_meta( $product_id, self::META_RELATED_ITEM_MTRL );
-            } else {
-                update_post_meta( $product_id, self::META_RELATED_ITEM_MTRL, $related_item_mtrl );
+            $primary_related = '';
+            if ( ! empty( $related_item_mtrls ) ) {
+                $primary_related = (string) reset( $related_item_mtrls );
+            } elseif ( '' !== $related_item_mtrl ) {
+                $primary_related = $related_item_mtrl;
             }
 
-            if ( '' !== $previous_related && $previous_related !== $related_item_mtrl ) {
+            $previous_related_meta = get_post_meta( $product_id, self::META_RELATED_ITEM_MTRL, true );
+            $previous_related      = is_array( $previous_related_meta ) ? (string) reset( $previous_related_meta ) : (string) $previous_related_meta;
+
+            if ( '' === $primary_related ) {
+                delete_post_meta( $product_id, self::META_RELATED_ITEM_MTRL );
+            } else {
+                update_post_meta( $product_id, self::META_RELATED_ITEM_MTRL, $primary_related );
+            }
+
+            $existing_related_meta = get_post_meta( $product_id, self::META_RELATED_ITEM_MTRLS, true );
+            $existing_related_list = array();
+            if ( is_array( $existing_related_meta ) ) {
+                $existing_related_list = array_map( 'strval', $existing_related_meta );
+            } elseif ( is_string( $existing_related_meta ) && '' !== trim( $existing_related_meta ) ) {
+                $existing_related_list = $this->parse_related_item_mtrls( $existing_related_meta );
+            }
+
+            $merged_related = array_values( array_unique( array_filter( array_merge( $existing_related_list, $related_item_mtrls ) ) ) );
+
+            if ( empty( $merged_related ) ) {
+                delete_post_meta( $product_id, self::META_RELATED_ITEM_MTRLS );
+            } else {
+                update_post_meta( $product_id, self::META_RELATED_ITEM_MTRLS, $merged_related );
+            }
+
+            if ( '' !== $previous_related && $previous_related !== $primary_related ) {
                 $this->refresh_related_item_children( $previous_related );
             }
 
-            if ( '' !== $related_item_mtrl ) {
-                $this->refresh_related_item_children( $related_item_mtrl );
+            if ( '' !== $primary_related ) {
+                $this->refresh_related_item_children( $primary_related );
             }
 
             if ( '' !== $mtrl ) {
                 $this->refresh_related_item_children( $mtrl );
             }
+        }
+
+        /**
+         * Ensure the current product exposes colour variations for related Softone materials.
+         *
+         * @param int                 $product_id
+         * @param string              $current_mtrl
+         * @param array<int,string>   $related_item_mtrls
+         * @param string              $colour_taxonomy
+         * @return void
+         */
+        protected function sync_related_colour_variations( $product_id, $current_mtrl, array $related_item_mtrls, $colour_taxonomy ) {
+            $product_id       = (int) $product_id;
+            $current_mtrl     = trim( (string) $current_mtrl );
+            $colour_taxonomy  = (string) $colour_taxonomy;
+            $related_item_mtrls = array_values( array_unique( array_filter( array_map( 'strval', $related_item_mtrls ) ) ) );
+
+            if ( $product_id <= 0 || '' === $colour_taxonomy || empty( $related_item_mtrls ) ) {
+                return;
+            }
+
+            if ( '' !== $current_mtrl ) {
+                $related_item_mtrls = array_values( array_diff( $related_item_mtrls, array( $current_mtrl ) ) );
+            }
+
+            if ( empty( $related_item_mtrls ) ) {
+                return;
+            }
+
+            if ( ! function_exists( 'wc_get_product' ) || ! class_exists( 'WC_Product_Variable' ) || ! class_exists( 'WC_Product_Attribute' ) ) {
+                return;
+            }
+
+            $parent_product = wc_get_product( $product_id );
+            if ( ! $parent_product ) {
+                return;
+            }
+
+            if ( ! $parent_product instanceof WC_Product_Variable ) {
+                $parent_product = new WC_Product_Variable( $product_id );
+            }
+
+            $normalized_key = $colour_taxonomy;
+            if ( function_exists( 'wc_attribute_taxonomy_name' ) ) {
+                $normalized_key = wc_attribute_taxonomy_name( $this->resolve_colour_attribute_slug() );
+            }
+
+            $attributes        = $parent_product->get_attributes();
+            $attribute_key     = null;
+            $existing_term_ids = array();
+
+            foreach ( $attributes as $key => $attribute ) {
+                $name = '';
+                if ( $attribute instanceof WC_Product_Attribute ) {
+                    $name = $attribute->get_name();
+                } elseif ( is_array( $attribute ) && isset( $attribute['name'] ) ) {
+                    $name = (string) $attribute['name'];
+                }
+
+                if ( $name === $colour_taxonomy || $name === $normalized_key ) {
+                    if ( $attribute instanceof WC_Product_Attribute ) {
+                        $existing_term_ids = array_map( 'intval', (array) $attribute->get_options() );
+                        $attribute->set_variation( true );
+                        $attributes[ $key ] = $attribute;
+                    } elseif ( is_array( $attribute ) ) {
+                        $existing_term_ids = array_map( 'intval', isset( $attribute['options'] ) ? (array) $attribute['options'] : array() );
+                        $attribute_object = new WC_Product_Attribute();
+                        $attribute_object->set_id( isset( $attribute['id'] ) ? (int) $attribute['id'] : 0 );
+                        $attribute_object->set_name( $colour_taxonomy );
+                        $attribute_object->set_options( $existing_term_ids );
+                        $attribute_object->set_position( isset( $attribute['position'] ) ? (int) $attribute['position'] : 0 );
+                        $attribute_object->set_visible( true );
+                        $attribute_object->set_variation( true );
+                        $attributes[ $key ] = $attribute_object;
+                    }
+
+                    $attribute_key = $key;
+                    break;
+                }
+            }
+
+            if ( null === $attribute_key ) {
+                $existing_term_ids = array();
+            }
+
+            $parent_colour_term_id = $this->find_colour_term_id_for_product( $parent_product, $colour_taxonomy );
+            if ( $parent_colour_term_id > 0 ) {
+                $existing_term_ids[] = (int) $parent_colour_term_id;
+            }
+
+            $variations_to_sync = array();
+            $additional_term_ids = array();
+
+            foreach ( $related_item_mtrls as $related_mtrl ) {
+                $related_product_id = $this->find_product_id_by_mtrl( $related_mtrl );
+                if ( $related_product_id <= 0 ) {
+                    continue;
+                }
+
+                $related_product = wc_get_product( $related_product_id );
+                if ( ! $related_product ) {
+                    continue;
+                }
+
+                $colour_term_id = $this->find_colour_term_id_for_product( $related_product, $colour_taxonomy );
+                if ( $colour_term_id <= 0 ) {
+                    continue;
+                }
+
+                $price_value = $related_product->get_regular_price();
+                if ( '' === $price_value ) {
+                    $price_value = $related_product->get_price();
+                }
+                $price_value = ( '' === $price_value ) ? null : wc_format_decimal( $price_value );
+
+                $stock_amount = null;
+                $should_backorder = false;
+                if ( $related_product->managing_stock() ) {
+                    $quantity = $related_product->get_stock_quantity();
+                    if ( null !== $quantity ) {
+                        $stock_amount = (int) $quantity;
+                    } else {
+                        $stock_amount = 0;
+                    }
+
+                    if ( method_exists( $related_product, 'get_backorders' ) ) {
+                        $backorders = (string) $related_product->get_backorders();
+                        $should_backorder = in_array( $backorders, array( 'notify', 'yes' ), true );
+                    }
+                } else {
+                    if ( method_exists( $related_product, 'get_backorders' ) ) {
+                        $backorders = (string) $related_product->get_backorders();
+                        $should_backorder = in_array( $backorders, array( 'notify', 'yes' ), true );
+                    }
+                }
+
+                $variations_to_sync[] = array(
+                    'term_id'          => (int) $colour_term_id,
+                    'sku'              => (string) $related_product->get_sku(),
+                    'price_value'      => $price_value,
+                    'stock_amount'     => $stock_amount,
+                    'mtrl'             => $related_mtrl,
+                    'should_backorder' => $should_backorder,
+                );
+
+                $additional_term_ids[] = (int) $colour_term_id;
+            }
+
+            if ( empty( $variations_to_sync ) ) {
+                return;
+            }
+
+            $final_term_ids = array_values( array_unique( array_merge( $existing_term_ids, $additional_term_ids ) ) );
+
+            if ( empty( $final_term_ids ) ) {
+                return;
+            }
+
+            sort( $final_term_ids, SORT_NUMERIC );
+
+            if ( null === $attribute_key ) {
+                $attribute_object = new WC_Product_Attribute();
+                $attribute_object->set_id( 0 );
+                $attribute_object->set_name( $colour_taxonomy );
+                $attribute_object->set_options( $final_term_ids );
+                $attribute_object->set_position( 0 );
+                $attribute_object->set_visible( true );
+                $attribute_object->set_variation( true );
+                $attributes[] = $attribute_object;
+            } else {
+                $attribute_object = $attributes[ $attribute_key ];
+                if ( $attribute_object instanceof WC_Product_Attribute ) {
+                    $attribute_object->set_options( $final_term_ids );
+                    $attribute_object->set_variation( true );
+                    $attributes[ $attribute_key ] = $attribute_object;
+                } elseif ( is_array( $attribute_object ) ) {
+                    $attribute_object['options']   = $final_term_ids;
+                    $attribute_object['variation'] = true;
+                    $attributes[ $attribute_key ]  = $attribute_object;
+                }
+            }
+
+            $parent_product->set_attributes( $attributes );
+            $parent_product->save();
+
+            foreach ( $variations_to_sync as $variation_data ) {
+                $this->ensure_colour_variation(
+                    $product_id,
+                    (int) $variation_data['term_id'],
+                    $colour_taxonomy,
+                    $variation_data['sku'],
+                    $variation_data['price_value'],
+                    $variation_data['stock_amount'],
+                    $variation_data['mtrl'],
+                    (bool) $variation_data['should_backorder']
+                );
+            }
+        }
+
+        /**
+         * Determine the colour attribute term ID assigned to a product.
+         *
+         * @param WC_Product|false $product
+         * @param string           $colour_taxonomy
+         * @return int
+         */
+        protected function find_colour_term_id_for_product( $product, $colour_taxonomy ) {
+            if ( ! $product || ! method_exists( $product, 'get_attributes' ) ) {
+                return 0;
+            }
+
+            $colour_taxonomy = (string) $colour_taxonomy;
+            if ( '' === $colour_taxonomy ) {
+                return 0;
+            }
+
+            $normalized_key = $colour_taxonomy;
+            if ( function_exists( 'wc_attribute_taxonomy_name' ) ) {
+                $normalized_key = wc_attribute_taxonomy_name( $this->resolve_colour_attribute_slug() );
+            }
+
+            $attributes = $product->get_attributes();
+            foreach ( $attributes as $attribute ) {
+                $name = '';
+                $options = array();
+
+                if ( $attribute instanceof WC_Product_Attribute ) {
+                    $name    = $attribute->get_name();
+                    $options = (array) $attribute->get_options();
+                } elseif ( is_array( $attribute ) ) {
+                    $name    = isset( $attribute['name'] ) ? (string) $attribute['name'] : '';
+                    $options = isset( $attribute['options'] ) ? (array) $attribute['options'] : array();
+                }
+
+                if ( $name === $colour_taxonomy || $name === $normalized_key ) {
+                    $option = reset( $options );
+                    if ( false !== $option && '' !== $option ) {
+                        return (int) $option;
+                    }
+                }
+            }
+
+            if ( method_exists( $product, 'get_id' ) && function_exists( 'wp_get_post_terms' ) ) {
+                $terms = wp_get_post_terms( (int) $product->get_id(), $colour_taxonomy, array( 'fields' => 'ids' ) );
+                if ( ! is_wp_error( $terms ) && ! empty( $terms ) ) {
+                    $term = reset( $terms );
+                    if ( false !== $term ) {
+                        return (int) $term;
+                    }
+                }
+            }
+
+            return 0;
         }
 
         /**
@@ -1181,6 +1483,38 @@ protected function import_row( array $data, $run_timestamp ) {
             sort( $children, SORT_NATURAL | SORT_FLAG_CASE );
 
             return $children;
+        }
+
+        /**
+         * Parse a list of related Softone material identifiers from the payload.
+         *
+         * @param string $value
+         * @return array<int,string>
+         */
+        protected function parse_related_item_mtrls( $value ) {
+            $value = trim( (string) $value );
+            if ( '' === $value ) {
+                return array();
+            }
+
+            $normalized = preg_replace( '/[\r\n]+/', ' ', $value );
+            $parts      = preg_split( '/[\s\|,;]+/', (string) $normalized, -1, PREG_SPLIT_NO_EMPTY );
+
+            if ( false === $parts ) {
+                return array();
+            }
+
+            $tokens = array();
+            foreach ( $parts as $part ) {
+                $part = trim( (string) $part );
+                if ( '' !== $part ) {
+                    $tokens[] = $part;
+                }
+            }
+
+            $tokens = array_values( array_unique( $tokens ) );
+
+            return $tokens;
         }
 
 
@@ -1609,12 +1943,13 @@ protected function prepare_attribute_assignments( array $data, $product, array $
     // ---------------- Hidden custom attribute: related_item_mtrl ----------------
     $related_mtrl = (string) $this->get_value( $data, array( 'related_item_mtrl', 'related_mtrl', 'rel_mtrl' ) );
     $related_mtrl = trim( $related_mtrl );
+    $related_mtrl_tokens = $this->parse_related_item_mtrls( $related_mtrl );
     if ( $related_mtrl !== '' && class_exists( 'WC_Product_Attribute' ) ) {
         try {
             $attr = new WC_Product_Attribute();
             $attr->set_id( 0 );
             $attr->set_name( 'related_item_mtrl' );
-            $attr->set_options( array( $related_mtrl ) );
+            $attr->set_options( empty( $related_mtrl_tokens ) ? array( $related_mtrl ) : $related_mtrl_tokens );
             $attr->set_visible( false );
             $attr->set_variation( false );
             $assignments['attributes'][] = $attr;
@@ -1623,6 +1958,9 @@ protected function prepare_attribute_assignments( array $data, $product, array $
                 $pid = (int) $product->get_id();
                 if ( $pid > 0 ) {
                     update_post_meta( $pid, self::META_RELATED_ITEM_MTRL, $related_mtrl );
+                    if ( ! empty( $related_mtrl_tokens ) ) {
+                        update_post_meta( $pid, self::META_RELATED_ITEM_MTRLS, $related_mtrl_tokens );
+                    }
                 }
             }
         }
@@ -1689,7 +2027,8 @@ protected function prepare_attribute_assignments( array $data, $product, array $
         }
     }
 
-    $assignments['related_item_mtrl'] = $related_mtrl;
+    $assignments['related_item_mtrl']  = $related_mtrl;
+    $assignments['related_item_mtrls'] = $related_mtrl_tokens;
 
     return $assignments;
 }
