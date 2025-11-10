@@ -61,6 +61,9 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         /** @var bool */
         protected $force_taxonomy_refresh = false;
 
+        /** @var array<int, array<string, mixed>> */
+        protected $pending_colour_variation_syncs = array();
+
         public function __construct( ?Softone_API_Client $api_client = null, $logger = null, $category_logger = null, ?Softone_Sync_Activity_Logger $activity_logger = null ) {
             $this->api_client = $api_client ?: new Softone_API_Client();
             $this->logger     = $logger ?: $this->get_default_logger();
@@ -74,6 +77,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $this->activity_logger = $activity_logger;
 
             $this->reset_caches();
+            $this->pending_colour_variation_syncs = array();
         }
 
         /** @return void */
@@ -225,6 +229,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     }
                 }
 
+                $this->process_pending_colour_variation_syncs();
+
                 $stale_processed = $this->handle_stale_products( $started_at );
 
                 if ( $stale_processed > 0 ) {
@@ -244,6 +250,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 if ( function_exists( 'wp_defer_comment_counting' ) && null !== $comment_count_previous_state ) {
                     wp_defer_comment_counting( $comment_count_previous_state );
                 }
+                $this->pending_colour_variation_syncs = array();
                 $this->force_taxonomy_refresh = $previous_force_taxonomy_refresh;
             }
         }
@@ -733,12 +740,7 @@ protected function import_row( array $data, $run_timestamp ) {
     $all_related_item_mtrls = array_values( array_unique( array_filter( array_map( 'strval', $all_related_item_mtrls ) ) ) );
 
     if ( ! empty( $all_related_item_mtrls ) && '' !== $colour_taxonomy ) {
-        $this->sync_related_colour_variations(
-            $product_id,
-            $mtrl,
-            $all_related_item_mtrls,
-            $colour_taxonomy
-        );
+        $this->queue_colour_variation_sync( $product_id, $mtrl, $all_related_item_mtrls, $colour_taxonomy );
     }
 
     // ---------- IMAGES (after save) ----------
@@ -1135,6 +1137,70 @@ protected function import_row( array $data, $run_timestamp ) {
                     update_post_meta( $child_product_id, self::META_RELATED_ITEM_MTRL, $parent_mtrl );
                 }
             }
+        }
+
+        /**
+         * Schedule a colour variation synchronisation for after the import run completes.
+         *
+         * @param int               $product_id
+         * @param string            $mtrl
+         * @param array<int,string> $related_item_mtrls
+         * @param string            $colour_taxonomy
+         * @return void
+         */
+        protected function queue_colour_variation_sync( $product_id, $mtrl, array $related_item_mtrls, $colour_taxonomy ) {
+            $product_id         = (int) $product_id;
+            $mtrl               = trim( (string) $mtrl );
+            $colour_taxonomy    = trim( (string) $colour_taxonomy );
+            $related_item_mtrls = array_values( array_filter( array_map( 'strval', $related_item_mtrls ) ) );
+
+            if ( $product_id <= 0 || '' === $colour_taxonomy || empty( $related_item_mtrls ) ) {
+                return;
+            }
+
+            $this->pending_colour_variation_syncs[] = array(
+                'product_id'          => $product_id,
+                'mtrl'                => $mtrl,
+                'related_item_mtrls'  => $related_item_mtrls,
+                'colour_taxonomy'     => $colour_taxonomy,
+            );
+        }
+
+        /** @return void */
+        protected function process_pending_colour_variation_syncs() {
+            if ( empty( $this->pending_colour_variation_syncs ) ) {
+                return;
+            }
+
+            foreach ( $this->pending_colour_variation_syncs as $sync_request ) {
+                $product_id         = isset( $sync_request['product_id'] ) ? (int) $sync_request['product_id'] : 0;
+                $mtrl               = isset( $sync_request['mtrl'] ) ? (string) $sync_request['mtrl'] : '';
+                $colour_taxonomy    = isset( $sync_request['colour_taxonomy'] ) ? (string) $sync_request['colour_taxonomy'] : '';
+                $related_item_mtrls = array();
+
+                if ( isset( $sync_request['related_item_mtrls'] ) && is_array( $sync_request['related_item_mtrls'] ) ) {
+                    $related_item_mtrls = array_values( array_filter( array_map( 'strval', $sync_request['related_item_mtrls'] ) ) );
+                }
+
+                if ( $product_id <= 0 || '' === $colour_taxonomy || empty( $related_item_mtrls ) ) {
+                    continue;
+                }
+
+                try {
+                    $this->sync_related_colour_variations( $product_id, $mtrl, $related_item_mtrls, $colour_taxonomy );
+                } catch ( \Throwable $throwable ) {
+                    $this->log(
+                        'error',
+                        'Failed to synchronise colour variations after completing product imports.',
+                        array(
+                            'product_id' => $product_id,
+                            'exception'  => $throwable,
+                        )
+                    );
+                }
+            }
+
+            $this->pending_colour_variation_syncs = array();
         }
 
         /**
