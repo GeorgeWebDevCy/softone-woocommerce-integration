@@ -1262,11 +1262,24 @@ protected function import_row( array $data, $run_timestamp ) {
 
                 if ( $name === $colour_taxonomy || $name === $normalized_key ) {
                     if ( $attribute instanceof WC_Product_Attribute ) {
-                        $existing_term_ids = array_map( 'intval', (array) $attribute->get_options() );
+                        $existing_term_ids = array();
+                        foreach ( (array) $attribute->get_options() as $option ) {
+                            $term_id = $this->normalise_colour_term_option( $option, $colour_taxonomy );
+                            if ( $term_id > 0 ) {
+                                $existing_term_ids[] = $term_id;
+                            }
+                        }
                         $attribute->set_variation( true );
                         $attributes[ $key ] = $attribute;
                     } elseif ( is_array( $attribute ) ) {
-                        $existing_term_ids = array_map( 'intval', isset( $attribute['options'] ) ? (array) $attribute['options'] : array() );
+                        $existing_term_ids = array();
+                        $raw_options       = isset( $attribute['options'] ) ? (array) $attribute['options'] : array();
+                        foreach ( $raw_options as $option ) {
+                            $term_id = $this->normalise_colour_term_option( $option, $colour_taxonomy );
+                            if ( $term_id > 0 ) {
+                                $existing_term_ids[] = $term_id;
+                            }
+                        }
                         $attribute_object = new WC_Product_Attribute();
                         $attribute_object->set_id( isset( $attribute['id'] ) ? (int) $attribute['id'] : 0 );
                         $attribute_object->set_name( $colour_taxonomy );
@@ -1436,9 +1449,11 @@ protected function import_row( array $data, $run_timestamp ) {
                 }
 
                 if ( $name === $colour_taxonomy || $name === $normalized_key ) {
-                    $option = reset( $options );
-                    if ( false !== $option && '' !== $option ) {
-                        return (int) $option;
+                    foreach ( $options as $option ) {
+                        $term_id = $this->normalise_colour_term_option( $option, $colour_taxonomy );
+                        if ( $term_id > 0 ) {
+                            return $term_id;
+                        }
                     }
                 }
             }
@@ -2211,6 +2226,64 @@ protected function resolve_colour_attribute_slug() {
                 return mb_convert_case( $colour, MB_CASE_TITLE, 'UTF-8' );
             }
             return ucwords( strtolower( $colour ) );
+        }
+
+        /**
+         * Convert a stored attribute option into a colour term ID.
+         *
+         * WooCommerce stores taxonomy attribute options as term IDs but stores custom
+         * attributes as raw strings. Some integrations have historically persisted
+         * colour taxonomy attributes with slugs instead of IDs, so we attempt to
+         * resolve both formats.
+         *
+         * @param mixed  $option           Raw attribute option (ID, slug, or name).
+         * @param string $colour_taxonomy Colour taxonomy name (e.g. `pa_colour`).
+         * @return int Term ID or 0 when it cannot be resolved.
+         */
+        protected function normalise_colour_term_option( $option, $colour_taxonomy ) {
+            if ( is_int( $option ) ) {
+                return $option > 0 ? $option : 0;
+            }
+
+            if ( is_numeric( $option ) ) {
+                $int_option = (int) $option;
+                return $int_option > 0 ? $int_option : 0;
+            }
+
+            $colour_taxonomy = (string) $colour_taxonomy;
+            if ( '' === $colour_taxonomy ) {
+                return 0;
+            }
+
+            $option = trim( (string) $option );
+            if ( '' === $option ) {
+                return 0;
+            }
+
+            if ( ! function_exists( 'get_term_by' ) ) {
+                return 0;
+            }
+
+            $term = get_term_by( 'slug', $option, $colour_taxonomy );
+            if ( ! $term || is_wp_error( $term ) ) {
+                $term = get_term_by( 'name', $option, $colour_taxonomy );
+            }
+
+            if ( $term && ! is_wp_error( $term ) && isset( $term->term_id ) ) {
+                return (int) $term->term_id;
+            }
+
+            if ( function_exists( 'sanitize_title' ) ) {
+                $sanitized = sanitize_title( $option );
+                if ( $sanitized !== $option ) {
+                    $term = get_term_by( 'slug', $sanitized, $colour_taxonomy );
+                    if ( $term && ! is_wp_error( $term ) && isset( $term->term_id ) ) {
+                        return (int) $term->term_id;
+                    }
+                }
+            }
+
+            return 0;
         }
 
         /** @return int */
