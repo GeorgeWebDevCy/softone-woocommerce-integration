@@ -739,8 +739,54 @@ protected function import_row( array $data, $run_timestamp ) {
 
     $all_related_item_mtrls = array_values( array_unique( array_filter( array_map( 'strval', $all_related_item_mtrls ) ) ) );
 
-    if ( ! empty( $all_related_item_mtrls ) && '' !== $colour_taxonomy ) {
-        $this->queue_colour_variation_sync( $product_id, $mtrl, $all_related_item_mtrls, $colour_taxonomy );
+    if ( '' !== $colour_taxonomy ) {
+        $related_colour_term_ids = array();
+
+        if ( $colour_term_id > 0 ) {
+            $related_colour_term_ids[] = (int) $colour_term_id;
+        }
+
+        if ( ! empty( $all_related_item_mtrls ) && function_exists( 'wc_get_product' ) ) {
+            foreach ( $all_related_item_mtrls as $related_mtrl ) {
+                $related_product_id = $this->find_product_id_by_mtrl( $related_mtrl );
+                if ( $related_product_id <= 0 ) {
+                    continue;
+                }
+
+                $related_product = wc_get_product( $related_product_id );
+                if ( ! $related_product ) {
+                    continue;
+                }
+
+                $related_term_id = $this->find_colour_term_id_for_product( $related_product, $colour_taxonomy );
+                if ( $related_term_id > 0 ) {
+                    $related_colour_term_ids[] = (int) $related_term_id;
+                }
+            }
+        }
+
+        $related_colour_term_ids = array_values( array_unique( array_filter( array_map( 'intval', $related_colour_term_ids ) ) ) );
+
+        if ( ! empty( $related_colour_term_ids ) ) {
+            $this->ensure_parent_colour_attribute_terms( $product_id, $colour_taxonomy, $related_colour_term_ids );
+        }
+
+        if ( ! empty( $all_related_item_mtrls ) ) {
+            $this->queue_colour_variation_sync( $product_id, $mtrl, $all_related_item_mtrls, $colour_taxonomy );
+        }
+    }
+
+    if ( $should_create_colour_variation ) {
+        $this->ensure_colour_variation(
+            $product_id,
+            $colour_term_id,
+            $colour_taxonomy,
+            $effective_sku,
+            $price_value,
+            $stock_amount,
+            $mtrl,
+            $should_backorder
+        );
     }
 
     // ---------- IMAGES (after save) ----------
@@ -806,19 +852,6 @@ protected function import_row( array $data, $run_timestamp ) {
     foreach ( $attribute_assignments['clear'] as $taxonomy ) {
         if ( '' === $taxonomy ) { continue; }
         wp_set_object_terms( $product_id, array(), $taxonomy );
-    }
-
-    if ( $should_create_colour_variation ) {
-        $this->ensure_colour_variation(
-            $product_id,
-            $colour_term_id,
-            $colour_taxonomy,
-            $effective_sku,
-            $price_value,
-            $stock_amount,
-            $mtrl,
-            $should_backorder
-        );
     }
 
     // ---------- BRAND (attribute + WooCommerce Brands taxonomy) ----------
@@ -1201,6 +1234,126 @@ protected function import_row( array $data, $run_timestamp ) {
             }
 
             $this->pending_colour_variation_syncs = array();
+        }
+
+        /**
+         * Ensure the parent product exposes the supplied colour term IDs as attribute options.
+         *
+         * @param int               $product_id
+         * @param string            $colour_taxonomy
+         * @param array<int,int>    $term_ids
+         * @return void
+         */
+        protected function ensure_parent_colour_attribute_terms( $product_id, $colour_taxonomy, array $term_ids ) {
+            $product_id      = (int) $product_id;
+            $colour_taxonomy = (string) $colour_taxonomy;
+            $term_ids        = array_values( array_unique( array_filter( array_map( 'intval', $term_ids ) ) ) );
+
+            if ( $product_id <= 0 || '' === $colour_taxonomy || empty( $term_ids ) ) {
+                return;
+            }
+
+            if ( ! function_exists( 'wc_get_product' ) || ! class_exists( 'WC_Product_Attribute' ) || ! class_exists( 'WC_Product_Variable' ) ) {
+                return;
+            }
+
+            $product = wc_get_product( $product_id );
+            if ( ! $product ) {
+                return;
+            }
+
+            if ( ! $product instanceof WC_Product_Variable ) {
+                $product = new WC_Product_Variable( $product_id );
+            }
+
+            $attributes     = $product->get_attributes();
+            $normalized_key = $colour_taxonomy;
+            if ( function_exists( 'wc_attribute_taxonomy_name' ) ) {
+                $normalized_key = wc_attribute_taxonomy_name( $this->resolve_colour_attribute_slug() );
+            }
+
+            $attribute_key     = null;
+            $existing_term_ids = array();
+
+            foreach ( $attributes as $key => $attribute ) {
+                $name = '';
+
+                if ( $attribute instanceof WC_Product_Attribute ) {
+                    $name = $attribute->get_name();
+
+                    if ( $name === $colour_taxonomy || $name === $normalized_key ) {
+                        foreach ( (array) $attribute->get_options() as $option ) {
+                            $term_id = $this->normalise_colour_term_option( $option, $colour_taxonomy );
+                            if ( $term_id > 0 ) {
+                                $existing_term_ids[] = $term_id;
+                            }
+                        }
+
+                        $attribute->set_variation( true );
+                        $attributes[ $key ] = $attribute;
+                        $attribute_key = $key;
+                        break;
+                    }
+                } elseif ( is_array( $attribute ) && isset( $attribute['name'] ) ) {
+                    $name = (string) $attribute['name'];
+
+                    if ( $name === $colour_taxonomy || $name === $normalized_key ) {
+                        $raw_options = isset( $attribute['options'] ) ? (array) $attribute['options'] : array();
+                        foreach ( $raw_options as $option ) {
+                            $term_id = $this->normalise_colour_term_option( $option, $colour_taxonomy );
+                            if ( $term_id > 0 ) {
+                                $existing_term_ids[] = $term_id;
+                            }
+                        }
+
+                        $attribute_object = new WC_Product_Attribute();
+                        $attribute_object->set_id( isset( $attribute['id'] ) ? (int) $attribute['id'] : 0 );
+                        $attribute_object->set_name( $colour_taxonomy );
+                        $attribute_object->set_position( isset( $attribute['position'] ) ? (int) $attribute['position'] : 0 );
+                        $attribute_object->set_visible( true );
+                        $attribute_object->set_variation( true );
+                        $attributes[ $key ] = $attribute_object;
+                        $attribute_key = $key;
+                        break;
+                    }
+                }
+            }
+
+            $combined_term_ids = array_values( array_unique( array_merge( $existing_term_ids, $term_ids ) ) );
+            if ( empty( $combined_term_ids ) ) {
+                return;
+            }
+
+            sort( $combined_term_ids, SORT_NUMERIC );
+
+            if ( null === $attribute_key ) {
+                $attribute_object = new WC_Product_Attribute();
+                $attribute_id    = 0;
+                if ( function_exists( 'wc_attribute_taxonomy_id_by_name' ) ) {
+                    $attribute_id = (int) wc_attribute_taxonomy_id_by_name( $this->resolve_colour_attribute_slug() );
+                }
+                $attribute_object->set_id( $attribute_id );
+                $attribute_object->set_name( $colour_taxonomy );
+                $attribute_object->set_options( $combined_term_ids );
+                $attribute_object->set_position( 0 );
+                $attribute_object->set_visible( true );
+                $attribute_object->set_variation( true );
+                $attributes[] = $attribute_object;
+            } else {
+                $attribute_object = $attributes[ $attribute_key ];
+                if ( $attribute_object instanceof WC_Product_Attribute ) {
+                    $attribute_object->set_options( $combined_term_ids );
+                    $attribute_object->set_variation( true );
+                    $attributes[ $attribute_key ] = $attribute_object;
+                } elseif ( is_array( $attribute_object ) ) {
+                    $attribute_object['options']   = $combined_term_ids;
+                    $attribute_object['variation'] = true;
+                    $attributes[ $attribute_key ]  = $attribute_object;
+                }
+            }
+
+            $product->set_attributes( $attributes );
+            $product->save();
         }
 
         /**
