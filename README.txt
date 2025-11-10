@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.8.60
+Stable tag: 1.8.61
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -77,6 +77,9 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Sync::schedule_event()`.
 
 == Changelog ==
+
+= 1.8.61 =
+* Ensure parent products collect colour options from related items before creating variations so every linked shade receives a WooCommerce variant.
 
 = 1.8.60 =
 * Normalise stored colour attribute options back to taxonomy term IDs so related Softone items with slug-based assignments still generate variations and expose colour choices on the parent product.
