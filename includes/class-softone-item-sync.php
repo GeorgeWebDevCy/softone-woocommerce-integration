@@ -1063,6 +1063,10 @@ protected function import_row( array $data, $run_timestamp ) {
                 update_post_meta( $product_id, self::META_RELATED_ITEM_MTRLS, $merged_related );
             }
 
+            if ( '' !== $mtrl && ( ! empty( $related_item_mtrls ) || ! empty( $existing_related_list ) ) ) {
+                $this->sync_child_parent_relationships( $mtrl, $related_item_mtrls );
+            }
+
             if ( '' !== $previous_related && $previous_related !== $primary_related ) {
                 $this->refresh_related_item_children( $previous_related );
             }
@@ -1073,6 +1077,63 @@ protected function import_row( array $data, $run_timestamp ) {
 
             if ( '' !== $mtrl ) {
                 $this->refresh_related_item_children( $mtrl );
+            }
+        }
+
+        /**
+         * Ensure related items reference the supplied parent material.
+         *
+         * @param string              $parent_mtrl
+         * @param array<int,string>   $child_mtrls
+         * @return void
+         */
+        protected function sync_child_parent_relationships( $parent_mtrl, array $child_mtrls ) {
+            $parent_mtrl = trim( (string) $parent_mtrl );
+            if ( '' === $parent_mtrl ) {
+                return;
+            }
+
+            $child_mtrls = array_values( array_unique( array_filter( array_map( 'strval', $child_mtrls ) ) ) );
+
+            $existing_child_mtrls = $this->find_child_mtrls_for_parent( $parent_mtrl );
+            $children_to_remove   = array_diff( $existing_child_mtrls, $child_mtrls );
+
+            foreach ( $children_to_remove as $child_mtrl ) {
+                $child_mtrl = trim( (string) $child_mtrl );
+                if ( '' === $child_mtrl ) {
+                    continue;
+                }
+
+                $child_product_id = $this->find_product_id_by_mtrl( $child_mtrl );
+                if ( $child_product_id <= 0 ) {
+                    continue;
+                }
+
+                $existing_parent_meta = get_post_meta( $child_product_id, self::META_RELATED_ITEM_MTRL, true );
+                $existing_parent      = is_array( $existing_parent_meta ) ? (string) reset( $existing_parent_meta ) : (string) $existing_parent_meta;
+
+                if ( $existing_parent === $parent_mtrl ) {
+                    delete_post_meta( $child_product_id, self::META_RELATED_ITEM_MTRL );
+                }
+            }
+
+            foreach ( $child_mtrls as $child_mtrl ) {
+                $child_mtrl = trim( (string) $child_mtrl );
+                if ( '' === $child_mtrl || $child_mtrl === $parent_mtrl ) {
+                    continue;
+                }
+
+                $child_product_id = $this->find_product_id_by_mtrl( $child_mtrl );
+                if ( $child_product_id <= 0 ) {
+                    continue;
+                }
+
+                $existing_parent_meta = get_post_meta( $child_product_id, self::META_RELATED_ITEM_MTRL, true );
+                $existing_parent      = is_array( $existing_parent_meta ) ? (string) reset( $existing_parent_meta ) : (string) $existing_parent_meta;
+
+                if ( $existing_parent !== $parent_mtrl ) {
+                    update_post_meta( $child_product_id, self::META_RELATED_ITEM_MTRL, $parent_mtrl );
+                }
             }
         }
 
