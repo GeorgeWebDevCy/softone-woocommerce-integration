@@ -143,17 +143,20 @@
         background: #f0f6fc;
 }
 
+.softone-progress,
 .softone-delete-menu-progress {
 margin-top: 12px;
-display: none;
+display: flex;
 flex-direction: column;
 gap: 8px;
 }
 
+.softone-progress[hidden],
 .softone-delete-menu-progress[hidden] {
 display: none;
 }
 
+.softone-progress__bar,
 .softone-delete-menu-progress__bar {
 background: #dcdcde;
 border-radius: 999px;
@@ -162,6 +165,7 @@ overflow: hidden;
 position: relative;
 }
 
+.softone-progress__bar-fill,
 .softone-delete-menu-progress__bar-fill {
 background: #2271b1;
 height: 100%;
@@ -169,21 +173,25 @@ width: 0;
 transition: width 0.3s ease;
 }
 
+.softone-progress__text,
 .softone-delete-menu-progress__text {
 margin: 0;
 color: #50575e;
 }
 
-.softone-delete-menu-status {
+.softone-delete-menu-status,
+.softone-item-import-status {
 margin-top: 12px;
 padding: 12px 16px;
 }
 
-.softone-delete-menu-status[hidden] {
+.softone-delete-menu-status[hidden],
+.softone-item-import-status[hidden] {
 display: none;
 }
 
-.softone-delete-menu-form .button[disabled] {
+.softone-delete-menu-form .button[disabled],
+.softone-item-import__trigger[disabled] {
 opacity: 0.7;
 cursor: wait;
 }
