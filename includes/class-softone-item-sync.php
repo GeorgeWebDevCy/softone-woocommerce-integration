@@ -255,6 +255,256 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
         }
 
+        /**
+         * Prepare the initial state for an asynchronous item import run.
+         *
+         * @param bool|null $force_full_import Whether to force a full import.
+         * @param bool      $force_taxonomy_refresh Whether to refresh taxonomy assignments.
+         * @return array<string,mixed> Import state payload.
+         * @throws Softone_API_Client_Exception When the API client initialisation fails.
+         * @throws Exception When WooCommerce is not available.
+         */
+        public function begin_async_import( $force_full_import = null, $force_taxonomy_refresh = false ) {
+            if ( ! class_exists( 'WC_Product' ) ) {
+                throw new Exception( __( 'WooCommerce is required to sync items.', 'softone-woocommerce-integration' ) );
+            }
+
+            $started_at = time();
+            $last_run   = (int) get_option( self::OPTION_LAST_RUN );
+
+            $this->reset_caches();
+            $this->maybe_adjust_memory_limits();
+
+            $this->log(
+                'info',
+                'Starting Softone item sync run (async initialisation).',
+                array(
+                    'started_at' => $started_at,
+                    'last_run'   => $last_run,
+                )
+            );
+
+            if ( null === $force_full_import ) {
+                $force_full_import = false;
+            }
+
+            $force_full_import = (bool) apply_filters( 'softone_wc_integration_item_sync_force_full', $force_full_import, $last_run );
+
+            $extra = array();
+
+            if ( $last_run > 0 && ! $force_full_import ) {
+                $elapsed_seconds = max( 0, $started_at - $last_run );
+                $minutes         = max( 1, (int) ceil( $elapsed_seconds / MINUTE_IN_SECONDS ) );
+                $extra['pMins']  = $minutes;
+
+                $this->log(
+                    'info',
+                    sprintf( 'Running Softone item sync in delta mode for the last %d minute(s).', $minutes ),
+                    array(
+                        'minutes'    => $minutes,
+                        'started_at' => $started_at,
+                        'last_run'   => $last_run,
+                        'mode'       => 'async',
+                    )
+                );
+            }
+
+            $default_page_size  = 250;
+            $filtered_page_size = (int) apply_filters( 'softone_wc_integration_item_sync_page_size', $default_page_size );
+            $page_size          = $filtered_page_size > 0 ? $filtered_page_size : $default_page_size;
+
+            return array(
+                'state_version'            => 1,
+                'started_at'               => $started_at,
+                'last_run'                 => $last_run,
+                'force_full_import'        => (bool) $force_full_import,
+                'force_taxonomy_refresh'   => (bool) $force_taxonomy_refresh,
+                'request_extra'            => $extra,
+                'page_size'                => $page_size,
+                'page'                     => 1,
+                'index'                    => 0,
+                'stats'                    => array(
+                    'processed' => 0,
+                    'created'   => 0,
+                    'updated'   => 0,
+                    'skipped'   => 0,
+                ),
+                'pending_variations'       => array(),
+                'page_hashes'              => array(),
+                'cache_stats'              => $this->cache_stats,
+                'total_rows'               => null,
+                'complete'                 => false,
+            );
+        }
+
+        /**
+         * Process a batch of catalogue rows for an asynchronous import run.
+         *
+         * @param array<string,mixed> $state      Current import state payload.
+         * @param int                 $batch_size Maximum number of rows to process.
+         * @return array<string,mixed> Result payload containing the updated state.
+         * @throws Softone_API_Client_Exception When the API request fails.
+         * @throws Exception When WooCommerce is unavailable.
+         */
+        public function run_async_import_batch( array $state, $batch_size = 25 ) {
+            if ( ! class_exists( 'WC_Product' ) ) {
+                throw new Exception( __( 'WooCommerce is required to sync items.', 'softone-woocommerce-integration' ) );
+            }
+
+            $batch_size = (int) $batch_size;
+            if ( $batch_size <= 0 ) {
+                $batch_size = 25;
+            }
+
+            $started_at             = isset( $state['started_at'] ) ? (int) $state['started_at'] : time();
+            $request_extra          = isset( $state['request_extra'] ) && is_array( $state['request_extra'] ) ? $state['request_extra'] : array();
+            $page_size              = isset( $state['page_size'] ) ? (int) $state['page_size'] : 250;
+            $page                   = isset( $state['page'] ) ? max( 1, (int) $state['page'] ) : 1;
+            $index                  = isset( $state['index'] ) ? max( 0, (int) $state['index'] ) : 0;
+            $hashes                 = isset( $state['page_hashes'] ) && is_array( $state['page_hashes'] ) ? $state['page_hashes'] : array();
+            $stats                  = isset( $state['stats'] ) && is_array( $state['stats'] ) ? $state['stats'] : array();
+            $aggregate_cache_stats  = isset( $state['cache_stats'] ) && is_array( $state['cache_stats'] ) ? $state['cache_stats'] : $this->cache_stats;
+            $total_rows             = isset( $state['total_rows'] ) ? $state['total_rows'] : null;
+            $force_tax_refresh      = isset( $state['force_taxonomy_refresh'] ) ? (bool) $state['force_taxonomy_refresh'] : false;
+            $pending_variations     = isset( $state['pending_variations'] ) && is_array( $state['pending_variations'] ) ? $state['pending_variations'] : array();
+
+            $stats = wp_parse_args(
+                $stats,
+                array(
+                    'processed' => 0,
+                    'created'   => 0,
+                    'updated'   => 0,
+                    'skipped'   => 0,
+                )
+            );
+
+            $this->reset_caches();
+            $this->maybe_adjust_memory_limits();
+
+            $previous_force_taxonomy_refresh = $this->force_taxonomy_refresh;
+            $this->force_taxonomy_refresh    = $force_tax_refresh;
+            $this->pending_colour_variation_syncs = $pending_variations;
+
+            $remaining = $batch_size;
+            $complete  = false;
+            $warnings  = array();
+            $initial_stats = $stats;
+            $stale_processed = 0;
+
+            while ( $remaining > 0 && ! $complete ) {
+                $page_data = $this->fetch_item_page( $page, $page_size, $request_extra );
+                $rows      = $page_data['rows'];
+
+                if ( null !== $page_data['total_rows'] ) {
+                    $total_rows = (int) $page_data['total_rows'];
+                }
+
+                if ( empty( $rows ) ) {
+                    $complete = true;
+                    break;
+                }
+
+                $hash = $this->hash_item_rows( $rows );
+                if ( isset( $hashes[ $hash ] ) ) {
+                    $warnings[] = __( 'Detected repeated page payload while fetching Softone items. Import halted to prevent an infinite loop.', 'softone-woocommerce-integration' );
+                    $this->log(
+                        'warning',
+                        'Detected repeated page payload when fetching Softone item rows. Aborting further pagination to prevent an infinite loop.',
+                        array(
+                            'page'      => $page,
+                            'page_size' => $page_size,
+                            'mode'      => 'async',
+                        )
+                    );
+                    $complete = true;
+                    break;
+                }
+
+                $hashes[ $hash ] = true;
+                $row_count       = count( $rows );
+
+                while ( $index < $row_count && $remaining > 0 ) {
+                    $row = $rows[ $index ];
+                    $stats['processed']++;
+
+                    try {
+                        $normalized = $this->normalize_row( $row );
+                        $result     = $this->import_row( $normalized, $started_at );
+
+                        if ( 'created' === $result ) {
+                            $stats['created']++;
+                        } elseif ( 'updated' === $result ) {
+                            $stats['updated']++;
+                        } else {
+                            $stats['skipped']++;
+                        }
+                    } catch ( Exception $exception ) {
+                        $stats['skipped']++;
+                        $this->log( 'error', $exception->getMessage(), array( 'row' => $row ) );
+                    }
+
+                    $index++;
+                    $remaining--;
+                }
+
+                if ( $index >= $row_count ) {
+                    $index = 0;
+                    $page++;
+
+                    if ( $row_count < $page_size ) {
+                        $complete = true;
+                    }
+                }
+            }
+
+            $batch_processed = $stats['processed'] - $initial_stats['processed'];
+            $batch_created   = $stats['created'] - $initial_stats['created'];
+            $batch_updated   = $stats['updated'] - $initial_stats['updated'];
+            $batch_skipped   = $stats['skipped'] - $initial_stats['skipped'];
+
+            $aggregate_cache_stats = $this->merge_cache_stats( $aggregate_cache_stats, $this->cache_stats );
+
+            $state['page']               = $page;
+            $state['index']              = $index;
+            $state['stats']              = $stats;
+            $state['page_hashes']        = $hashes;
+            $state['cache_stats']        = $aggregate_cache_stats;
+            $state['pending_variations'] = $this->pending_colour_variation_syncs;
+            $state['total_rows']         = $total_rows;
+            $state['complete']           = $complete;
+
+            if ( $complete ) {
+                $this->process_pending_colour_variation_syncs();
+                $stale_processed = $this->handle_stale_products( $started_at );
+
+                if ( $stale_processed > 0 ) {
+                    $state['stale_processed'] = (int) $stale_processed;
+                }
+
+                $this->log( 'debug', 'Softone item sync cache usage summary.', array( 'cache_stats' => $aggregate_cache_stats, 'mode' => 'async' ) );
+
+                $state['pending_variations'] = array();
+                $this->pending_colour_variation_syncs = array();
+            }
+
+            $this->force_taxonomy_refresh = $previous_force_taxonomy_refresh;
+
+            return array(
+                'state'           => $state,
+                'complete'        => $complete,
+                'batch'           => array(
+                    'processed' => $batch_processed,
+                    'created'   => $batch_created,
+                    'updated'   => $batch_updated,
+                    'skipped'   => $batch_skipped,
+                ),
+                'stats'           => $stats,
+                'total_rows'      => $total_rows,
+                'stale_processed' => $stale_processed,
+                'warnings'        => $warnings,
+            );
+        }
+
         /** @return void */
         protected function maybe_adjust_memory_limits() {
             if ( function_exists( 'wp_raise_memory_limit' ) ) {
@@ -345,26 +595,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $previous_hash = array();
 
             while ( true ) {
-                $page_extra          = $extra;
-                $page_extra['pPage'] = $page;
-                $page_extra['pSize'] = $page_size;
-
-                $response = $this->api_client->sql_data( 'getItems', array(), $page_extra );
-                $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
-
-                $this->log_activity(
-                    'api_requests',
-                    'payload_received',
-                    'Received payload from Softone API for getItems request.',
-                    array(
-                        'endpoint'  => 'getItems',
-                        'page'      => $page,
-                        'page_size' => $page_size,
-                        'row_count' => count( $rows ),
-                        'request'   => $page_extra,
-                        'payload'   => $this->prepare_api_payload_for_logging( $response ),
-                    )
-                );
+                $page_data = $this->fetch_item_page( $page, $page_size, $extra );
+                $rows      = $page_data['rows'];
 
                 if ( empty( $rows ) ) {
                     break;
@@ -403,6 +635,137 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     break;
                 }
             }
+        }
+
+        /**
+         * Fetch a single page of catalogue items from Softone.
+         *
+         * @param int               $page      Page number (1-indexed).
+         * @param int               $page_size Number of rows to request.
+         * @param array<string,mixed> $extra   Additional request parameters.
+         * @return array<string,mixed> Array containing the rows and any detected totals.
+         * @throws Softone_API_Client_Exception When the API request fails.
+         */
+        protected function fetch_item_page( $page, $page_size, array $extra ) {
+            $page       = max( 1, (int) $page );
+            $page_size  = max( 1, (int) $page_size );
+            $page_extra = $extra;
+
+            $page_extra['pPage'] = $page;
+            $page_extra['pSize'] = $page_size;
+
+            $response = $this->api_client->sql_data( 'getItems', array(), $page_extra );
+            $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
+
+            $this->log_activity(
+                'api_requests',
+                'payload_received',
+                'Received payload from Softone API for getItems request.',
+                array(
+                    'endpoint'  => 'getItems',
+                    'page'      => $page,
+                    'page_size' => $page_size,
+                    'row_count' => count( $rows ),
+                    'request'   => $page_extra,
+                    'payload'   => $this->prepare_api_payload_for_logging( $response ),
+                )
+            );
+
+            return array(
+                'rows'       => $rows,
+                'total_rows' => $this->extract_total_rows_from_response( $response ),
+            );
+        }
+
+        /**
+         * Attempt to extract a total row count from an API response payload.
+         *
+         * @param mixed $response API response payload.
+         * @return int|null Total row count when available.
+         */
+        protected function extract_total_rows_from_response( $response ) {
+            if ( ! is_array( $response ) ) {
+                return null;
+            }
+
+            $candidates = array(
+                'total',
+                'total_rows',
+                'totalcount',
+                'totalCount',
+                'rowcount',
+                'rowCount',
+            );
+
+            foreach ( $candidates as $key ) {
+                if ( isset( $response[ $key ] ) && is_numeric( $response[ $key ] ) ) {
+                    $value = (int) $response[ $key ];
+                    if ( $value >= 0 ) {
+                        return $value;
+                    }
+                }
+            }
+
+            if ( isset( $response['pagination'] ) && is_array( $response['pagination'] ) ) {
+                $pagination = $response['pagination'];
+                foreach ( array( 'total', 'total_rows' ) as $key ) {
+                    if ( isset( $pagination[ $key ] ) && is_numeric( $pagination[ $key ] ) ) {
+                        $value = (int) $pagination[ $key ];
+                        if ( $value >= 0 ) {
+                            return $value;
+                        }
+                    }
+                }
+            }
+
+            if ( isset( $response['meta'] ) && is_array( $response['meta'] ) ) {
+                $meta = $response['meta'];
+                foreach ( array( 'total', 'total_rows' ) as $key ) {
+                    if ( isset( $meta[ $key ] ) && is_numeric( $meta[ $key ] ) ) {
+                        $value = (int) $meta[ $key ];
+                        if ( $value >= 0 ) {
+                            return $value;
+                        }
+                    }
+                }
+            }
+
+            if ( isset( $response['sql_totals'] ) && is_array( $response['sql_totals'] ) ) {
+                $totals = $response['sql_totals'];
+                foreach ( array( 'rows', 'total' ) as $key ) {
+                    if ( isset( $totals[ $key ] ) && is_numeric( $totals[ $key ] ) ) {
+                        $value = (int) $totals[ $key ];
+                        if ( $value >= 0 ) {
+                            return $value;
+                        }
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        /**
+         * Merge cache statistics gathered across multiple batches.
+         *
+         * @param array<string,int> $aggregate Aggregated statistics collected so far.
+         * @param array<string,int> $current   Statistics captured during the latest batch.
+         * @return array<string,int> Updated statistics.
+         */
+        protected function merge_cache_stats( array $aggregate, array $current ) {
+            foreach ( $current as $key => $value ) {
+                if ( ! is_numeric( $value ) ) {
+                    continue;
+                }
+
+                if ( ! isset( $aggregate[ $key ] ) || ! is_numeric( $aggregate[ $key ] ) ) {
+                    $aggregate[ $key ] = (int) $value;
+                } else {
+                    $aggregate[ $key ] += (int) $value;
+                }
+            }
+
+            return $aggregate;
         }
 
         /** @return string */
@@ -845,12 +1208,30 @@ protected function import_row( array $data, $run_timestamp ) {
             continue;
         }
 
+        $this->log(
+            'debug',
+            'Assigning attribute terms to product.',
+            array(
+                'product_id' => $product_id,
+                'taxonomy'   => $taxonomy,
+                'term_ids'   => $normalized_term_ids,
+            )
+        );
+
         wp_set_object_terms( $product_id, $normalized_term_ids, $taxonomy );
     }
 
     // ---------- CLEAR TAXONOMIES ----------
     foreach ( $attribute_assignments['clear'] as $taxonomy ) {
         if ( '' === $taxonomy ) { continue; }
+        $this->log(
+            'debug',
+            'Clearing attribute terms from product.',
+            array(
+                'product_id' => $product_id,
+                'taxonomy'   => $taxonomy,
+            )
+        );
         wp_set_object_terms( $product_id, array(), $taxonomy );
     }
 
@@ -894,12 +1275,41 @@ protected function import_row( array $data, $run_timestamp ) {
             $colour_taxonomy = (string) $colour_taxonomy;
 
             if ( $product_id <= 0 || $colour_term_id <= 0 || '' === $colour_taxonomy ) {
+                $this->log(
+                    'debug',
+                    'Skipped colour variation ensure because the required identifiers were missing.',
+                    array(
+                        'product_id'     => $product_id,
+                        'colour_term_id' => $colour_term_id,
+                        'colour_taxonomy'=> $colour_taxonomy,
+                    )
+                );
                 return;
             }
 
             if ( ! class_exists( 'WC_Product_Variation' ) || ! class_exists( 'WC_Product_Variable' ) ) {
+                $this->log(
+                    'warning',
+                    'Unable to ensure colour variation because WooCommerce variation classes are unavailable.',
+                    array( 'product_id' => $product_id )
+                );
                 return;
             }
+
+            $this->log(
+                'debug',
+                'Ensuring colour variation for product.',
+                array(
+                    'product_id'       => $product_id,
+                    'colour_term_id'   => $colour_term_id,
+                    'colour_taxonomy'  => $colour_taxonomy,
+                    'sku'              => $sku,
+                    'price_value'      => $price_value,
+                    'stock_amount'     => $stock_amount,
+                    'mtrl'             => $mtrl,
+                    'should_backorder' => $should_backorder,
+                )
+            );
 
             if ( function_exists( 'wp_set_object_terms' ) ) {
                 wp_set_object_terms( $product_id, 'variable', 'product_type' );
@@ -908,6 +1318,7 @@ protected function import_row( array $data, $run_timestamp ) {
             $parent_product = wc_get_product( $product_id );
 
             if ( ! $parent_product ) {
+                $this->log( 'warning', 'Unable to load parent product while ensuring colour variation.', array( 'product_id' => $product_id ) );
                 return;
             }
 
@@ -926,6 +1337,15 @@ protected function import_row( array $data, $run_timestamp ) {
                     $name = $attribute->get_name();
                     if ( $name === $colour_taxonomy || $name === $normalized_key ) {
                         $attribute->set_variation( true );
+                        $this->log(
+                            'debug',
+                            'Marked colour attribute for variation usage on parent product.',
+                            array(
+                                'product_id'      => $product_id,
+                                'attribute_name'  => $name,
+                                'colour_taxonomy' => $colour_taxonomy,
+                            )
+                        );
                         $attributes[ $key ] = $attribute;
                     }
                 }
@@ -954,9 +1374,30 @@ protected function import_row( array $data, $run_timestamp ) {
 
             if ( $variation_id > 0 ) {
                 $variation = new WC_Product_Variation( $variation_id );
+                $this->log(
+                    'debug',
+                    'Updating existing colour variation.',
+                    array(
+                        'product_id'   => $product_id,
+                        'variation_id' => $variation_id,
+                        'sku'          => $sku,
+                        'mtrl'         => $mtrl,
+                    )
+                );
             } else {
                 $variation = new WC_Product_Variation();
                 $variation->set_parent_id( $product_id );
+                $this->log(
+                    'debug',
+                    'Creating new colour variation for product.',
+                    array(
+                        'product_id'  => $product_id,
+                        'sku'         => $sku,
+                        'mtrl'        => $mtrl,
+                        'term_id'     => $colour_term_id,
+                        'taxonomy'    => $colour_taxonomy,
+                    )
+                );
             }
 
             $attribute_key = 'attribute_' . ( function_exists( 'sanitize_title' ) ? sanitize_title( $colour_taxonomy ) : strtolower( preg_replace( '/[^a-zA-Z0-9_]+/', '-', $colour_taxonomy ) ) );
@@ -1003,6 +1444,19 @@ protected function import_row( array $data, $run_timestamp ) {
             if ( class_exists( 'WC_Product_Variable' ) ) {
                 WC_Product_Variable::sync( $product_id );
             }
+
+            $this->log(
+                'info',
+                'Saved colour variation for product.',
+                array(
+                    'product_id'   => $product_id,
+                    'variation_id' => $variation_id,
+                    'sku'          => $sku,
+                    'price_value'  => $price_value,
+                    'stock_amount' => $stock_amount,
+                    'should_backorder' => $should_backorder,
+                )
+            );
         }
 
         /**
@@ -1025,6 +1479,15 @@ protected function import_row( array $data, $run_timestamp ) {
             if ( '' !== $sku && function_exists( 'wc_get_product_id_by_sku' ) ) {
                 $existing = (int) wc_get_product_id_by_sku( $sku );
                 if ( $existing > 0 && (int) wp_get_post_parent_id( $existing ) === $product_id ) {
+                    $this->log(
+                        'debug',
+                        'Located existing colour variation via SKU match.',
+                        array(
+                            'product_id'   => $product_id,
+                            'variation_id' => $existing,
+                            'sku'          => $sku,
+                        )
+                    );
                     return $existing;
                 }
             }
@@ -1040,6 +1503,15 @@ protected function import_row( array $data, $run_timestamp ) {
 
                 $existing = (int) $wpdb->get_var( $query );
                 if ( $existing > 0 ) {
+                    $this->log(
+                        'debug',
+                        'Located existing colour variation via Softone material match.',
+                        array(
+                            'product_id'   => $product_id,
+                            'variation_id' => $existing,
+                            'mtrl'         => $mtrl,
+                        )
+                    );
                     return $existing;
                 }
             }
@@ -1191,6 +1663,17 @@ protected function import_row( array $data, $run_timestamp ) {
                 return;
             }
 
+            $this->log(
+                'debug',
+                'Queued colour variation synchronisation request.',
+                array(
+                    'product_id'         => $product_id,
+                    'mtrl'               => $mtrl,
+                    'related_item_mtrls' => $related_item_mtrls,
+                    'colour_taxonomy'    => $colour_taxonomy,
+                )
+            );
+
             $this->pending_colour_variation_syncs[] = array(
                 'product_id'          => $product_id,
                 'mtrl'                => $mtrl,
@@ -1204,6 +1687,12 @@ protected function import_row( array $data, $run_timestamp ) {
             if ( empty( $this->pending_colour_variation_syncs ) ) {
                 return;
             }
+
+            $this->log(
+                'debug',
+                'Processing queued colour variation synchronisation requests.',
+                array( 'queue_size' => count( $this->pending_colour_variation_syncs ) )
+            );
 
             foreach ( $this->pending_colour_variation_syncs as $sync_request ) {
                 $product_id         = isset( $sync_request['product_id'] ) ? (int) $sync_request['product_id'] : 0;
@@ -1220,6 +1709,16 @@ protected function import_row( array $data, $run_timestamp ) {
                 }
 
                 try {
+                    $this->log(
+                        'debug',
+                        'Synchronising related colour variations.',
+                        array(
+                            'product_id'         => $product_id,
+                            'mtrl'               => $mtrl,
+                            'colour_taxonomy'    => $colour_taxonomy,
+                            'related_item_mtrls' => $related_item_mtrls,
+                        )
+                    );
                     $this->sync_related_colour_variations( $product_id, $mtrl, $related_item_mtrls, $colour_taxonomy );
                 } catch ( \Throwable $throwable ) {
                     $this->log(
@@ -1290,6 +1789,15 @@ protected function import_row( array $data, $run_timestamp ) {
                         }
 
                         $attribute->set_variation( true );
+                        $this->log(
+                            'debug',
+                            'Enabled variation usage for existing colour attribute during related sync.',
+                            array(
+                                'product_id'      => $product_id,
+                                'attribute_name'  => $name,
+                                'colour_taxonomy' => $colour_taxonomy,
+                            )
+                        );
                         $attributes[ $key ] = $attribute;
                         $attribute_key = $key;
                         break;
@@ -1312,6 +1820,14 @@ protected function import_row( array $data, $run_timestamp ) {
                         $attribute_object->set_position( isset( $attribute['position'] ) ? (int) $attribute['position'] : 0 );
                         $attribute_object->set_visible( true );
                         $attribute_object->set_variation( true );
+                        $this->log(
+                            'debug',
+                            'Converted legacy attribute array to WC_Product_Attribute for colour variations.',
+                            array(
+                                'product_id'      => $product_id,
+                                'colour_taxonomy' => $colour_taxonomy,
+                            )
+                        );
                         $attributes[ $key ] = $attribute_object;
                         $attribute_key = $key;
                         break;
@@ -1338,16 +1854,43 @@ protected function import_row( array $data, $run_timestamp ) {
                 $attribute_object->set_position( 0 );
                 $attribute_object->set_visible( true );
                 $attribute_object->set_variation( true );
+                $this->log(
+                    'debug',
+                    'Added colour attribute for related variation synchronisation.',
+                    array(
+                        'product_id'      => $product_id,
+                        'colour_taxonomy' => $colour_taxonomy,
+                        'term_ids'        => $combined_term_ids,
+                    )
+                );
                 $attributes[] = $attribute_object;
             } else {
                 $attribute_object = $attributes[ $attribute_key ];
                 if ( $attribute_object instanceof WC_Product_Attribute ) {
                     $attribute_object->set_options( $combined_term_ids );
                     $attribute_object->set_variation( true );
+                    $this->log(
+                        'debug',
+                        'Updated existing colour attribute options during related sync.',
+                        array(
+                            'product_id'      => $product_id,
+                            'colour_taxonomy' => $colour_taxonomy,
+                            'term_ids'        => $combined_term_ids,
+                        )
+                    );
                     $attributes[ $attribute_key ] = $attribute_object;
                 } elseif ( is_array( $attribute_object ) ) {
                     $attribute_object['options']   = $combined_term_ids;
                     $attribute_object['variation'] = true;
+                    $this->log(
+                        'debug',
+                        'Updated array-based colour attribute options during related sync.',
+                        array(
+                            'product_id'      => $product_id,
+                            'colour_taxonomy' => $colour_taxonomy,
+                            'term_ids'        => $combined_term_ids,
+                        )
+                    );
                     $attributes[ $attribute_key ]  = $attribute_object;
                 }
             }

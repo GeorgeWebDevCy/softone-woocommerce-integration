@@ -252,6 +252,7 @@ class Softone_Woocommerce_Integration {
         $this->loader->add_action( 'admin_post_softone_wc_integration_clear_sync_activity', $plugin_admin, 'handle_clear_sync_activity' );
 $this->loader->add_action( 'admin_post_' . $plugin_admin->get_delete_main_menu_action(), $plugin_admin, 'handle_delete_main_menu' );
 $this->loader->add_action( 'wp_ajax_' . $plugin_admin->get_sync_activity_action(), $plugin_admin, 'handle_sync_activity_ajax' );
+$this->loader->add_action( 'wp_ajax_' . $plugin_admin->get_item_import_ajax_action(), $plugin_admin, 'handle_item_import_ajax' );
 $this->loader->add_action( 'wp_ajax_' . $plugin_admin->get_delete_main_menu_ajax_action(), $plugin_admin, 'handle_delete_main_menu_ajax' );
 
 }

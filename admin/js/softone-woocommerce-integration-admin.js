@@ -402,4 +402,367 @@ return;
 startProcess();
 } );
 } );
+
+        $( function() {
+                if ( 'undefined' === typeof window.softoneItemImport ) {
+                        return;
+                }
+
+                var settings = window.softoneItemImport || {};
+                var $container = $( settings.containerSelector || '[data-softone-item-import]' );
+
+                if ( ! $container.length ) {
+                        return;
+                }
+
+                var ajaxUrl = settings.ajaxUrl || window.ajaxurl || '';
+
+                if ( ! ajaxUrl || ! settings.action || ! settings.nonce ) {
+                        return;
+                }
+
+                var $triggers = $container.find( settings.triggerSelector || '[data-softone-import-trigger]' );
+
+                if ( ! $triggers.length ) {
+                        return;
+                }
+
+                var $progress = $( settings.progressSelector || '#softone-item-import-progress' );
+                var $progressBar = $progress.find( '.softone-progress__bar, .softone-delete-menu-progress__bar' );
+                var $progressFill = $progress.find( '.softone-progress__bar-fill, .softone-delete-menu-progress__bar-fill' );
+                var $progressText = $( settings.progressTextSelector || '#softone-item-import-progress-text' );
+                var $status = $( settings.statusSelector || '#softone-item-import-status' );
+                var $lastRun = $( settings.lastRunSelector || '#softone-item-import-last-run' );
+
+                var state = {
+                        running: false,
+                        processId: '',
+                        total: null,
+                        processed: 0,
+                        created: 0,
+                        updated: 0,
+                        skipped: 0
+                };
+
+                var batchSize = parseInt( settings.batchSize, 10 );
+
+                if ( ! batchSize || batchSize < 1 ) {
+                        batchSize = 25;
+                }
+
+                var i18n = settings.i18n || {};
+
+                var setButtonsBusy = function( busy ) {
+                        $triggers.prop( 'disabled', !! busy );
+
+                        if ( busy ) {
+                                $triggers.attr( 'aria-busy', 'true' );
+                        } else {
+                                $triggers.removeAttr( 'aria-busy' );
+                        }
+                };
+
+                var ensureProgressVisible = function() {
+                        if ( $progress.length ) {
+                                $progress.prop( 'hidden', false );
+                        }
+                };
+
+                var resetProgress = function() {
+                        if ( $progressFill.length ) {
+                                $progressFill.css( 'width', '0%' );
+                        }
+
+                        if ( $progressBar.length ) {
+                                $progressBar.attr( 'aria-valuenow', 0 );
+                        }
+
+                        if ( $progressText.length ) {
+                                $progressText.text( '' );
+                        }
+
+                        if ( $progress.length ) {
+                                $progress.prop( 'hidden', true );
+                        }
+                };
+
+                var setProgressPercent = function( percent ) {
+                        if ( $progressFill.length ) {
+                                $progressFill.css( 'width', percent + '%' );
+                        }
+
+                        if ( $progressBar.length ) {
+                                $progressBar.attr( 'aria-valuenow', percent );
+                        }
+                };
+
+                var setProgressText = function( text ) {
+                        if ( $progressText.length ) {
+                                $progressText.text( text || '' );
+                        }
+                };
+
+                var showStatus = function( message, type ) {
+                        if ( ! $status.length ) {
+                                return;
+                        }
+
+                        $status.removeClass( 'notice-success notice-error notice-warning notice-info' );
+
+                        if ( ! message ) {
+                                $status.prop( 'hidden', true );
+                                return;
+                        }
+
+                        var className = 'notice';
+
+                        if ( 'success' === type || 'error' === type || 'warning' === type ) {
+                                className += ' notice-' + type;
+                        } else {
+                                className += ' notice-info';
+                        }
+
+                        $status.addClass( className ).text( message ).prop( 'hidden', false );
+                };
+
+                var formatProgress = function( processed, total ) {
+                        if ( total && total > 0 ) {
+                                var percent = Math.min( 100, Math.round( ( processed / total ) * 100 ) );
+                                var template = i18n.progressTemplate || '%1$s / %2$s (%3$s%%)';
+                                return template.replace( '%1$s', processed ).replace( '%2$s', total ).replace( '%3$s', percent );
+                        }
+
+                        var indeterminate = i18n.indeterminateTemplate || '%1$s items processed';
+                        return indeterminate.replace( '%1$s', processed );
+                };
+
+                var updateProgress = function() {
+                        ensureProgressVisible();
+
+                        var processed = state.processed > 0 ? state.processed : 0;
+                        var total = ( state.total !== null && state.total >= 0 ) ? state.total : null;
+
+                        if ( total && total > 0 ) {
+                                var percent = Math.min( 100, Math.round( ( processed / total ) * 100 ) );
+                                setProgressPercent( percent );
+                                setProgressText( formatProgress( processed, total ) );
+                        } else {
+                                setProgressPercent( processed > 0 ? 15 : 0 );
+                                setProgressText( formatProgress( processed, 0 ) );
+                        }
+                };
+
+                var handleError = function( message ) {
+                        setButtonsBusy( false );
+                        state.running = false;
+                        showStatus( message || i18n.genericError || '', 'error' );
+                };
+
+                var finishSuccess = function( message ) {
+                        state.running = false;
+                        setButtonsBusy( false );
+                        ensureProgressVisible();
+                        setProgressPercent( 100 );
+                        setProgressText( message || i18n.completeText || '' );
+                        showStatus( message || i18n.completeText || '', 'success' );
+                };
+
+                var applyLastRunMessage = function( text ) {
+                        if ( ! $lastRun.length ) {
+                                return;
+                        }
+
+                        if ( text ) {
+                                $lastRun.text( text ).prop( 'hidden', false );
+                        } else {
+                                $lastRun.text( '' ).prop( 'hidden', true );
+                        }
+                };
+
+                var appendWarnings = function( warnings ) {
+                        if ( ! warnings || ! warnings.length ) {
+                                return '';
+                        }
+
+                        var prefix = i18n.warningPrefix || '';
+                        return ( prefix ? prefix + ' ' : '' ) + warnings.join( ' ' );
+                };
+
+                var ajaxRequest = function( step, data ) {
+                        var payload = $.extend( {}, data || {}, {
+                                action: settings.action,
+                                nonce: settings.nonce,
+                                step: step
+                        } );
+
+                        return $.ajax( {
+                                url: ajaxUrl,
+                                type: 'POST',
+                                dataType: 'json',
+                                data: payload
+                        } );
+                };
+
+                var runBatch = function() {
+                        ajaxRequest( 'batch', {
+                                process_id: state.processId,
+                                batch_size: batchSize
+                        } ).done( function( response ) {
+                                if ( ! response || ! response.success ) {
+                                        var message = ( response && response.data && response.data.message ) ? response.data.message : i18n.genericError;
+                                        handleError( message );
+                                        return;
+                                }
+
+                                var data = response.data || {};
+
+                                if ( typeof data.total_items !== 'undefined' ) {
+                                        if ( null === data.total_items ) {
+                                                state.total = null;
+                                        } else {
+                                                state.total = parseInt( data.total_items, 10 );
+                                                if ( isNaN( state.total ) ) {
+                                                        state.total = null;
+                                                }
+                                        }
+                                }
+
+                                state.processed = data.processed_items ? parseInt( data.processed_items, 10 ) : 0;
+                                state.created   = data.created_items ? parseInt( data.created_items, 10 ) : 0;
+                                state.updated   = data.updated_items ? parseInt( data.updated_items, 10 ) : 0;
+                                state.skipped   = data.skipped_items ? parseInt( data.skipped_items, 10 ) : 0;
+
+                                updateProgress();
+
+                                var noticeType = data.notice_type || 'info';
+                                var statusMessage = data.message || '';
+
+                                if ( data.warnings && data.warnings.length ) {
+                                        var warningsText = appendWarnings( data.warnings );
+                                        statusMessage = statusMessage ? statusMessage + ' ' + warningsText : warningsText;
+                                        if ( 'info' === noticeType ) {
+                                                noticeType = 'warning';
+                                        }
+                                }
+
+                                if ( statusMessage ) {
+                                        showStatus( statusMessage, noticeType );
+                                }
+
+                                if ( data.last_run_formatted ) {
+                                        applyLastRunMessage( data.last_run_formatted );
+                                }
+
+                                if ( data.complete ) {
+                                        finishSuccess( data.summary_message || data.message );
+                                        return;
+                                }
+
+                                if ( ! state.running ) {
+                                        return;
+                                }
+
+                                runBatch();
+                        } ).fail( function( jqXHR ) {
+                                var message = i18n.genericError || '';
+
+                                if ( jqXHR && jqXHR.responseJSON && jqXHR.responseJSON.data && jqXHR.responseJSON.data.message ) {
+                                        message = jqXHR.responseJSON.data.message;
+                                }
+
+                                handleError( message );
+                        } );
+                };
+
+                var startProcess = function( options ) {
+                        if ( state.running ) {
+                                return;
+                        }
+
+                        state.running = true;
+                        state.processId = '';
+                        state.total = null;
+                        state.processed = 0;
+                        state.created = 0;
+                        state.updated = 0;
+                        state.skipped = 0;
+
+                        setButtonsBusy( true );
+                        resetProgress();
+                        ensureProgressVisible();
+                        setProgressPercent( 0 );
+                        setProgressText( i18n.preparingText || '' );
+                        showStatus( '', '' );
+
+                        var payload = $.extend( {}, options || {} );
+
+                        ajaxRequest( 'init', payload ).done( function( response ) {
+                                if ( ! response || ! response.success ) {
+                                        var message = ( response && response.data && response.data.message ) ? response.data.message : i18n.genericError;
+                                        handleError( message );
+                                        return;
+                                }
+
+                                var data = response.data || {};
+
+                                state.processId = data.process_id || '';
+                                if ( typeof data.total_items !== 'undefined' ) {
+                                        if ( null === data.total_items ) {
+                                                state.total = null;
+                                        } else {
+                                                state.total = parseInt( data.total_items, 10 );
+                                                if ( isNaN( state.total ) ) {
+                                                        state.total = null;
+                                                }
+                                        }
+                                }
+                                state.processed = data.processed_items ? parseInt( data.processed_items, 10 ) : 0;
+                                state.created   = data.created_items ? parseInt( data.created_items, 10 ) : 0;
+                                state.updated   = data.updated_items ? parseInt( data.updated_items, 10 ) : 0;
+                                state.skipped   = data.skipped_items ? parseInt( data.skipped_items, 10 ) : 0;
+
+                                if ( data.last_run_formatted ) {
+                                        applyLastRunMessage( data.last_run_formatted );
+                                }
+
+                                if ( data.message ) {
+                                        showStatus( data.message, 'info' );
+                                }
+
+                                if ( data.complete ) {
+                                        finishSuccess( data.summary_message || data.message );
+                                        return;
+                                }
+
+                                if ( ! state.processId ) {
+                                        handleError( i18n.genericError || '' );
+                                        return;
+                                }
+
+                                updateProgress();
+                                runBatch();
+                        } ).fail( function( jqXHR ) {
+                                var message = i18n.genericError || '';
+
+                                if ( jqXHR && jqXHR.responseJSON && jqXHR.responseJSON.data && jqXHR.responseJSON.data.message ) {
+                                        message = jqXHR.responseJSON.data.message;
+                                }
+
+                                handleError( message );
+                        } );
+                };
+
+                $triggers.on( 'click', function( event ) {
+                        event.preventDefault();
+
+                        var $button = $( this );
+                        var options = {
+                                force_full_import: $button.data( 'softoneImportForceFull' ) ? 1 : 0,
+                                force_taxonomy_refresh: $button.data( 'softoneImportRefreshTaxonomy' ) ? 1 : 0
+                        };
+
+                        startProcess( options );
+                } );
+        } );
+
 })( jQuery );

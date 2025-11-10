@@ -141,6 +141,34 @@ private $menu_delete_default_batch_size = 20;
  */
 private $menu_delete_state_lifetime = HOUR_IN_SECONDS;
 
+/**
+ * AJAX action used to batch item imports.
+ *
+ * @var string
+ */
+private $item_import_ajax_action = 'softone_wc_integration_item_import';
+
+/**
+ * Base transient key for storing item import state.
+ *
+ * @var string
+ */
+private $item_import_state_transient = 'softone_wc_integration_item_import_state_';
+
+/**
+ * Lifetime (in seconds) for item import state transients.
+ *
+ * @var int
+ */
+private $item_import_state_lifetime = HOUR_IN_SECONDS;
+
+/**
+ * Default batch size for item import processing.
+ *
+ * @var int
+ */
+private $item_import_default_batch_size = 25;
+
         /**
          * Base transient key for connection test notices.
          *
@@ -499,29 +527,36 @@ submit_button();
 <?php submit_button( __( 'Test Connection', 'softone-woocommerce-integration' ), 'secondary', 'softone_wc_integration_test', false ); ?>
 </form>
 
-<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" style="margin-top: 1.5em;">
-<?php wp_nonce_field( Softone_Item_Sync::ADMIN_ACTION ); ?>
-<input type="hidden" name="action" value="<?php echo esc_attr( Softone_Item_Sync::ADMIN_ACTION ); ?>" />
 <?php
-$last_run = get_option( Softone_Item_Sync::OPTION_LAST_RUN );
-if ( $last_run ) {
-printf(
-'<p><em>%s</em></p>',
-esc_html( sprintf( __( 'Last import completed on %s.', 'softone-woocommerce-integration' ), wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $last_run ) ) )
-);
-}
-submit_button( __( 'Run Item Import', 'softone-woocommerce-integration' ), 'secondary', 'softone_wc_integration_run_item_import', false );
+$last_run         = get_option( Softone_Item_Sync::OPTION_LAST_RUN );
+$last_run_message = $this->format_item_import_last_run_message( $last_run );
 ?>
-</form>
-
-<form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" style="margin-top: 1.5em;">
-<?php wp_nonce_field( Softone_Item_Sync::ADMIN_ACTION ); ?>
-<input type="hidden" name="action" value="<?php echo esc_attr( Softone_Item_Sync::ADMIN_ACTION ); ?>" />
-<input type="hidden" name="softone_wc_integration_force_full" value="1" />
-<input type="hidden" name="softone_wc_integration_force_taxonomy_refresh" value="1" />
-<p class="description"><?php esc_html_e( 'Force a full item import and refresh category and menu assignments for every product.', 'softone-woocommerce-integration' ); ?></p>
-<?php submit_button( __( 'Re-sync Categories & Menus', 'softone-woocommerce-integration' ), 'secondary', 'softone_wc_integration_resync_taxonomies', false ); ?>
-</form>
+<div class="softone-item-import" id="softone-item-import-panel" data-softone-item-import="1" style="margin-top: 1.5em;">
+<?php if ( '' !== $last_run_message ) : ?>
+        <p class="description" id="softone-item-import-last-run"><?php echo esc_html( $last_run_message ); ?></p>
+<?php else : ?>
+        <p class="description" id="softone-item-import-last-run" hidden></p>
+<?php endif; ?>
+        <p>
+                <button type="button" class="button button-secondary softone-item-import__trigger" data-softone-import-trigger="run" data-softone-import-force-full="0" data-softone-import-refresh-taxonomy="0">
+<?php esc_html_e( 'Run Item Import', 'softone-woocommerce-integration' ); ?>
+                </button>
+        </p>
+        <p class="description"><?php esc_html_e( 'Run a standard import to fetch the latest Softone catalogue updates.', 'softone-woocommerce-integration' ); ?></p>
+        <p>
+                <button type="button" class="button button-secondary softone-item-import__trigger" data-softone-import-trigger="resync" data-softone-import-force-full="1" data-softone-import-refresh-taxonomy="1">
+<?php esc_html_e( 'Re-sync Categories & Menus', 'softone-woocommerce-integration' ); ?>
+                </button>
+        </p>
+        <p class="description"><?php esc_html_e( 'Force a full item import and refresh category and menu assignments for every product.', 'softone-woocommerce-integration' ); ?></p>
+        <div class="softone-progress softone-delete-menu-progress" id="softone-item-import-progress" hidden>
+                <div class="softone-progress__bar softone-delete-menu-progress__bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                        <div class="softone-progress__bar-fill softone-delete-menu-progress__bar-fill"></div>
+                </div>
+                <p class="softone-progress__text softone-delete-menu-progress__text" id="softone-item-import-progress-text"></p>
+        </div>
+        <div class="notice softone-item-import-status" id="softone-item-import-status" hidden></div>
+</div>
 
 <form
 id="softone-delete-main-menu-form"
@@ -639,6 +674,15 @@ $result = $this->delete_nav_menu_by_name( $menu_name );
         }
 
         /**
+         * Retrieve the AJAX action name used to batch item imports.
+         *
+         * @return string
+         */
+        public function get_item_import_ajax_action() {
+                return $this->item_import_ajax_action;
+        }
+
+        /**
          * Handle capability-protected AJAX requests for sync activity updates.
          *
          * Expects a valid nonce (under the `nonce` key), an optional `since`
@@ -712,6 +756,393 @@ array(
 );
 
 }
+
+        /**
+         * Handle AJAX requests for batched item imports.
+         */
+        public function handle_item_import_ajax() {
+
+                if ( ! current_user_can( $this->capability ) ) {
+                        wp_send_json_error(
+                                array(
+                                        'message' => __( 'You do not have permission to run item imports.', 'softone-woocommerce-integration' ),
+                                ),
+                                403
+                        );
+                }
+
+                check_ajax_referer( $this->item_import_ajax_action, 'nonce' );
+
+                $step = 'init';
+
+                if ( isset( $_REQUEST['step'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+                        $step = sanitize_key( wp_unslash( $_REQUEST['step'] ) ); // phpcs:ignore WordPress.Security.NonceVerification
+                }
+
+                switch ( $step ) {
+                        case 'batch':
+                                $this->process_item_import_batch_ajax();
+                                break;
+                        case 'init':
+                                $this->process_item_import_init_ajax();
+                                break;
+                        default:
+                                wp_send_json_error(
+                                        array(
+                                                'message' => __( 'Invalid item import request.', 'softone-woocommerce-integration' ),
+                                        ),
+                                        400
+                                );
+                }
+        }
+
+        /**
+         * Initialise a batched item import request.
+         */
+        private function process_item_import_init_ajax() {
+
+                $force_full_import = null;
+                if ( isset( $_REQUEST['force_full_import'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+                        $force_full_import = (bool) absint( wp_unslash( $_REQUEST['force_full_import'] ) ); // phpcs:ignore WordPress.Security.NonceVerification
+                }
+
+                $force_taxonomy_refresh = false;
+                if ( isset( $_REQUEST['force_taxonomy_refresh'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+                        $force_taxonomy_refresh = (bool) absint( wp_unslash( $_REQUEST['force_taxonomy_refresh'] ) ); // phpcs:ignore WordPress.Security.NonceVerification
+                }
+
+                try {
+                        $state              = $this->item_sync->begin_async_import( $force_full_import, $force_taxonomy_refresh );
+                        $state['user_id']   = get_current_user_id();
+                        list( $process_id, $state ) = $this->create_item_import_state( $state );
+
+                        wp_send_json_success(
+                                array(
+                                        'process_id'              => $process_id,
+                                        'processed_items'         => (int) $state['stats']['processed'],
+                                        'created_items'           => (int) $state['stats']['created'],
+                                        'updated_items'           => (int) $state['stats']['updated'],
+                                        'skipped_items'           => (int) $state['stats']['skipped'],
+                                        'total_items'             => isset( $state['total_rows'] ) ? $state['total_rows'] : null,
+                                        'force_taxonomy_refresh'  => (bool) $state['force_taxonomy_refresh'],
+                                        'message'                 => __( 'Preparing item import…', 'softone-woocommerce-integration' ),
+                                        'complete'                => false,
+                                )
+                        );
+                } catch ( Softone_API_Client_Exception $exception ) {
+                        $message = sprintf( __( '[SO-ADM-006] Item import failed: %s', 'softone-woocommerce-integration' ), $exception->getMessage() );
+                        $this->store_import_notice( 'error', $message );
+                        wp_send_json_error( array( 'message' => $message ), 500 );
+                } catch ( Exception $exception ) {
+                        $message = sprintf( __( '[SO-ADM-007] Item import failed: %s', 'softone-woocommerce-integration' ), $exception->getMessage() );
+                        $this->store_import_notice( 'error', $message );
+                        wp_send_json_error( array( 'message' => $message ), 500 );
+                }
+        }
+
+        /**
+         * Process the next batch for an active item import session.
+         */
+        private function process_item_import_batch_ajax() {
+
+                if ( ! isset( $_REQUEST['process_id'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+                        wp_send_json_error(
+                                array(
+                                        'message' => __( 'Missing item import session identifier.', 'softone-woocommerce-integration' ),
+                                ),
+                                400
+                        );
+                }
+
+                $process_id = sanitize_text_field( wp_unslash( $_REQUEST['process_id'] ) ); // phpcs:ignore WordPress.Security.NonceVerification
+
+                if ( '' === $process_id ) {
+                        wp_send_json_error(
+                                array(
+                                        'message' => __( 'Invalid item import session.', 'softone-woocommerce-integration' ),
+                                ),
+                                400
+                        );
+                }
+
+                $state = $this->get_item_import_state( $process_id );
+                if ( is_wp_error( $state ) ) {
+                        wp_send_json_error(
+                                array(
+                                        'message' => $state->get_error_message(),
+                                ),
+                                400
+                        );
+                }
+
+                $current_user_id = get_current_user_id();
+                if ( isset( $state['user_id'] ) && (int) $state['user_id'] !== $current_user_id ) {
+                        wp_send_json_error(
+                                array(
+                                        'message' => __( 'This item import session belongs to a different user.', 'softone-woocommerce-integration' ),
+                                ),
+                                403
+                        );
+                }
+
+                $batch_size = $this->item_import_default_batch_size;
+                if ( isset( $_REQUEST['batch_size'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+                        $batch_size = (int) wp_unslash( $_REQUEST['batch_size'] ); // phpcs:ignore WordPress.Security.NonceVerification
+                }
+                $batch_size = $this->normalize_item_import_batch_size( $batch_size );
+
+                try {
+                        $result       = $this->item_sync->run_async_import_batch( $state, $batch_size );
+                        $updated_state = $result['state'];
+                        $updated_state['user_id'] = $current_user_id;
+                } catch ( Softone_API_Client_Exception $exception ) {
+                        $this->delete_item_import_state( $process_id );
+                        $message = sprintf( __( '[SO-ADM-006] Item import failed: %s', 'softone-woocommerce-integration' ), $exception->getMessage() );
+                        $this->store_import_notice( 'error', $message );
+                        wp_send_json_error( array( 'message' => $message ), 500 );
+                } catch ( Exception $exception ) {
+                        $this->delete_item_import_state( $process_id );
+                        $message = sprintf( __( '[SO-ADM-007] Item import failed: %s', 'softone-woocommerce-integration' ), $exception->getMessage() );
+                        $this->store_import_notice( 'error', $message );
+                        wp_send_json_error( array( 'message' => $message ), 500 );
+                }
+
+                $stats    = isset( $result['stats'] ) && is_array( $result['stats'] ) ? $result['stats'] : array();
+                $warnings = isset( $result['warnings'] ) && is_array( $result['warnings'] ) ? $result['warnings'] : array();
+                $total    = isset( $result['total_rows'] ) ? $result['total_rows'] : ( isset( $updated_state['total_rows'] ) ? $updated_state['total_rows'] : null );
+
+                if ( $result['complete'] ) {
+                        $this->delete_item_import_state( $process_id );
+
+                        if ( isset( $updated_state['started_at'] ) ) {
+                                update_option( Softone_Item_Sync::OPTION_LAST_RUN, (int) $updated_state['started_at'] );
+                        }
+
+                        $stale_processed = isset( $result['stale_processed'] ) ? (int) $result['stale_processed'] : 0;
+                        $summary_message = $this->build_item_import_summary_message( $stats, ! empty( $updated_state['force_taxonomy_refresh'] ), $stale_processed );
+
+                        $this->store_import_notice( 'success', $summary_message );
+
+                        $response = array(
+                                'process_id'      => $process_id,
+                                'complete'        => true,
+                                'processed_items' => isset( $stats['processed'] ) ? (int) $stats['processed'] : 0,
+                                'created_items'   => isset( $stats['created'] ) ? (int) $stats['created'] : 0,
+                                'updated_items'   => isset( $stats['updated'] ) ? (int) $stats['updated'] : 0,
+                                'skipped_items'   => isset( $stats['skipped'] ) ? (int) $stats['skipped'] : 0,
+                                'total_items'     => $total,
+                                'stale_processed' => $stale_processed,
+                                'message'         => $summary_message,
+                                'summary_message' => $summary_message,
+                                'notice_type'     => 'success',
+                                'warnings'        => $warnings,
+                        );
+
+                        if ( isset( $updated_state['started_at'] ) ) {
+                                $response['last_run']           = (int) $updated_state['started_at'];
+                                $response['last_run_formatted'] = $this->format_item_import_last_run_message( (int) $updated_state['started_at'] );
+                        }
+
+                        wp_send_json_success( $response );
+                }
+
+                $this->update_item_import_state( $process_id, $updated_state );
+
+                $processed = isset( $stats['processed'] ) ? (int) $stats['processed'] : 0;
+                $message   = $this->build_item_import_progress_message( $processed, $total );
+
+                $response = array(
+                        'process_id'      => $process_id,
+                        'complete'        => false,
+                        'processed_items' => $processed,
+                        'created_items'   => isset( $stats['created'] ) ? (int) $stats['created'] : 0,
+                        'updated_items'   => isset( $stats['updated'] ) ? (int) $stats['updated'] : 0,
+                        'skipped_items'   => isset( $stats['skipped'] ) ? (int) $stats['skipped'] : 0,
+                        'batch_processed' => isset( $result['batch']['processed'] ) ? (int) $result['batch']['processed'] : 0,
+                        'batch_created'   => isset( $result['batch']['created'] ) ? (int) $result['batch']['created'] : 0,
+                        'batch_updated'   => isset( $result['batch']['updated'] ) ? (int) $result['batch']['updated'] : 0,
+                        'batch_skipped'   => isset( $result['batch']['skipped'] ) ? (int) $result['batch']['skipped'] : 0,
+                        'total_items'     => $total,
+                        'message'         => $message,
+                        'notice_type'     => empty( $warnings ) ? 'info' : 'warning',
+                        'warnings'        => $warnings,
+                );
+
+                wp_send_json_success( $response );
+        }
+
+        /**
+         * Create a new transient-backed item import state payload.
+         *
+         * @param array<string,mixed> $state Initial state.
+         * @return array{0:string,1:array<string,mixed>} Process identifier and persisted state.
+         */
+        private function create_item_import_state( array $state ) {
+
+                $process_id = function_exists( 'wp_generate_uuid4' ) ? wp_generate_uuid4() : md5( uniqid( 'softone_import', true ) );
+                $state['process_id'] = $process_id;
+                $state['created_at'] = time();
+
+                $this->update_item_import_state( $process_id, $state );
+
+                return array( $process_id, $state );
+        }
+
+        /**
+         * Retrieve the persisted state for a batched item import.
+         *
+         * @param string $process_id Process identifier.
+         * @return array<string,mixed>|WP_Error
+         */
+        private function get_item_import_state( $process_id ) {
+
+                $state = get_transient( $this->get_item_import_state_key( $process_id ) );
+
+                if ( false === $state || ! is_array( $state ) ) {
+                        return new WP_Error( 'softone_item_import_state_missing', __( 'The item import session has expired or could not be found.', 'softone-woocommerce-integration' ) );
+                }
+
+                return $state;
+        }
+
+        /**
+         * Persist the updated item import state.
+         *
+         * @param string               $process_id Process identifier.
+         * @param array<string,mixed>  $state      State payload.
+         * @return void
+         */
+        private function update_item_import_state( $process_id, array $state ) {
+
+                set_transient( $this->get_item_import_state_key( $process_id ), $state, $this->item_import_state_lifetime );
+        }
+
+        /**
+         * Remove a persisted item import state payload.
+         *
+         * @param string $process_id Process identifier.
+         * @return void
+         */
+        private function delete_item_import_state( $process_id ) {
+                delete_transient( $this->get_item_import_state_key( $process_id ) );
+        }
+
+        /**
+         * Build the transient key for storing item import state.
+         *
+         * @param string $process_id Process identifier.
+         * @return string
+         */
+        private function get_item_import_state_key( $process_id ) {
+                return $this->item_import_state_transient . sanitize_key( $process_id );
+        }
+
+        /**
+         * Normalise the requested batch size for item imports.
+         *
+         * @param int $requested_size Requested batch size.
+         * @return int
+         */
+        private function normalize_item_import_batch_size( $requested_size ) {
+
+                $size = (int) $requested_size;
+                if ( $size <= 0 ) {
+                        $size = $this->item_import_default_batch_size;
+                }
+
+                $max_size = (int) apply_filters( 'softone_wc_integration_item_import_max_batch_size', 250 );
+                if ( $max_size > 0 ) {
+                        $size = min( $size, $max_size );
+                }
+
+                return max( 1, $size );
+        }
+
+        /**
+         * Build a human-readable progress message for an in-flight item import.
+         *
+         * @param int      $processed Total processed items.
+         * @param int|null $total     Total items expected, when known.
+         * @return string
+         */
+        private function build_item_import_progress_message( $processed, $total ) {
+
+                $processed = max( 0, (int) $processed );
+                $total     = is_numeric( $total ) ? (int) $total : null;
+
+                if ( null !== $total && $total > 0 ) {
+                        return sprintf(
+                                /* translators: 1: processed items, 2: total items */
+                                __( 'Processed %1$d of %2$d items…', 'softone-woocommerce-integration' ),
+                                $processed,
+                                $total
+                        );
+                }
+
+                return sprintf(
+                        /* translators: %d: processed items */
+                        __( 'Processed %d items…', 'softone-woocommerce-integration' ),
+                        $processed
+                );
+        }
+
+        /**
+         * Build the completion summary message for an item import.
+         *
+         * @param array<string,int> $stats                   Aggregated statistics.
+         * @param bool              $force_taxonomy_refresh Whether taxonomy refresh was forced.
+         * @param int               $stale_processed        Number of stale products handled.
+         * @return string
+         */
+        private function build_item_import_summary_message( array $stats, $force_taxonomy_refresh, $stale_processed ) {
+
+                $processed = isset( $stats['processed'] ) ? (int) $stats['processed'] : 0;
+                $created   = isset( $stats['created'] ) ? (int) $stats['created'] : 0;
+                $updated   = isset( $stats['updated'] ) ? (int) $stats['updated'] : 0;
+                $skipped   = isset( $stats['skipped'] ) ? (int) $stats['skipped'] : 0;
+
+                $message = sprintf(
+                        /* translators: 1: total processed, 2: created count, 3: updated count, 4: skipped count */
+                        __( 'Item import completed successfully. Processed %1$d items (%2$d created, %3$d updated, %4$d skipped).', 'softone-woocommerce-integration' ),
+                        $processed,
+                        $created,
+                        $updated,
+                        $skipped
+                );
+
+                if ( $stale_processed > 0 ) {
+                        $message .= ' ' . sprintf(
+                                /* translators: %d: number of stale products handled */
+                                __( 'Marked %d stale products.', 'softone-woocommerce-integration' ),
+                                (int) $stale_processed
+                        );
+                }
+
+                if ( $force_taxonomy_refresh ) {
+                        $message .= ' ' . __( 'Category and menu assignments were refreshed.', 'softone-woocommerce-integration' );
+                }
+
+                return $message;
+        }
+
+        /**
+         * Format the "last run" message for the item import interface.
+         *
+         * @param int $timestamp Unix timestamp.
+         * @return string
+         */
+        private function format_item_import_last_run_message( $timestamp ) {
+
+                $timestamp = (int) $timestamp;
+                if ( $timestamp <= 0 ) {
+                        return '';
+                }
+
+                return sprintf(
+                        __( 'Last import completed on %s.', 'softone-woocommerce-integration' ),
+                        wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $timestamp )
+                );
+        }
 
         /**
          * Handle AJAX requests that batch-delete the Main Menu.
@@ -3482,6 +3913,31 @@ array(
 __( 'Successfully deleted the %s menu.', 'softone-woocommerce-integration' ),
 $this->main_menu_name
 ),
+),
+)
+);
+
+wp_localize_script(
+$this->plugin_name,
+'softoneItemImport',
+array(
+'ajaxUrl'            => admin_url( 'admin-ajax.php' ),
+'action'             => $this->get_item_import_ajax_action(),
+'nonce'              => wp_create_nonce( $this->get_item_import_ajax_action() ),
+'containerSelector'  => '#softone-item-import-panel',
+'triggerSelector'    => '.softone-item-import__trigger',
+'progressSelector'   => '#softone-item-import-progress',
+'progressTextSelector' => '#softone-item-import-progress-text',
+'statusSelector'     => '#softone-item-import-status',
+'lastRunSelector'    => '#softone-item-import-last-run',
+'batchSize'          => $this->item_import_default_batch_size,
+'i18n'               => array(
+'preparingText'        => __( 'Preparing item import…', 'softone-woocommerce-integration' ),
+'progressTemplate'     => __( '%1$s of %2$s items processed (%3$s%%).', 'softone-woocommerce-integration' ),
+'indeterminateTemplate'=> __( '%1$s items processed so far…', 'softone-woocommerce-integration' ),
+'completeText'         => __( 'Item import completed successfully.', 'softone-woocommerce-integration' ),
+'genericError'         => __( 'An unexpected error occurred while importing items.', 'softone-woocommerce-integration' ),
+'warningPrefix'        => __( 'Warning:', 'softone-woocommerce-integration' ),
 ),
 )
 );
