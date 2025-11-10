@@ -1054,6 +1054,8 @@ protected function import_row( array $data, $run_timestamp ) {
         $related_item_mtrls = array_values( array_filter( array_map( 'strval', $attribute_assignments['related_item_mtrls'] ) ) );
     }
 
+    $colour_taxonomy = '';
+
     if ( function_exists( 'wc_attribute_taxonomy_name' ) ) {
         $colour_taxonomy = wc_attribute_taxonomy_name( $this->resolve_colour_attribute_slug() );
     }
@@ -1365,6 +1367,16 @@ protected function import_row( array $data, $run_timestamp ) {
 
             $parent_product->save();
 
+            $this->log(
+                'debug',
+                'Updated parent product while ensuring colour variation.',
+                array(
+                    'product_id'      => $product_id,
+                    'colour_taxonomy' => $colour_taxonomy,
+                    'colour_term_id'  => $colour_term_id,
+                )
+            );
+
             $term = get_term( $colour_term_id, $colour_taxonomy );
             if ( ! $term || is_wp_error( $term ) ) {
                 return;
@@ -1404,6 +1416,16 @@ protected function import_row( array $data, $run_timestamp ) {
             $variation->set_attributes( array( $attribute_key => $term->slug ) );
             $variation->set_status( 'publish' );
 
+            $this->log(
+                'debug',
+                'Configured variation attributes for colour.',
+                array(
+                    'product_id'    => $product_id,
+                    'attribute_key' => $attribute_key,
+                    'term_slug'     => $term->slug,
+                )
+            );
+
             if ( '' !== $sku ) {
                 $variation->set_sku( $sku );
             }
@@ -1434,6 +1456,17 @@ protected function import_row( array $data, $run_timestamp ) {
                 }
                 $variation->set_stock_status( 'instock' );
             }
+
+            $this->log(
+                'debug',
+                'Applied stock configuration to colour variation.',
+                array(
+                    'product_id'       => $product_id,
+                    'variation_id'     => $variation->get_id() ? (int) $variation->get_id() : 0,
+                    'stock_amount'     => $stock_amount,
+                    'should_backorder' => $should_backorder,
+                )
+            );
 
             $variation_id = $variation->save();
 
@@ -2756,6 +2789,17 @@ protected function prepare_attribute_assignments( array $data, $product, array $
             'related_item_mtrl' => '',
         );
 
+        $product_id_for_logging = 0;
+        if ( is_object( $product ) && method_exists( $product, 'get_id' ) ) {
+            $product_id_for_logging = (int) $product->get_id();
+        }
+
+        $this->log(
+            'debug',
+            'Preparing attribute assignments for product.',
+            array( 'product_id' => $product_id_for_logging )
+        );
+
     // ---------------- Hidden custom attribute: softone_mtrl ----------------
     $mtrl_value = (string) $this->get_value( $data, array( 'mtrl', 'MTRL', 'mtrl_code', 'MTRL_CODE' ) );
     $mtrl_value = trim( $mtrl_value );
@@ -2768,6 +2812,15 @@ protected function prepare_attribute_assignments( array $data, $product, array $
             $attr->set_visible( false );
             $attr->set_variation( false );
             $assignments['attributes'][] = $attr;
+
+            $this->log(
+                'debug',
+                'Added hidden softone_mtrl attribute to assignments.',
+                array(
+                    'product_id' => $product_id_for_logging,
+                    'mtrl_value' => $mtrl_value,
+                )
+            );
         } catch ( \Throwable $e ) {
             if ( method_exists( $product, 'get_id' ) ) {
                 $pid = (int) $product->get_id();
@@ -2791,6 +2844,16 @@ protected function prepare_attribute_assignments( array $data, $product, array $
             $attr->set_visible( false );
             $attr->set_variation( false );
             $assignments['attributes'][] = $attr;
+
+            $this->log(
+                'debug',
+                'Added hidden related_item_mtrl attribute to assignments.',
+                array(
+                    'product_id'           => $product_id_for_logging,
+                    'raw_value'            => $related_mtrl,
+                    'parsed_related_count' => count( $related_mtrl_tokens ),
+                )
+            );
         } catch ( \Throwable $e ) {
             if ( method_exists( $product, 'get_id' ) ) {
                 $pid = (int) $product->get_id();
@@ -2837,16 +2900,44 @@ protected function prepare_attribute_assignments( array $data, $product, array $
             if ( $taxonomy !== '' ) {
                 $assignments['clear'][] = $taxonomy;
             }
+            $this->log(
+                'debug',
+                'Skipping attribute because the value was empty.',
+                array(
+                    'product_id'    => $product_id_for_logging,
+                    'attribute_slug'=> $slug,
+                    'taxonomy'      => $taxonomy,
+                )
+            );
             continue;
         }
 
         $attribute_id = $this->ensure_attribute_taxonomy( $slug, $label );
         if ( ! $attribute_id ) {
+            $this->log(
+                'warning',
+                'Unable to ensure attribute taxonomy for assignment.',
+                array(
+                    'product_id'    => $product_id_for_logging,
+                    'attribute_slug'=> $slug,
+                    'taxonomy'      => $taxonomy,
+                )
+            );
             continue;
         }
 
         $term_id = $this->ensure_attribute_term( $taxonomy, $value );
         if ( ! $term_id ) {
+            $this->log(
+                'warning',
+                'Unable to ensure attribute term for assignment.',
+                array(
+                    'product_id'    => $product_id_for_logging,
+                    'attribute_slug'=> $slug,
+                    'taxonomy'      => $taxonomy,
+                    'attribute_value' => $value,
+                )
+            );
             continue;
         }
 
@@ -2862,11 +2953,36 @@ protected function prepare_attribute_assignments( array $data, $product, array $
             $assignments['attributes'][]      = $attr;
             $assignments['terms'][ $taxonomy ] = array( (int) $term_id );
             $assignments['values'][ $taxonomy ] = $value;
+
+            $this->log(
+                'debug',
+                'Prepared taxonomy attribute assignment.',
+                array(
+                    'product_id'      => $product_id_for_logging,
+                    'attribute_slug'  => $slug,
+                    'taxonomy'        => $taxonomy,
+                    'attribute_id'    => (int) $attribute_id,
+                    'term_id'         => (int) $term_id,
+                    'is_variation'    => (bool) $is_variation,
+                    'position'        => (int) $position,
+                )
+            );
         }
     }
 
     $assignments['related_item_mtrl']  = $related_mtrl;
     $assignments['related_item_mtrls'] = $related_mtrl_tokens;
+
+    $this->log(
+        'debug',
+        'Finished preparing attribute assignments for product.',
+        array(
+            'product_id'               => $product_id_for_logging,
+            'attribute_count'          => count( $assignments['attributes'] ),
+            'taxonomy_assignment_keys' => array_keys( $assignments['terms'] ),
+            'clear_taxonomies'         => $assignments['clear'],
+        )
+    );
 
     return $assignments;
 }
@@ -2996,8 +3112,27 @@ protected function resolve_colour_attribute_slug() {
 
                 if ( $attribute_id > 0 && ! $this->ensure_attribute_taxonomy_is_registered( $slug, $label ) ) {
                     unset( $this->attribute_taxonomy_cache[ $key ] );
+                    $this->log(
+                        'warning',
+                        'Attribute taxonomy cache hit failed registration check.',
+                        array(
+                            'slug'          => $slug,
+                            'label'         => $label,
+                            'attribute_id'  => $attribute_id,
+                        )
+                    );
                     return 0;
                 }
+
+                $this->log(
+                    'debug',
+                    'Using cached attribute taxonomy.',
+                    array(
+                        'slug'         => $slug,
+                        'label'        => $label,
+                        'attribute_id' => $attribute_id,
+                    )
+                );
                 return $attribute_id;
             }
 
@@ -3010,8 +3145,27 @@ protected function resolve_colour_attribute_slug() {
 
                 if ( ! $this->ensure_attribute_taxonomy_is_registered( $slug, $label ) ) {
                     unset( $this->attribute_taxonomy_cache[ $key ] );
+                    $this->log(
+                        'warning',
+                        'Existing attribute taxonomy failed registration check during ensure.',
+                        array(
+                            'slug'         => $slug,
+                            'label'        => $label,
+                            'attribute_id' => $attribute_id,
+                        )
+                    );
                     return 0;
                 }
+
+                $this->log(
+                    'debug',
+                    'Located existing attribute taxonomy.',
+                    array(
+                        'slug'         => $slug,
+                        'label'        => $label,
+                        'attribute_id' => $attribute_id,
+                    )
+                );
                 return $attribute_id;
             }
 
@@ -3046,8 +3200,27 @@ protected function resolve_colour_attribute_slug() {
 
             if ( ! $this->ensure_attribute_taxonomy_is_registered( $slug, $label ) ) {
                 unset( $this->attribute_taxonomy_cache[ $key ] );
+                $this->log(
+                    'warning',
+                    'New attribute taxonomy failed registration check after creation.',
+                    array(
+                        'slug'         => $slug,
+                        'label'        => $label,
+                        'attribute_id' => $attribute_id,
+                    )
+                );
                 return 0;
             }
+
+            $this->log(
+                'info',
+                'Created attribute taxonomy for assignment.',
+                array(
+                    'slug'         => $slug,
+                    'label'        => $label,
+                    'attribute_id' => $attribute_id,
+                )
+            );
 
             return $attribute_id;
         }
@@ -3103,13 +3276,30 @@ protected function resolve_colour_attribute_slug() {
         protected function ensure_attribute_term( $taxonomy, $value ) {
             $value = trim( (string) $value );
             if ( '' === $value ) {
+                $this->log(
+                    'debug',
+                    'Skipping attribute term ensure because value was empty.',
+                    array(
+                        'taxonomy' => $taxonomy,
+                    )
+                );
                 return 0;
             }
 
             $key = $this->build_attribute_term_cache_key( $taxonomy, $value );
             if ( array_key_exists( $key, $this->attribute_term_cache ) ) {
                 $this->cache_stats['attribute_term_cache_hits']++;
-                return (int) $this->attribute_term_cache[ $key ];
+                $term_id = (int) $this->attribute_term_cache[ $key ];
+                $this->log(
+                    'debug',
+                    'Using cached attribute term.',
+                    array(
+                        'taxonomy' => $taxonomy,
+                        'value'    => $value,
+                        'term_id'  => $term_id,
+                    )
+                );
+                return $term_id;
             }
 
             $this->cache_stats['attribute_term_cache_misses']++;
@@ -3118,6 +3308,15 @@ protected function resolve_colour_attribute_slug() {
             if ( $term && ! is_wp_error( $term ) ) {
                 $term_id = (int) $term->term_id;
                 $this->attribute_term_cache[ $key ] = $term_id;
+                $this->log(
+                    'debug',
+                    'Located existing attribute term by name.',
+                    array(
+                        'taxonomy' => $taxonomy,
+                        'value'    => $value,
+                        'term_id'  => $term_id,
+                    )
+                );
                 return $term_id;
             }
 
@@ -3146,6 +3345,15 @@ protected function resolve_colour_attribute_slug() {
                             }
                         }
                         $this->attribute_term_cache[ $key ] = $existing_term_id;
+                        $this->log(
+                            'debug',
+                            'Reused existing attribute term after term_exists error.',
+                            array(
+                                'taxonomy' => $taxonomy,
+                                'value'    => $value,
+                                'term_id'  => $existing_term_id,
+                            )
+                        );
                         return $existing_term_id;
                     }
                 }
@@ -3158,6 +3366,15 @@ protected function resolve_colour_attribute_slug() {
             $term_id = (int) $result['term_id'];
             $this->cache_stats['attribute_term_created']++;
             $this->attribute_term_cache[ $key ] = $term_id;
+            $this->log(
+                'info',
+                'Created new attribute term.',
+                array(
+                    'taxonomy' => $taxonomy,
+                    'value'    => $value,
+                    'term_id'  => $term_id,
+                )
+            );
             return $term_id;
         }
 
