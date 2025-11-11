@@ -2266,11 +2266,33 @@ protected function import_row( array $data, $run_timestamp ) {
             }
 
             $child_mtrls = $this->find_child_mtrls_for_parent( $parent_mtrl );
+            $child_mtrls = array_values( array_unique( array_filter( array_map( 'strval', $child_mtrls ) ) ) );
 
             if ( empty( $child_mtrls ) ) {
                 delete_post_meta( $product_id, self::META_RELATED_ITEM_MTRLS );
             } else {
                 update_post_meta( $product_id, self::META_RELATED_ITEM_MTRLS, $child_mtrls );
+            }
+
+            if ( ! empty( $child_mtrls ) && function_exists( 'wc_attribute_taxonomy_name' ) ) {
+                $colour_taxonomy = wc_attribute_taxonomy_name( $this->resolve_colour_attribute_slug() );
+
+                if ( '' !== $colour_taxonomy ) {
+                    $queue_mtrls = array_values(
+                        array_unique(
+                            array_filter(
+                                array_map(
+                                    'strval',
+                                    array_merge( array( $parent_mtrl ), $child_mtrls )
+                                )
+                            )
+                        )
+                    );
+
+                    if ( ! empty( $queue_mtrls ) ) {
+                        $this->queue_colour_variation_sync( $product_id, $parent_mtrl, $queue_mtrls, $colour_taxonomy );
+                    }
+                }
             }
 
             if ( ! function_exists( 'wc_get_product' ) || ! class_exists( 'WC_Product_Attribute' ) ) {
