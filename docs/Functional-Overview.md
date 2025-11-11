@@ -4,7 +4,7 @@ This document explains the plugin’s functionality based exclusively on the sou
 
 ## Architecture
 
-- Bootstrap: `softone-woocommerce-integration.php` defines activation/deactivation hooks, loads the core class, and boots the update checker. Version constant: `1.8.63`.
+- Bootstrap: `softone-woocommerce-integration.php` defines activation/deactivation hooks, loads the core class, and boots the update checker. Version constant: `1.8.64`.
 - Core class: `includes/class-softone-woocommerce-integration.php` wires up:
   - Internationalisation: `includes/class-softone-woocommerce-integration-i18n.php` loads the `softone-woocommerce-integration` textdomain.
   - Admin UI: `admin/class-softone-woocommerce-integration-admin.php` (settings, API tester, logs, import controls).
@@ -183,4 +183,3 @@ This document explains the plugin’s functionality based exclusively on the sou
 ## Uninstall
 
 - `uninstall.php` contains the standard skeleton; it currently exits on non-WordPress uninstall contexts.
-

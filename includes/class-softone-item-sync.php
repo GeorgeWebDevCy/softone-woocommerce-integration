@@ -2875,8 +2875,12 @@ protected function prepare_attribute_assignments( array $data, $product, array $
         $colour_value = $this->normalize_colour_value( (string) $fallback_attributes['colour'] );
     }
 
-    $size_value  = trim( $this->get_value( $data, array( 'size_name', 'size' ) ) );
-    $brand_value = trim( $this->get_value( $data, array( 'brand_name', 'brand' ) ) );
+    $size_value  = $this->normalize_simple_attribute_value(
+        $this->get_value( $data, array( 'size_name', 'size' ) )
+    );
+    $brand_value = $this->normalize_simple_attribute_value(
+        $this->get_value( $data, array( 'brand_name', 'brand' ) )
+    );
 
     // (slug => [Label, Value, Position])
     // For colour we resolve to pa_colour or pa_color safely
@@ -3037,8 +3041,31 @@ protected function resolve_colour_attribute_slug() {
             if ( function_exists( 'mb_convert_case' ) ) {
                 return mb_convert_case( $colour, MB_CASE_TITLE, 'UTF-8' );
             }
-            return ucwords( strtolower( $colour ) );
+        return ucwords( strtolower( $colour ) );
+    }
+
+    /**
+     * Normalise simple attribute values (e.g., Size, Brand) and strip placeholders.
+     *
+     * Treats common placeholders like '-', 'n/a', 'na', 'none' as empty so that
+     * we do not create meaningless attribute terms on products.
+     *
+     * @param mixed $value Raw attribute value.
+     * @return string Normalised value or empty string when not meaningful.
+     */
+    protected function normalize_simple_attribute_value( $value ) {
+        $value = trim( (string) $value );
+        if ( '' === $value ) {
+            return '';
         }
+
+        $placeholders = array( '-', 'n/a', 'na', 'none' );
+        if ( in_array( strtolower( $value ), $placeholders, true ) ) {
+            return '';
+        }
+
+        return $value;
+    }
 
         /**
          * Convert a stored attribute option into a colour term ID.
