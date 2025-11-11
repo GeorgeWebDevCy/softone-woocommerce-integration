@@ -1339,6 +1339,7 @@ protected function import_row( array $data, $run_timestamp ) {
                     $name = $attribute->get_name();
                     if ( $name === $colour_taxonomy || $name === $normalized_key ) {
                         $attribute->set_variation( true );
+                        $this->set_attribute_taxonomy_flag( $attribute, true );
                         $this->log(
                             'debug',
                             'Marked colour attribute for variation usage on parent product.',
@@ -1822,6 +1823,7 @@ protected function import_row( array $data, $run_timestamp ) {
                         }
 
                         $attribute->set_variation( true );
+                        $this->set_attribute_taxonomy_flag( $attribute, true );
                         $this->log(
                             'debug',
                             'Enabled variation usage for existing colour attribute during related sync.',
@@ -1853,6 +1855,7 @@ protected function import_row( array $data, $run_timestamp ) {
                         $attribute_object->set_position( isset( $attribute['position'] ) ? (int) $attribute['position'] : 0 );
                         $attribute_object->set_visible( true );
                         $attribute_object->set_variation( true );
+                        $this->set_attribute_taxonomy_flag( $attribute_object, true );
                         $this->log(
                             'debug',
                             'Converted legacy attribute array to WC_Product_Attribute for colour variations.',
@@ -1887,6 +1890,7 @@ protected function import_row( array $data, $run_timestamp ) {
                 $attribute_object->set_position( 0 );
                 $attribute_object->set_visible( true );
                 $attribute_object->set_variation( true );
+                $this->set_attribute_taxonomy_flag( $attribute_object, true );
                 $this->log(
                     'debug',
                     'Added colour attribute for related variation synchronisation.',
@@ -1902,6 +1906,7 @@ protected function import_row( array $data, $run_timestamp ) {
                 if ( $attribute_object instanceof WC_Product_Attribute ) {
                     $attribute_object->set_options( $combined_term_ids );
                     $attribute_object->set_variation( true );
+                    $this->set_attribute_taxonomy_flag( $attribute_object, true );
                     $this->log(
                         'debug',
                         'Updated existing colour attribute options during related sync.',
@@ -1999,6 +2004,7 @@ protected function import_row( array $data, $run_timestamp ) {
                             }
                         }
                         $attribute->set_variation( true );
+                        $this->set_attribute_taxonomy_flag( $attribute, true );
                         $attributes[ $key ] = $attribute;
                     } elseif ( is_array( $attribute ) ) {
                         $existing_term_ids = array();
@@ -2016,6 +2022,7 @@ protected function import_row( array $data, $run_timestamp ) {
                         $attribute_object->set_position( isset( $attribute['position'] ) ? (int) $attribute['position'] : 0 );
                         $attribute_object->set_visible( true );
                         $attribute_object->set_variation( true );
+                        $this->set_attribute_taxonomy_flag( $attribute_object, true );
                         $attributes[ $key ] = $attribute_object;
                     }
 
@@ -2115,12 +2122,14 @@ protected function import_row( array $data, $run_timestamp ) {
                 $attribute_object->set_position( 0 );
                 $attribute_object->set_visible( true );
                 $attribute_object->set_variation( true );
+                $this->set_attribute_taxonomy_flag( $attribute_object, true );
                 $attributes[] = $attribute_object;
             } else {
                 $attribute_object = $attributes[ $attribute_key ];
                 if ( $attribute_object instanceof WC_Product_Attribute ) {
                     $attribute_object->set_options( $final_term_ids );
                     $attribute_object->set_variation( true );
+                    $this->set_attribute_taxonomy_flag( $attribute_object, true );
                     $attributes[ $attribute_key ] = $attribute_object;
                 } elseif ( is_array( $attribute_object ) ) {
                     $attribute_object['options']   = $final_term_ids;
@@ -2353,6 +2362,7 @@ protected function import_row( array $data, $run_timestamp ) {
             $attribute_object->set_options( $sorted_children );
             $attribute_object->set_visible( false );
             $attribute_object->set_variation( false );
+            $this->set_attribute_taxonomy_flag( $attribute_object, false );
 
             if ( null === $related_key ) {
                 $attributes['related_item_mtrl'] = $attribute_object;
@@ -2905,6 +2915,7 @@ protected function prepare_attribute_assignments( array $data, $product, array $
             $attr->set_options( array( $mtrl_value ) );
             $attr->set_visible( false );
             $attr->set_variation( false );
+            $this->set_attribute_taxonomy_flag( $attr, false );
             $assignments['attributes'][] = $attr;
 
             $this->log(
@@ -2937,6 +2948,7 @@ protected function prepare_attribute_assignments( array $data, $product, array $
             $attr->set_options( empty( $related_mtrl_tokens ) ? array( $related_mtrl ) : $related_mtrl_tokens );
             $attr->set_visible( false );
             $attr->set_variation( false );
+            $this->set_attribute_taxonomy_flag( $attr, false );
             $assignments['attributes'][] = $attr;
 
             $this->log(
@@ -3047,6 +3059,7 @@ protected function prepare_attribute_assignments( array $data, $product, array $
             $attr->set_position( (int) $position );
             $attr->set_visible( true );
             $attr->set_variation( (bool) $is_variation );
+            $this->set_attribute_taxonomy_flag( $attr, true );
 
             $assignments['attributes'][]      = $attr;
             $assignments['terms'][ $taxonomy ] = array( (int) $term_id );
@@ -3159,6 +3172,28 @@ protected function resolve_colour_attribute_slug() {
         }
 
         return $value;
+    }
+
+    /**
+     * Configure the taxonomy flag on a product attribute when supported.
+     *
+     * @param WC_Product_Attribute $attribute  Attribute instance.
+     * @param bool                 $is_taxonomy Whether the attribute references a taxonomy.
+     * @return void
+     */
+    protected function set_attribute_taxonomy_flag( $attribute, $is_taxonomy ) {
+        if ( ! $attribute instanceof WC_Product_Attribute ) {
+            return;
+        }
+
+        if ( method_exists( $attribute, 'set_taxonomy' ) ) {
+            $attribute->set_taxonomy( (bool) $is_taxonomy );
+            return;
+        }
+
+        if ( method_exists( $attribute, 'set_is_taxonomy' ) ) {
+            $attribute->set_is_taxonomy( (bool) $is_taxonomy );
+        }
     }
 
         /**
