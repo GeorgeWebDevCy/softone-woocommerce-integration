@@ -78,6 +78,9 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 
 == Changelog ==
 
+= 1.8.70 =
+* Introduce a process trace diagnostics screen that streams detailed logging for authentication, item imports, and variation decisions in real time.
+
 = 1.8.69 =
 * Keep colourable SoftOne items as simple products until a related material exists so standalone products retain their SKUs.
 

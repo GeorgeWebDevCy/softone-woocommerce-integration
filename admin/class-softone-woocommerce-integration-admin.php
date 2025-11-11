@@ -57,19 +57,26 @@ class Softone_Woocommerce_Integration_Admin {
          */
         private $category_logs_slug = 'softone-woocommerce-integration-category-logs';
 
-        /**
-         * Sync activity viewer submenu slug.
-         *
-         * @var string
-         */
-        private $sync_activity_slug = 'softone-woocommerce-integration-sync-activity';
+/**
+ * Sync activity viewer submenu slug.
+ *
+ * @var string
+ */
+private $sync_activity_slug = 'softone-woocommerce-integration-sync-activity';
 
-        /**
-         * API tester submenu slug.
-         *
-         * @var string
-         */
-        private $api_tester_slug = 'softone-woocommerce-integration-api-tester';
+/**
+ * Process trace viewer submenu slug.
+ *
+ * @var string
+ */
+private $process_trace_slug = 'softone-woocommerce-integration-process-trace';
+
+/**
+ * API tester submenu slug.
+ *
+ * @var string
+ */
+private $api_tester_slug = 'softone-woocommerce-integration-api-tester';
 
         /**
          * Maximum number of category log entries to display.
@@ -97,7 +104,14 @@ class Softone_Woocommerce_Integration_Admin {
          *
          * @var string
          */
-        private $clear_activity_action = 'softone_wc_integration_clear_sync_activity';
+private $clear_activity_action = 'softone_wc_integration_clear_sync_activity';
+
+/**
+ * AJAX action used to generate process trace output.
+ *
+ * @var string
+ */
+private $process_trace_action = 'softone_wc_integration_process_trace';
 
 /**
  * Action name for deleting the Main Menu navigation menu.
@@ -287,19 +301,28 @@ private $item_import_default_batch_size = 25;
                         array( $this, 'render_category_logs_page' )
                 );
 
-                add_submenu_page(
-                        $this->menu_slug,
-                        __( 'Sync Activity', 'softone-woocommerce-integration' ),
-                        __( 'Sync Activity', 'softone-woocommerce-integration' ),
-                        $this->capability,
-                        $this->sync_activity_slug,
-                        array( $this, 'render_sync_activity_page' )
-                );
+add_submenu_page(
+$this->menu_slug,
+__( 'Sync Activity', 'softone-woocommerce-integration' ),
+__( 'Sync Activity', 'softone-woocommerce-integration' ),
+$this->capability,
+$this->sync_activity_slug,
+array( $this, 'render_sync_activity_page' )
+);
 
-                add_submenu_page(
-                        $this->menu_slug,
-                        __( 'API Tester', 'softone-woocommerce-integration' ),
-                        __( 'API Tester', 'softone-woocommerce-integration' ),
+add_submenu_page(
+$this->menu_slug,
+__( 'Process Trace', 'softone-woocommerce-integration' ),
+__( 'Process Trace', 'softone-woocommerce-integration' ),
+$this->capability,
+$this->process_trace_slug,
+array( $this, 'render_process_trace_page' )
+);
+
+add_submenu_page(
+$this->menu_slug,
+__( 'API Tester', 'softone-woocommerce-integration' ),
+__( 'API Tester', 'softone-woocommerce-integration' ),
                         $this->capability,
                         $this->api_tester_slug,
                         array( $this, 'render_api_tester_page' )
@@ -323,14 +346,23 @@ private $item_import_default_batch_size = 25;
                         array( $this, 'render_category_logs_page' )
                 );
 
-                add_submenu_page(
-                        'woocommerce',
-                        __( 'Sync Activity', 'softone-woocommerce-integration' ),
-                        __( 'Sync Activity', 'softone-woocommerce-integration' ),
-                        $this->capability,
-                        $this->sync_activity_slug,
-                        array( $this, 'render_sync_activity_page' )
-                );
+add_submenu_page(
+'woocommerce',
+__( 'Sync Activity', 'softone-woocommerce-integration' ),
+__( 'Sync Activity', 'softone-woocommerce-integration' ),
+$this->capability,
+$this->sync_activity_slug,
+array( $this, 'render_sync_activity_page' )
+);
+
+add_submenu_page(
+'woocommerce',
+__( 'Process Trace', 'softone-woocommerce-integration' ),
+__( 'Process Trace', 'softone-woocommerce-integration' ),
+$this->capability,
+$this->process_trace_slug,
+array( $this, 'render_process_trace_page' )
+);
 
         }
 
@@ -673,14 +705,23 @@ $result = $this->delete_nav_menu_by_name( $menu_name );
                 return $this->delete_main_menu_ajax_action;
         }
 
-        /**
-         * Retrieve the AJAX action name used to batch item imports.
-         *
-         * @return string
-         */
-        public function get_item_import_ajax_action() {
-                return $this->item_import_ajax_action;
-        }
+/**
+ * Retrieve the AJAX action name used to batch item imports.
+ *
+ * @return string
+ */
+public function get_item_import_ajax_action() {
+return $this->item_import_ajax_action;
+}
+
+/**
+ * Retrieve the AJAX action name used for process trace generation.
+ *
+ * @return string
+ */
+public function get_process_trace_action() {
+return $this->process_trace_action;
+}
 
         /**
          * Handle capability-protected AJAX requests for sync activity updates.
@@ -756,6 +797,106 @@ array(
 );
 
 }
+
+        /**
+         * Handle AJAX requests that generate detailed process traces.
+         *
+         * @return void
+         */
+        public function handle_process_trace_ajax() {
+
+                if ( ! current_user_can( $this->capability ) ) {
+                        wp_send_json_error(
+                                array(
+                                        'message' => __( 'You do not have permission to run a process trace.', 'softone-woocommerce-integration' ),
+                                ),
+                                403
+                        );
+                }
+
+                check_ajax_referer( $this->process_trace_action, 'nonce' );
+
+                if ( function_exists( 'set_time_limit' ) ) {
+                        @set_time_limit( 0 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+                }
+
+                $force_full_import = false;
+                if ( isset( $_POST['force_full_import'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+                        $force_full_import = $this->normalize_process_trace_flag( wp_unslash( $_POST['force_full_import'] ) ); // phpcs:ignore WordPress.Security.NonceVerification
+                }
+
+                $force_taxonomy_refresh = false;
+                if ( isset( $_POST['force_taxonomy_refresh'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+                        $force_taxonomy_refresh = $this->normalize_process_trace_flag( wp_unslash( $_POST['force_taxonomy_refresh'] ) ); // phpcs:ignore WordPress.Security.NonceVerification
+                }
+
+                $trace           = new Softone_Process_Trace();
+                $stream_logger   = new Softone_Process_Trace_Stream_Logger( $trace );
+                $activity_logger = new Softone_Process_Trace_Activity_Logger( $trace );
+                $api_client      = new Softone_Process_Trace_Api_Client( $trace, array(), $stream_logger );
+                $item_sync       = new Softone_Item_Sync( $api_client, $stream_logger, null, $activity_logger );
+
+                $trace->add_event(
+                        'note',
+                        'trace_started',
+                        __( 'Starting Softone process trace.', 'softone-woocommerce-integration' ),
+                        array(
+                                'force_full_import'      => $force_full_import,
+                                'force_taxonomy_refresh' => $force_taxonomy_refresh,
+                        )
+                );
+
+                $started_at = time();
+
+                try {
+                        $result      = $item_sync->sync( $force_full_import, $force_taxonomy_refresh );
+                        $finished_at = time();
+
+                        $summary = $this->prepare_trace_summary( $result, $started_at, $finished_at, true );
+
+                        $trace->add_event(
+                                'note',
+                                'trace_completed',
+                                __( 'Softone process trace completed successfully.', 'softone-woocommerce-integration' ),
+                                $summary
+                        );
+
+                        $prepared_entries = $this->prepare_trace_entries_for_response( $trace->get_entries() );
+                        $latest_timestamp = $this->get_latest_timestamp_from_entries( $prepared_entries );
+
+                        wp_send_json_success(
+                                array(
+                                        'entries'          => $prepared_entries,
+                                        'summary'          => $summary,
+                                        'latestTimestamp'  => $latest_timestamp,
+                                )
+                        );
+                } catch ( Exception $exception ) {
+                        $finished_at = time();
+
+                        $trace->add_event(
+                                'note',
+                                'trace_failed',
+                                __( 'Softone process trace failed.', 'softone-woocommerce-integration' ),
+                                array( 'message' => $exception->getMessage() ),
+                                'error'
+                        );
+
+                        $prepared_entries = $this->prepare_trace_entries_for_response( $trace->get_entries() );
+                        $latest_timestamp = $this->get_latest_timestamp_from_entries( $prepared_entries );
+                        $summary          = $this->prepare_trace_summary( array(), $started_at, $finished_at, false );
+
+                        wp_send_json_error(
+                                array(
+                                        'message'         => $exception->getMessage(),
+                                        'entries'         => $prepared_entries,
+                                        'summary'         => $summary,
+                                        'latestTimestamp' => $latest_timestamp,
+                                ),
+                                500
+                        );
+                }
+        }
 
         /**
          * Handle AJAX requests for batched item imports.
@@ -1547,6 +1688,116 @@ array(
         }
 
         /**
+         * Prepare trace entries for JSON responses.
+         *
+         * @param array<int,array<string,mixed>> $entries Raw trace entries.
+         *
+         * @return array<int,array<string,mixed>>
+         */
+        private function prepare_trace_entries_for_response( array $entries ) {
+                $prepared = array();
+
+                foreach ( $entries as $entry ) {
+                        if ( ! is_array( $entry ) ) {
+                                continue;
+                        }
+
+                        $timestamp = isset( $entry['timestamp'] ) ? (int) $entry['timestamp'] : time();
+
+                        $prepared[] = array(
+                                'timestamp' => $timestamp,
+                                'time'      => $this->format_trace_timestamp( $timestamp ),
+                                'type'      => isset( $entry['type'] ) ? (string) $entry['type'] : '',
+                                'action'    => isset( $entry['action'] ) ? (string) $entry['action'] : '',
+                                'level'     => isset( $entry['level'] ) ? (string) $entry['level'] : 'info',
+                                'message'   => isset( $entry['message'] ) ? (string) $entry['message'] : '',
+                                'context'   => isset( $entry['context'] ) && is_array( $entry['context'] ) ? $entry['context'] : array(),
+                        );
+                }
+
+                return $prepared;
+        }
+
+        /**
+         * Prepare a human-readable summary for process trace runs.
+         *
+         * @param array<string,mixed> $result      Raw sync result payload.
+         * @param int                 $started_at  Trace start timestamp.
+         * @param int                 $finished_at Trace finish timestamp.
+         * @param bool                $success     Whether the trace completed successfully.
+         *
+         * @return array<string,mixed>
+         */
+        private function prepare_trace_summary( array $result, $started_at, $finished_at, $success ) {
+                $started_at  = max( 0, (int) $started_at );
+                $finished_at = max( $started_at, (int) $finished_at );
+                $duration    = max( 0, $finished_at - $started_at );
+
+                $summary = array(
+                        'success'             => (bool) $success,
+                        'processed'           => isset( $result['processed'] ) ? (int) $result['processed'] : 0,
+                        'created'             => isset( $result['created'] ) ? (int) $result['created'] : 0,
+                        'updated'             => isset( $result['updated'] ) ? (int) $result['updated'] : 0,
+                        'skipped'             => isset( $result['skipped'] ) ? (int) $result['skipped'] : 0,
+                        'stale_processed'     => isset( $result['stale_processed'] ) ? (int) $result['stale_processed'] : 0,
+                        'started_at'          => $started_at,
+                        'finished_at'         => $finished_at,
+                        'duration_seconds'    => $duration,
+                        'started_at_formatted'  => $this->format_trace_timestamp( $started_at ),
+                        'finished_at_formatted' => $this->format_trace_timestamp( $finished_at ),
+                        'duration_human'      => $duration > 0 ? human_time_diff( $started_at, $finished_at ) : __( 'less than a minute', 'softone-woocommerce-integration' ),
+                );
+
+                return $summary;
+        }
+
+        /**
+         * Format a trace timestamp for display.
+         *
+         * @param int $timestamp Unix timestamp.
+         *
+         * @return string
+         */
+        private function format_trace_timestamp( $timestamp ) {
+                $timestamp = (int) $timestamp;
+
+                if ( $timestamp <= 0 ) {
+                        return '';
+                }
+
+                $date_format = (string) get_option( 'date_format', 'Y-m-d' );
+                $time_format = (string) get_option( 'time_format', 'H:i' );
+                $format      = trim( $date_format . ' ' . $time_format );
+
+                if ( function_exists( 'wp_date' ) ) {
+                        return wp_date( $format, $timestamp );
+                }
+
+                return date_i18n( $format, $timestamp );
+        }
+
+        /**
+         * Normalise user-submitted boolean flags for the process trace request.
+         *
+         * @param mixed $value Raw submitted value.
+         *
+         * @return bool
+         */
+        private function normalize_process_trace_flag( $value ) {
+                if ( is_bool( $value ) ) {
+                        return $value;
+                }
+
+                if ( is_numeric( $value ) ) {
+                        return (bool) absint( $value );
+                }
+
+                $value = strtolower( trim( (string) $value ) );
+
+                return in_array( $value, array( '1', 'true', 'yes', 'on' ), true );
+        }
+
+        /**
         * Display the category synchronisation log viewer interface.
         *
         * Outputs a paginated-style summary of recent category sync events,
@@ -1809,6 +2060,20 @@ $display_time = __( 'Unknown time', 'softone-woocommerce-integration' );
 </div>
 <?php
 
+        }
+
+        /**
+         * Render the process trace diagnostic page.
+         *
+         * @return void
+         */
+        public function render_process_trace_page() {
+
+                if ( ! current_user_can( $this->capability ) ) {
+                        return;
+                }
+
+                include plugin_dir_path( __FILE__ ) . 'partials/softone-woocommerce-integration-process-trace.php';
         }
 
         /**
@@ -3880,7 +4145,7 @@ return new WP_Query( $query_args );
 	 *
 	 * @since    1.0.0
 	 */
-	public function enqueue_scripts() {
+public function enqueue_scripts( $hook_suffix = '' ) {
 
 		wp_enqueue_script( $this->plugin_name, plugin_dir_url( __FILE__ ) . 'js/softone-woocommerce-integration-admin.js', array( 'jquery' ), $this->version, false );
 
@@ -3941,6 +4206,72 @@ array(
 ),
 )
 );
+
+$current_page = '';
+if ( isset( $_GET['page'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+        $current_page = sanitize_key( wp_unslash( $_GET['page'] ) ); // phpcs:ignore WordPress.Security.NonceVerification
+}
+
+if ( $current_page === $this->process_trace_slug ) {
+        wp_enqueue_script(
+                'softone-process-trace',
+                plugin_dir_url( __FILE__ ) . 'js/softone-process-trace.js',
+                array(),
+                $this->version,
+                true
+        );
+
+        $date_format = (string) get_option( 'date_format', 'Y-m-d' );
+        $time_format = (string) get_option( 'time_format', 'H:i' );
+
+        $trace_strings = array(
+                'runTrace'         => __( 'Run process trace', 'softone-woocommerce-integration' ),
+                'running'          => __( 'Running process trace…', 'softone-woocommerce-integration' ),
+                'completed'        => __( 'Process trace completed.', 'softone-woocommerce-integration' ),
+                'failed'           => __( 'Process trace failed.', 'softone-woocommerce-integration' ),
+                'empty'            => __( 'No events were recorded during this trace.', 'softone-woocommerce-integration' ),
+                'summaryHeading'   => __( 'Summary', 'softone-woocommerce-integration' ),
+                'startedAt'        => __( 'Started at', 'softone-woocommerce-integration' ),
+                'finishedAt'       => __( 'Finished at', 'softone-woocommerce-integration' ),
+                'duration'         => __( 'Duration', 'softone-woocommerce-integration' ),
+                'processed'        => __( 'Processed', 'softone-woocommerce-integration' ),
+                'created'          => __( 'Created', 'softone-woocommerce-integration' ),
+                'updated'          => __( 'Updated', 'softone-woocommerce-integration' ),
+                'skipped'          => __( 'Skipped', 'softone-woocommerce-integration' ),
+                'staleProcessed'   => __( 'Stale products updated', 'softone-woocommerce-integration' ),
+                'details'          => __( 'Details', 'softone-woocommerce-integration' ),
+                'copyContext'      => __( 'Copy context', 'softone-woocommerce-integration' ),
+                'copied'           => __( 'Copied!', 'softone-woocommerce-integration' ),
+                'copyFailed'       => __( 'Copy failed', 'softone-woocommerce-integration' ),
+                'errorPrefix'      => __( 'Error:', 'softone-woocommerce-integration' ),
+                'successStatus'    => __( 'Success', 'softone-woocommerce-integration' ),
+                'failureStatus'    => __( 'Failed', 'softone-woocommerce-integration' ),
+                'durationFallback' => __( 'Less than a minute', 'softone-woocommerce-integration' ),
+        );
+
+        $trace_data = array(
+                'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+                'action'  => $this->get_process_trace_action(),
+                'nonce'   => wp_create_nonce( $this->get_process_trace_action() ),
+                'strings' => $trace_strings,
+                'options' => array(
+                        'forceFullImport'      => array(
+                                'label'       => __( 'Force full import', 'softone-woocommerce-integration' ),
+                                'description' => __( 'Ignore cached timestamps and fetch the entire Softone catalogue.', 'softone-woocommerce-integration' ),
+                        ),
+                        'forceTaxonomyRefresh' => array(
+                                'label'       => __( 'Refresh taxonomy assignments', 'softone-woocommerce-integration' ),
+                                'description' => __( 'Rebuild attribute and category relationships during the trace.', 'softone-woocommerce-integration' ),
+                        ),
+                ),
+                'format'  => array(
+                        'date' => $date_format,
+                        'time' => $time_format,
+                ),
+        );
+
+        wp_localize_script( 'softone-process-trace', 'softoneProcessTrace', $trace_data );
+}
 
 }
 

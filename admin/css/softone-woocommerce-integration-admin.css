@@ -4,143 +4,143 @@
  */
 
 .softone-api-tester .notice {
-        margin-top: 16px;
+		margin-top: 16px;
 }
 
 .softone-api-layout {
-        display: grid;
-        gap: 24px;
-        margin-top: 24px;
+		display: grid;
+		gap: 24px;
+		margin-top: 24px;
 }
 
 .softone-api-card {
-        background: #fff;
-        border: 1px solid #dcdcde;
-        border-radius: 6px;
-        padding: 24px;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+		background: #fff;
+		border: 1px solid #dcdcde;
+		border-radius: 6px;
+		padding: 24px;
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .softone-api-card h2 {
-        margin-top: 0;
+		margin-top: 0;
 }
 
 .softone-api-card__intro {
-        color: #50575e;
-        margin-bottom: 16px;
-        margin-top: 0;
+		color: #50575e;
+		margin-bottom: 16px;
+		margin-top: 0;
 }
 
 .softone-api-settings-summary {
-        display: grid;
-        gap: 12px;
-        margin: 0;
+		display: grid;
+		gap: 12px;
+		margin: 0;
 }
 
 .softone-api-settings-summary__row {
-        display: grid;
-        gap: 4px;
+		display: grid;
+		gap: 4px;
 }
 
 .softone-api-settings-summary__row dt {
-        font-weight: 600;
-        color: #1d2327;
+		font-weight: 600;
+		color: #1d2327;
 }
 
 .softone-api-settings-summary__row dd {
-        margin: 0;
-        color: #50575e;
-        word-break: break-all;
+		margin: 0;
+		color: #50575e;
+		word-break: break-all;
 }
 
 .softone-api-form {
-        display: flex;
-        flex-direction: column;
-        gap: 24px;
+		display: flex;
+		flex-direction: column;
+		gap: 24px;
 }
 
 .softone-api-form-grid {
-        display: grid;
-        gap: 16px;
+		display: grid;
+		gap: 16px;
 }
 
 .softone-api-field {
-        border: 1px solid #dcdcde;
-        border-radius: 4px;
-        padding: 16px;
-        background: #fbfbfc;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
+		border: 1px solid #dcdcde;
+		border-radius: 4px;
+		padding: 16px;
+		background: #fbfbfc;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
 }
 
 .softone-api-field label,
 .softone-api-field__label {
-        font-weight: 600;
-        color: #1d2327;
+		font-weight: 600;
+		color: #1d2327;
 }
 
 .softone-api-field select,
 .softone-api-field input[type="text"],
 .softone-api-textarea {
-        width: 100%;
-        max-width: 100%;
-        box-sizing: border-box;
+		width: 100%;
+		max-width: 100%;
+		box-sizing: border-box;
 }
 
 .softone-api-field .description {
-        margin: 0;
-        color: #50575e;
+		margin: 0;
+		color: #50575e;
 }
 
 .softone-api-field--checkbox {
-        justify-content: center;
+		justify-content: center;
 }
 
 .softone-api-checkbox {
-        display: flex;
-        gap: 8px;
-        align-items: flex-start;
+		display: flex;
+		gap: 8px;
+		align-items: flex-start;
 }
 
 .softone-api-field--full {
-        grid-column: 1 / -1;
+		grid-column: 1 / -1;
 }
 
 .softone-api-form__actions {
-        display: flex;
-        justify-content: flex-end;
+		display: flex;
+		justify-content: flex-end;
 }
 
 .softone-api-card--response h4 {
-        margin-bottom: 8px;
-        margin-top: 24px;
+		margin-bottom: 8px;
+		margin-top: 24px;
 }
 
 .softone-api-card--response h4:first-of-type {
-        margin-top: 16px;
+		margin-top: 16px;
 }
 
 .softone-api-response__code {
-        background: #f6f7f7;
-        border-radius: 4px;
-        border: 1px solid #dcdcde;
-        padding: 16px;
-        margin: 0;
-        overflow-x: auto;
-        font-family: Menlo, Consolas, monospace;
-        font-size: 13px;
-        line-height: 1.4;
+		background: #f6f7f7;
+		border-radius: 4px;
+		border: 1px solid #dcdcde;
+		padding: 16px;
+		margin: 0;
+		overflow-x: auto;
+		font-family: Menlo, Consolas, monospace;
+		font-size: 13px;
+		line-height: 1.4;
 }
 
 .softone-api-response__subtitle {
-        margin-bottom: 8px;
+		margin-bottom: 8px;
 }
 
 .softone-api-field--highlight {
-        border-color: #2271b1;
-        box-shadow: 0 0 0 1px rgba(34, 113, 177, 0.2);
-        background: #f0f6fc;
+		border-color: #2271b1;
+		box-shadow: 0 0 0 1px rgba(34, 113, 177, 0.2);
+		background: #f0f6fc;
 }
 
 .softone-progress,
@@ -197,138 +197,307 @@ cursor: wait;
 }
 
 @media (min-width: 782px) {
-        .softone-api-form-grid {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
+		.softone-api-form-grid {
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
 
-        .softone-api-field--checkbox {
-                align-self: stretch;
-        }
+		.softone-api-field--checkbox {
+				align-self: stretch;
+		}
 }
 
 @media (min-width: 960px) {
-        .softone-api-layout {
-                grid-template-columns: minmax(260px, 1fr) minmax(0, 2fr);
-                align-items: start;
-        }
+		.softone-api-layout {
+				grid-template-columns: minmax(260px, 1fr) minmax(0, 2fr);
+				align-items: start;
+		}
 
-        .softone-api-card--credentials {
-                position: sticky;
-                top: 32px;
-                align-self: start;
-        }
+		.softone-api-card--credentials {
+				position: sticky;
+				top: 32px;
+				align-self: start;
+		}
 
-        .softone-api-card--request,
-        .softone-api-card--response {
-                grid-column: 2;
-        }
+		.softone-api-card--request,
+		.softone-api-card--response {
+				grid-column: 2;
+		}
 
 .softone-api-card--response {
-        margin-bottom: 0;
+		margin-bottom: 0;
 }
 }
 
 .softone-category-logs .softone-log-section {
-        margin-top: 24px;
+		margin-top: 24px;
 }
 
 .softone-category-logs .softone-log-section__intro {
-        margin: 0 0 16px;
-        color: #50575e;
+		margin: 0 0 16px;
+		color: #50575e;
 }
 
 .softone-log-list {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-        display: grid;
-        gap: 16px;
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: 16px;
 }
 
 .softone-log-entry {
-        background: #fff;
-        border: 1px solid #dcdcde;
-        border-radius: 6px;
-        padding: 16px;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+		background: #fff;
+		border: 1px solid #dcdcde;
+		border-radius: 6px;
+		padding: 16px;
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .softone-log-entry__header {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        margin-bottom: 8px;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		margin-bottom: 8px;
 }
 
 .softone-log-entry__timestamp {
-        font-weight: 600;
-        color: #1d2327;
+		font-weight: 600;
+		color: #1d2327;
 }
 
 .softone-log-entry__level {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        padding: 2px 8px;
-        border-radius: 999px;
-        font-size: 11px;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        background: #dcdcde;
-        color: #1d2327;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 2px 8px;
+		border-radius: 999px;
+		font-size: 11px;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		background: #dcdcde;
+		color: #1d2327;
 }
 
 .softone-log-entry--warning .softone-log-entry__level {
-        background: #f0b849;
-        color: #1d2327;
+		background: #f0b849;
+		color: #1d2327;
 }
 
 .softone-log-entry--error .softone-log-entry__level {
-        background: #d63638;
-        color: #fff;
+		background: #d63638;
+		color: #fff;
 }
 
 .softone-log-entry--debug .softone-log-entry__level {
-        background: #1d2327;
-        color: #fff;
+		background: #1d2327;
+		color: #fff;
 }
 
 .softone-log-entry__message {
-        margin: 0;
-        color: #1d2327;
-        word-break: break-word;
+		margin: 0;
+		color: #1d2327;
+		word-break: break-word;
 }
 
 .softone-log-entry__context {
-        margin: 12px 0 0;
-        background: #f6f7f7;
-        border: 1px solid #dcdcde;
-        border-radius: 4px;
-        padding: 12px;
-        overflow-x: auto;
-        font-family: Menlo, Consolas, monospace;
-        font-size: 13px;
-        line-height: 1.4;
-        white-space: pre-wrap;
-        word-break: break-word;
+		margin: 12px 0 0;
+		background: #f6f7f7;
+		border: 1px solid #dcdcde;
+		border-radius: 4px;
+		padding: 12px;
+		overflow-x: auto;
+		font-family: Menlo, Consolas, monospace;
+		font-size: 13px;
+		line-height: 1.4;
+		white-space: pre-wrap;
+		word-break: break-word;
 }
 
 .softone-log-entry__meta {
-        margin-top: 12px;
-        color: #50575e;
-        font-size: 12px;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
+		margin-top: 12px;
+		color: #50575e;
+		font-size: 12px;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 12px;
 }
 
 .softone-log-footnote {
-        margin-top: 24px;
-        color: #50575e;
+		margin-top: 24px;
+		color: #50575e;
 }
 
 .softone-log-footnote p {
-        margin: 0 0 8px;
+		margin: 0 0 8px;
+}
+
+.softone-process-trace {
+max-width: 960px;
+}
+
+.softone-process-trace__panel {
+background: #fff;
+border: 1px solid #dcdcde;
+border-radius: 6px;
+padding: 24px;
+margin-bottom: 24px;
+box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.softone-process-trace__controls {
+display: flex;
+flex-wrap: wrap;
+gap: 16px;
+align-items: flex-start;
+}
+
+.softone-process-trace__options {
+display: grid;
+gap: 12px;
+flex: 1 1 320px;
+margin-right: auto;
+}
+
+.softone-process-trace__option {
+display: grid;
+gap: 4px;
+font-weight: 600;
+color: #1d2327;
+}
+
+.softone-process-trace__option input[type="checkbox"] {
+margin-right: 8px;
+}
+
+.softone-process-trace__option-label {
+display: inline-block;
+}
+
+.softone-process-trace__status {
+margin-top: 16px;
+font-weight: 600;
+color: #1d2327;
+}
+
+.softone-process-trace__status--success {
+color: #1f6b3b;
+}
+
+.softone-process-trace__status--error {
+color: #b32d2e;
+}
+
+.softone-process-trace__summary {
+background: #fff;
+border: 1px solid #dcdcde;
+border-radius: 6px;
+padding: 24px;
+margin-bottom: 24px;
+}
+
+.softone-process-trace__summary-grid {
+display: grid;
+gap: 12px;
+grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+margin: 0;
+}
+
+.softone-process-trace__summary-grid dt {
+font-weight: 600;
+color: #1d2327;
+}
+
+.softone-process-trace__summary-grid dd {
+margin: 0;
+color: #50575e;
+}
+
+.softone-process-trace__log {
+background: #fff;
+border: 1px solid #dcdcde;
+border-radius: 6px;
+padding: 24px;
+}
+
+.softone-process-trace__entries {
+list-style: none;
+margin: 0;
+padding: 0;
+display: flex;
+flex-direction: column;
+gap: 16px;
+}
+
+.softone-process-trace__entry {
+border-left: 4px solid #2271b1;
+padding-left: 16px;
+}
+
+.softone-process-trace__entry--level-error {
+border-left-color: #b32d2e;
+}
+
+.softone-process-trace__entry--level-warning {
+border-left-color: #dba617;
+}
+
+.softone-process-trace__entry--level-info {
+border-left-color: #2271b1;
+}
+
+.softone-process-trace__entry-header {
+display: flex;
+flex-wrap: wrap;
+gap: 8px;
+align-items: center;
+font-size: 13px;
+color: #50575e;
+}
+
+.softone-process-trace__entry-time {
+font-weight: 600;
+color: #1d2327;
+}
+
+.softone-process-trace__entry-level {
+text-transform: uppercase;
+font-size: 11px;
+letter-spacing: 0.08em;
+padding: 2px 6px;
+border-radius: 999px;
+background: #edf2f7;
+color: #1d2327;
+}
+
+.softone-process-trace__entry-message {
+margin: 8px 0 0 0;
+color: #1d2327;
+}
+
+.softone-process-trace__entry-context {
+margin-top: 12px;
+}
+
+.softone-process-trace__entry-context pre {
+background: #f6f7f7;
+border-radius: 4px;
+border: 1px solid #dcdcde;
+padding: 12px;
+overflow-x: auto;
+font-family: Menlo, Consolas, monospace;
+font-size: 12px;
+line-height: 1.5;
+margin-top: 8px;
+}
+
+.softone-process-trace__copy {
+margin-top: 8px;
+padding: 0;
+}
+
+.softone-process-trace__empty {
+margin: 0;
+color: #50575e;
 }
