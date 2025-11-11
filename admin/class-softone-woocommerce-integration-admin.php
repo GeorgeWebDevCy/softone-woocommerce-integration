@@ -1694,41 +1694,209 @@ array(
          *
          * @return array<int,array<string,mixed>>
          */
-        private function prepare_trace_entries_for_response( array $entries ) {
-                $prepared = array();
+	private function prepare_trace_entries_for_response( array $entries ) {
+		$prepared      = array();
+		$block_indexes = array();
 
-                foreach ( $entries as $entry ) {
-                        if ( ! is_array( $entry ) ) {
-                                continue;
-                        }
+		foreach ( $entries as $entry ) {
+			if ( ! is_array( $entry ) ) {
+				continue;
+			}
 
-                        $timestamp = isset( $entry['timestamp'] ) ? (int) $entry['timestamp'] : time();
+			$prepared_entry = $this->prepare_single_trace_entry( $entry );
+			$block_key      = $this->extract_product_block_key( $entry );
 
-                        $prepared[] = array(
-                                'timestamp' => $timestamp,
-                                'time'      => $this->format_trace_timestamp( $timestamp ),
-                                'type'      => isset( $entry['type'] ) ? (string) $entry['type'] : '',
-                                'action'    => isset( $entry['action'] ) ? (string) $entry['action'] : '',
-                                'level'     => isset( $entry['level'] ) ? (string) $entry['level'] : 'info',
-                                'message'   => isset( $entry['message'] ) ? (string) $entry['message'] : '',
-                                'context'   => isset( $entry['context'] ) && is_array( $entry['context'] ) ? $entry['context'] : array(),
-                        );
-                }
+			if ( '' === $block_key ) {
+				$prepared[] = $prepared_entry;
+				continue;
+			}
 
-                return $prepared;
-        }
+			if ( isset( $block_indexes[ $block_key ] ) && isset( $prepared[ $block_indexes[ $block_key ] ]['entries'] ) ) {
+				$prepared[ $block_indexes[ $block_key ] ]['entries'][] = $prepared_entry;
+				continue;
+			}
 
-        /**
-         * Prepare a human-readable summary for process trace runs.
-         *
-         * @param array<string,mixed> $result      Raw sync result payload.
-         * @param int                 $started_at  Trace start timestamp.
-         * @param int                 $finished_at Trace finish timestamp.
-         * @param bool                $success     Whether the trace completed successfully.
-         *
-         * @return array<string,mixed>
-         */
-        private function prepare_trace_summary( array $result, $started_at, $finished_at, $success ) {
+			$block_indexes[ $block_key ] = count( $prepared );
+			$prepared[]                  = array(
+				'type'      => 'product_block',
+				'timestamp' => $prepared_entry['timestamp'],
+				'time'      => $prepared_entry['time'],
+				'level'     => 'info',
+				'product'   => $this->build_product_block_metadata( $entry ),
+				'entries'   => array( $prepared_entry ),
+			);
+		}
+
+		return $prepared;
+	}
+
+	/**
+	 * Prepare a single trace entry for output.
+	 *
+	 * @param array<string,mixed> $entry Raw trace entry.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function prepare_single_trace_entry( array $entry ) {
+		$timestamp = isset( $entry['timestamp'] ) ? (int) $entry['timestamp'] : time();
+
+		return array(
+			'timestamp' => $timestamp,
+			'time'      => $this->format_trace_timestamp( $timestamp ),
+			'type'      => isset( $entry['type'] ) ? (string) $entry['type'] : '',
+			'action'    => isset( $entry['action'] ) ? (string) $entry['action'] : '',
+			'level'     => isset( $entry['level'] ) ? (string) $entry['level'] : 'info',
+			'message'   => isset( $entry['message'] ) ? (string) $entry['message'] : '',
+			'context'   => isset( $entry['context'] ) && is_array( $entry['context'] ) ? $entry['context'] : array(),
+		);
+	}
+
+	/**
+	 * Determine whether a trace entry should be grouped within a product block.
+	 *
+	 * @param array<string,mixed> $entry Raw trace entry.
+	 *
+	 * @return string Unique block key or empty string if the entry should remain ungrouped.
+	 */
+	private function extract_product_block_key( array $entry ) {
+		if ( empty( $entry['context'] ) || ! is_array( $entry['context'] ) ) {
+			return '';
+		}
+
+		$metadata = $this->build_product_block_metadata( $entry );
+
+		if ( ! empty( $metadata['product_id'] ) ) {
+			return 'product_id:' . (int) $metadata['product_id'];
+		}
+
+		$identifier_fields = array( 'sku', 'mtrl', 'code' );
+
+		foreach ( $identifier_fields as $field ) {
+			if ( ! empty( $metadata[ $field ] ) ) {
+				return $field . ':' . strtolower( (string) $metadata[ $field ] );
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * Build metadata describing the product associated with a trace entry.
+	 *
+	 * @param array<string,mixed> $entry Raw trace entry.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function build_product_block_metadata( array $entry ) {
+		$context = isset( $entry['context'] ) && is_array( $entry['context'] ) ? $entry['context'] : array();
+
+		$product_id = 0;
+		if ( isset( $context['product_id'] ) && is_numeric( $context['product_id'] ) ) {
+			$product_id = (int) $context['product_id'];
+		}
+
+		$item_context = array();
+		if ( isset( $context['item'] ) && is_array( $context['item'] ) ) {
+			$item_context = $context['item'];
+		}
+
+		$sku = $this->first_non_empty_scalar( $context, array( 'sku', 'product_sku' ) );
+		if ( '' === $sku ) {
+			$sku = $this->first_non_empty_scalar( $item_context, array( 'sku', 'code' ) );
+		}
+
+		$mtrl = $this->first_non_empty_scalar( $context, array( 'mtrl' ) );
+		if ( '' === $mtrl ) {
+			$mtrl = $this->first_non_empty_scalar( $item_context, array( 'mtrl' ) );
+		}
+
+		$code = $this->first_non_empty_scalar( $context, array( 'code' ) );
+		if ( '' === $code ) {
+			$code = $this->first_non_empty_scalar( $item_context, array( 'code' ) );
+		}
+
+		$name = $this->first_non_empty_scalar( $context, array( 'name', 'product_name' ) );
+		if ( '' === $name ) {
+			$name = $this->first_non_empty_scalar( $item_context, array( 'name', 'description' ) );
+		}
+
+		$metadata = array(
+			'product_id' => $product_id,
+			'sku'        => $sku,
+			'mtrl'       => $mtrl,
+			'code'       => $code,
+			'name'       => $name,
+		);
+
+		$metadata['label'] = $this->format_product_block_label( $metadata );
+
+		return $metadata;
+	}
+
+	/**
+	 * Extract the first non-empty scalar value from the provided keys.
+	 *
+	 * @param array<string,mixed> $context Context array to inspect.
+	 * @param array<int,string>   $keys    Keys to evaluate in order.
+	 *
+	 * @return string
+	 */
+	private function first_non_empty_scalar( array $context, array $keys ) {
+		foreach ( $keys as $key ) {
+			if ( ! isset( $context[ $key ] ) ) {
+				continue;
+			}
+
+			$value = $context[ $key ];
+
+			if ( is_scalar( $value ) && '' !== trim( (string) $value ) ) {
+				return trim( (string) $value );
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * Create a translated label describing a product block.
+	 *
+	 * @param array<string,mixed> $metadata Product metadata.
+	 *
+	 * @return string
+	 */
+	private function format_product_block_label( array $metadata ) {
+		$parts = array();
+
+		if ( ! empty( $metadata['product_id'] ) ) {
+			$parts[] = sprintf( __( 'ID %d', 'softone-woocommerce-integration' ), (int) $metadata['product_id'] );
+		}
+
+		if ( ! empty( $metadata['sku'] ) ) {
+			$parts[] = sprintf( __( 'SKU %s', 'softone-woocommerce-integration' ), $metadata['sku'] );
+		}
+
+		if ( ! empty( $metadata['mtrl'] ) ) {
+			$parts[] = sprintf( __( 'MTRL %s', 'softone-woocommerce-integration' ), $metadata['mtrl'] );
+		}
+
+		if ( ! empty( $metadata['code'] ) && ( empty( $metadata['sku'] ) || $metadata['code'] !== $metadata['sku'] ) ) {
+			$parts[] = sprintf( __( 'Code %s', 'softone-woocommerce-integration' ), $metadata['code'] );
+		}
+
+		if ( ! empty( $metadata['name'] ) ) {
+			$parts[] = $metadata['name'];
+		}
+
+		$base_label = __( 'Product', 'softone-woocommerce-integration' );
+
+		if ( empty( $parts ) ) {
+			return $base_label;
+		}
+
+		return sprintf( __( 'Product (%s)', 'softone-woocommerce-integration' ), implode( ' • ', $parts ) );
+	}
+
+private function prepare_trace_summary( array $result, $started_at, $finished_at, $success ) {
                 $started_at  = max( 0, (int) $started_at );
                 $finished_at = max( $started_at, (int) $finished_at );
                 $duration    = max( 0, $finished_at - $started_at );
@@ -4224,27 +4392,33 @@ if ( $current_page === $this->process_trace_slug ) {
         $date_format = (string) get_option( 'date_format', 'Y-m-d' );
         $time_format = (string) get_option( 'time_format', 'H:i' );
 
-        $trace_strings = array(
-                'runTrace'         => __( 'Run process trace', 'softone-woocommerce-integration' ),
-                'running'          => __( 'Running process trace…', 'softone-woocommerce-integration' ),
-                'completed'        => __( 'Process trace completed.', 'softone-woocommerce-integration' ),
-                'failed'           => __( 'Process trace failed.', 'softone-woocommerce-integration' ),
-                'empty'            => __( 'No events were recorded during this trace.', 'softone-woocommerce-integration' ),
-                'summaryHeading'   => __( 'Summary', 'softone-woocommerce-integration' ),
-                'startedAt'        => __( 'Started at', 'softone-woocommerce-integration' ),
-                'finishedAt'       => __( 'Finished at', 'softone-woocommerce-integration' ),
-                'duration'         => __( 'Duration', 'softone-woocommerce-integration' ),
-                'processed'        => __( 'Processed', 'softone-woocommerce-integration' ),
-                'created'          => __( 'Created', 'softone-woocommerce-integration' ),
-                'updated'          => __( 'Updated', 'softone-woocommerce-integration' ),
-                'skipped'          => __( 'Skipped', 'softone-woocommerce-integration' ),
-                'staleProcessed'   => __( 'Stale products updated', 'softone-woocommerce-integration' ),
-                'details'          => __( 'Details', 'softone-woocommerce-integration' ),
-                'copyContext'      => __( 'Copy context', 'softone-woocommerce-integration' ),
-                'copied'           => __( 'Copied!', 'softone-woocommerce-integration' ),
-                'copyFailed'       => __( 'Copy failed', 'softone-woocommerce-integration' ),
-                'errorPrefix'      => __( 'Error:', 'softone-woocommerce-integration' ),
-                'successStatus'    => __( 'Success', 'softone-woocommerce-integration' ),
+		$trace_strings = array(
+			'runTrace'         => __( 'Run process trace', 'softone-woocommerce-integration' ),
+			'running'          => __( 'Running process trace…', 'softone-woocommerce-integration' ),
+			'completed'        => __( 'Process trace completed.', 'softone-woocommerce-integration' ),
+			'failed'           => __( 'Process trace failed.', 'softone-woocommerce-integration' ),
+			'empty'            => __( 'No events were recorded during this trace.', 'softone-woocommerce-integration' ),
+			'summaryHeading'   => __( 'Summary', 'softone-woocommerce-integration' ),
+			'startedAt'        => __( 'Started at', 'softone-woocommerce-integration' ),
+			'finishedAt'       => __( 'Finished at', 'softone-woocommerce-integration' ),
+			'duration'         => __( 'Duration', 'softone-woocommerce-integration' ),
+			'processed'        => __( 'Processed', 'softone-woocommerce-integration' ),
+			'created'          => __( 'Created', 'softone-woocommerce-integration' ),
+			'updated'          => __( 'Updated', 'softone-woocommerce-integration' ),
+			'skipped'          => __( 'Skipped', 'softone-woocommerce-integration' ),
+			'staleProcessed'   => __( 'Stale products updated', 'softone-woocommerce-integration' ),
+			'details'          => __( 'Details', 'softone-woocommerce-integration' ),
+			'productBlockHeading' => __( 'Product', 'softone-woocommerce-integration' ),
+			'productIdLabel'      => __( 'ID', 'softone-woocommerce-integration' ),
+			'productSkuLabel'     => __( 'SKU', 'softone-woocommerce-integration' ),
+			'productMtrlLabel'    => __( 'MTRL', 'softone-woocommerce-integration' ),
+			'productCodeLabel'    => __( 'Code', 'softone-woocommerce-integration' ),
+			'productNameLabel'    => __( 'Name', 'softone-woocommerce-integration' ),
+			'copyContext'      => __( 'Copy context', 'softone-woocommerce-integration' ),
+			'copied'           => __( 'Copied!', 'softone-woocommerce-integration' ),
+			'copyFailed'       => __( 'Copy failed', 'softone-woocommerce-integration' ),
+			'errorPrefix'      => __( 'Error:', 'softone-woocommerce-integration' ),
+			'successStatus'    => __( 'Success', 'softone-woocommerce-integration' ),
                 'failureStatus'    => __( 'Failed', 'softone-woocommerce-integration' ),
                 'durationFallback' => __( 'Less than a minute', 'softone-woocommerce-integration' ),
         );

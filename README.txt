@@ -78,6 +78,9 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 
 == Changelog ==
 
+= 1.8.71 =
+* Group process trace entries into per-product blocks with product metadata so debugging actions stay bundled per catalogue item.
+
 = 1.8.70 =
 * Introduce a process trace diagnostics screen that streams detailed logging for authentication, item imports, and variation decisions in real time.
 

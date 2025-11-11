@@ -178,7 +178,31 @@ if (elements.emptyState) {
 elements.emptyState.hidden = true;
 }
 
+var fragment = document.createDocumentFragment();
+
 entries.forEach(function (entry) {
+var element = createEntryElement(entry, 0);
+if (element) {
+fragment.appendChild(element);
+}
+});
+
+elements.entries.appendChild(fragment);
+}
+
+function createEntryElement(entry, depth) {
+if (!entry || typeof entry !== 'object') {
+return null;
+}
+
+if (entry.type === 'product_block' && Array.isArray(entry.entries)) {
+return createProductBlockElement(entry, depth);
+}
+
+return createStandardEntryElement(entry);
+}
+
+function createStandardEntryElement(entry) {
 var item = document.createElement('li');
 item.className = 'softone-process-trace__entry';
 
@@ -252,8 +276,118 @@ details.appendChild(copyButton);
 item.appendChild(details);
 }
 
-elements.entries.appendChild(item);
+return item;
+}
+
+function createProductBlockElement(entry, depth) {
+var item = document.createElement('li');
+item.className = 'softone-process-trace__entry softone-process-trace__entry--product-block';
+
+var header = document.createElement('header');
+header.className = 'softone-process-trace__entry-header softone-process-trace__entry-header--product-block';
+
+var time = document.createElement('time');
+time.className = 'softone-process-trace__entry-time';
+time.textContent = entry && entry.time ? String(entry.time) : '';
+time.dateTime = entry && entry.timestamp ? new Date(entry.timestamp * 1000).toISOString() : '';
+header.appendChild(time);
+
+var label = document.createElement('span');
+label.className = 'softone-process-trace__product-label';
+label.textContent = formatProductLabel(entry.product);
+header.appendChild(label);
+
+item.appendChild(header);
+
+var metadata = buildProductMetadata(entry.product);
+if (metadata.length) {
+var metaList = document.createElement('dl');
+metaList.className = 'softone-process-trace__product-meta';
+metadata.forEach(function (meta) {
+var term = document.createElement('dt');
+term.textContent = meta.label;
+metaList.appendChild(term);
+
+var value = document.createElement('dd');
+value.textContent = meta.value;
+metaList.appendChild(value);
 });
+item.appendChild(metaList);
+}
+
+var list = document.createElement('ul');
+list.className = 'softone-process-trace__block-entries';
+entry.entries.forEach(function (child) {
+var childElement = createEntryElement(child, depth + 1);
+if (childElement) {
+list.appendChild(childElement);
+}
+});
+item.appendChild(list);
+
+return item;
+}
+
+function formatProductLabel(product) {
+if (product && product.label) {
+return String(product.label);
+}
+
+var base = config.strings && config.strings.productBlockHeading ? config.strings.productBlockHeading : 'Product';
+var details = [];
+
+if (product && typeof product.product_id === 'number' && product.product_id > 0) {
+details.push(((config.strings && config.strings.productIdLabel) ? config.strings.productIdLabel : 'ID') + ' ' + product.product_id);
+}
+if (product && product.sku) {
+details.push(((config.strings && config.strings.productSkuLabel) ? config.strings.productSkuLabel : 'SKU') + ' ' + String(product.sku));
+}
+if (product && product.mtrl) {
+details.push(((config.strings && config.strings.productMtrlLabel) ? config.strings.productMtrlLabel : 'MTRL') + ' ' + String(product.mtrl));
+}
+if (product && product.code && (!product.sku || String(product.code) !== String(product.sku))) {
+details.push(((config.strings && config.strings.productCodeLabel) ? config.strings.productCodeLabel : 'Code') + ' ' + String(product.code));
+}
+if (product && product.name) {
+details.push(((config.strings && config.strings.productNameLabel) ? config.strings.productNameLabel : 'Name') + ' ' + String(product.name));
+}
+
+if (!details.length) {
+return base;
+}
+
+return base + ' (' + details.join(' • ') + ')';
+}
+
+function buildProductMetadata(product) {
+if (!product || typeof product !== 'object') {
+return [];
+}
+
+var metadata = [];
+var idLabel = config.strings && config.strings.productIdLabel ? config.strings.productIdLabel : 'ID';
+var skuLabel = config.strings && config.strings.productSkuLabel ? config.strings.productSkuLabel : 'SKU';
+var mtrlLabel = config.strings && config.strings.productMtrlLabel ? config.strings.productMtrlLabel : 'MTRL';
+var codeLabel = config.strings && config.strings.productCodeLabel ? config.strings.productCodeLabel : 'Code';
+var nameLabel = config.strings && config.strings.productNameLabel ? config.strings.productNameLabel : 'Name';
+
+if (typeof product.product_id === 'number' && product.product_id > 0) {
+metadata.push({ label: idLabel, value: String(product.product_id) });
+}
+if (product.sku) {
+metadata.push({ label: skuLabel, value: String(product.sku) });
+}
+if (product.mtrl) {
+metadata.push({ label: mtrlLabel, value: String(product.mtrl) });
+}
+if (product.code && (!product.sku || String(product.code) !== String(product.sku))) {
+metadata.push({ label: codeLabel, value: String(product.code) });
+}
+if (product.name) {
+metadata.push({ label: nameLabel, value: String(product.name) });
+}
+
+return metadata;
 }
 
 function renderSummary(summaryContainer, summary) {
