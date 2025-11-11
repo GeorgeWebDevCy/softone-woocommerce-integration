@@ -442,6 +442,24 @@ if ( ! function_exists( 'wp_set_object_terms' ) ) {
     }
 }
 
+if ( ! function_exists( 'wp_get_object_terms' ) ) {
+    /**
+     * Retrieve taxonomy assignments from the in-memory store.
+     *
+     * @param int    $object_id Object identifier.
+     * @param string $taxonomy  Taxonomy slug.
+     * @param array  $args      Query arguments.
+     * @return array<int>
+     */
+    function wp_get_object_terms( $object_id, $taxonomy, $args = array() ) {
+        if ( isset( $GLOBALS['softone_object_terms'][ $taxonomy ][ $object_id ] ) ) {
+            return $GLOBALS['softone_object_terms'][ $taxonomy ][ $object_id ];
+        }
+
+        return array();
+    }
+}
+
 if ( ! function_exists( 'get_post_meta' ) ) {
     /**
      * Retrieve a value from the in-memory post meta store.
@@ -475,6 +493,27 @@ if ( ! function_exists( 'update_post_meta' ) ) {
         }
 
         $GLOBALS['softone_post_meta'][ $post_id ][ $key ] = $value;
+
+        return true;
+    }
+}
+
+if ( ! function_exists( 'delete_post_meta' ) ) {
+    /**
+     * Remove a value from the in-memory post meta store.
+     *
+     * @param int    $post_id Post identifier.
+     * @param string $key     Meta key.
+     * @return bool
+     */
+    function delete_post_meta( $post_id, $key ) {
+        if ( isset( $GLOBALS['softone_post_meta'][ $post_id ][ $key ] ) ) {
+            unset( $GLOBALS['softone_post_meta'][ $post_id ][ $key ] );
+
+            if ( empty( $GLOBALS['softone_post_meta'][ $post_id ] ) ) {
+                unset( $GLOBALS['softone_post_meta'][ $post_id ] );
+            }
+        }
 
         return true;
     }
@@ -738,6 +777,15 @@ if ( ! class_exists( 'WC_Product_Attribute' ) ) {
         }
 
         /**
+         * Retrieve the attribute name.
+         *
+         * @return string
+         */
+        public function get_name() {
+            return $this->name;
+        }
+
+        /**
          * Assign attribute term options.
          *
          * @param array<int> $options Term identifiers.
@@ -904,6 +952,61 @@ class Softone_Item_Sync_Test_Double extends Softone_Item_Sync {
     }
 
     /**
+     * Locate a product ID based on a stored material identifier.
+     *
+     * @param string $mtrl Material identifier.
+     * @return int
+     */
+    protected function find_product_id_by_mtrl( $mtrl ) {
+        $mtrl = trim( (string) $mtrl );
+        if ( '' === $mtrl ) {
+            return 0;
+        }
+
+        foreach ( $GLOBALS['softone_post_meta'] as $post_id => $meta ) {
+            if ( isset( $meta[ self::META_MTRL ] ) && (string) $meta[ self::META_MTRL ] === $mtrl ) {
+                return (int) $post_id;
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * Discover child materials that reference the supplied parent material.
+     *
+     * @param string $parent_mtrl Parent material identifier.
+     * @return array<int,string>
+     */
+    protected function find_child_mtrls_for_parent( $parent_mtrl ) {
+        $parent_mtrl = trim( (string) $parent_mtrl );
+        if ( '' === $parent_mtrl ) {
+            return array();
+        }
+
+        $children = array();
+
+        foreach ( $GLOBALS['softone_post_meta'] as $meta ) {
+            if ( ! isset( $meta[ self::META_RELATED_ITEM_MTRL ] ) ) {
+                continue;
+            }
+
+            $related_meta = $meta[ self::META_RELATED_ITEM_MTRL ];
+            $related      = is_array( $related_meta ) ? (string) reset( $related_meta ) : (string) $related_meta;
+
+            if ( $related !== $parent_mtrl ) {
+                continue;
+            }
+
+            if ( isset( $meta[ self::META_MTRL ] ) ) {
+                $children[] = (string) $meta[ self::META_MTRL ];
+            }
+        }
+
+        return array_values( array_unique( array_filter( $children ) ) );
+    }
+
+    /**
      * Silence logging within tests.
      *
      * @param string $level   Log level.
@@ -928,7 +1031,31 @@ class Softone_Item_Sync_Attribute_Test_Double extends Softone_Item_Sync {
      * @return array
      */
     public function prepare_attribute_assignments_public( array $data, $product, array $fallback_attributes = array() ) {
-        return $this->prepare_attribute_assignments( $data, $product, $fallback_attributes );
+        $assignments = $this->prepare_attribute_assignments( $data, $product, $fallback_attributes );
+
+        $rebuilt_attributes = array();
+
+        foreach ( $assignments['attributes'] as $key => $attribute ) {
+            $attribute_key = $key;
+
+            if ( $attribute instanceof WC_Product_Attribute ) {
+                $name = $attribute->get_name();
+                if ( '' !== $name ) {
+                    $attribute_key = $name;
+                }
+            } elseif ( is_array( $attribute ) && isset( $attribute['name'] ) ) {
+                $name = (string) $attribute['name'];
+                if ( '' !== $name ) {
+                    $attribute_key = $name;
+                }
+            }
+
+            $rebuilt_attributes[ $attribute_key ] = $attribute;
+        }
+
+        $assignments['attributes'] = $rebuilt_attributes;
+
+        return $assignments;
     }
 
     /**
@@ -950,6 +1077,182 @@ class Softone_Item_Sync_Attribute_Test_Double extends Softone_Item_Sync {
      * @return void
      */
     protected function assign_brand_term( $product_id, $brand_value ) {
+    }
+}
+
+/**
+ * Test double exercising related item child refresh logic.
+ */
+class Softone_Item_Sync_Related_Item_Test_Double extends Softone_Item_Sync {
+    /**
+     * @var array<string,int>
+     */
+    protected $product_map = array();
+
+    /**
+     * @var array<string,array<int,string>>
+     */
+    protected $child_map = array();
+
+    /**
+     * @var array<int,array<string,mixed>>
+     */
+    protected $queued_colour_syncs = array();
+
+    /**
+     * @var array<int,array<string,mixed>>
+     */
+    protected $synced_colour_variations = array();
+
+    /**
+     * Register a Softone material to product ID mapping.
+     *
+     * @param string $mtrl      Material identifier.
+     * @param int    $product_id Product identifier.
+     * @return void
+     */
+    public function map_product_id( $mtrl, $product_id ) {
+        $this->product_map[ (string) $mtrl ] = (int) $product_id;
+    }
+
+    /**
+     * Register child materials associated with a parent.
+     *
+     * @param string            $parent_mtrl Parent material identifier.
+     * @param array<int,string> $child_mtrls Child material identifiers.
+     * @return void
+     */
+    public function set_child_mtrls( $parent_mtrl, array $child_mtrls ) {
+        $this->child_map[ (string) $parent_mtrl ] = array_values( array_map( 'strval', $child_mtrls ) );
+    }
+
+    /**
+     * Expose the protected refresh helper.
+     *
+     * @param string $parent_mtrl Parent material identifier.
+     * @return void
+     */
+    public function refresh_related_item_children_public( $parent_mtrl ) {
+        $this->refresh_related_item_children( $parent_mtrl );
+    }
+
+    /**
+     * Expose the colour sync processing queue for assertions.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public function get_queued_colour_syncs() {
+        return $this->queued_colour_syncs;
+    }
+
+    /**
+     * Expose recorded colour variation sync invocations.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public function get_synced_colour_variations() {
+        return $this->synced_colour_variations;
+    }
+
+    /**
+     * Expose the processing helper for queued colour syncs.
+     *
+     * @return void
+     */
+    public function process_pending_colour_variation_syncs_public() {
+        $this->process_pending_colour_variation_syncs();
+    }
+
+    /**
+     * Locate a product ID for the supplied material identifier.
+     *
+     * @param string $mtrl Material identifier.
+     * @return int
+     */
+    protected function find_product_id_by_mtrl( $mtrl ) {
+        $mtrl = (string) $mtrl;
+
+        if ( isset( $this->product_map[ $mtrl ] ) ) {
+            return (int) $this->product_map[ $mtrl ];
+        }
+
+        foreach ( $GLOBALS['softone_post_meta'] as $post_id => $meta ) {
+            if ( isset( $meta[ self::META_MTRL ] ) && (string) $meta[ self::META_MTRL ] === $mtrl ) {
+                return (int) $post_id;
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * Retrieve child material identifiers for the supplied parent.
+     *
+     * @param string $parent_mtrl Parent material identifier.
+     * @return array<int,string>
+     */
+    protected function find_child_mtrls_for_parent( $parent_mtrl ) {
+        $parent_mtrl = (string) $parent_mtrl;
+
+        if ( isset( $this->child_map[ $parent_mtrl ] ) ) {
+            return $this->child_map[ $parent_mtrl ];
+        }
+
+        return array();
+    }
+
+    /**
+     * Capture queued colour sync requests.
+     *
+     * @param int               $product_id
+     * @param string            $mtrl
+     * @param array<int,string> $related_item_mtrls
+     * @param string            $colour_taxonomy
+     * @return void
+     */
+    protected function queue_colour_variation_sync( $product_id, $mtrl, array $related_item_mtrls, $colour_taxonomy ) {
+        parent::queue_colour_variation_sync( $product_id, $mtrl, $related_item_mtrls, $colour_taxonomy );
+
+        $this->queued_colour_syncs[] = array(
+            'product_id'         => (int) $product_id,
+            'mtrl'               => (string) $mtrl,
+            'related_item_mtrls' => array_values( array_map( 'strval', $related_item_mtrls ) ),
+            'colour_taxonomy'    => (string) $colour_taxonomy,
+        );
+    }
+
+    /**
+     * Record colour variation sync operations without touching WooCommerce internals.
+     *
+     * @param int               $product_id
+     * @param string            $current_mtrl
+     * @param array<int,string> $related_item_mtrls
+     * @param string            $colour_taxonomy
+     * @return void
+     */
+    protected function sync_related_colour_variations( $product_id, $current_mtrl, array $related_item_mtrls, $colour_taxonomy ) {
+        $sanitised_related = array_values( array_map( 'strval', $related_item_mtrls ) );
+
+        $this->synced_colour_variations[] = array(
+            'product_id'         => (int) $product_id,
+            'current_mtrl'       => (string) $current_mtrl,
+            'related_item_mtrls' => $sanitised_related,
+            'colour_taxonomy'    => (string) $colour_taxonomy,
+        );
+
+        $variations = array_values( array_diff( $sanitised_related, array( (string) $current_mtrl ) ) );
+        update_post_meta( (int) $product_id, '_test_colour_variations', $variations );
+    }
+
+    /**
+     * Silence logging.
+     *
+     * @param string $level   Log level.
+     * @param string $message Message text.
+     * @param array  $context Context data.
+     * @return void
+     */
+    protected function log( $level, $message, array $context = array() ) {
     }
 }
 
@@ -1116,5 +1419,115 @@ if ( $alias_attribute->get_options() !== array( $expected_term_id ) ) {
     throw new RuntimeException( 'Colour alias attribute options should contain the reused term identifier.' );
 }
 
+$related_sync = new Softone_Item_Sync_Related_Item_Test_Double();
+
+$GLOBALS['softone_products']                     = array();
+$GLOBALS['softone_next_product_id']               = 1;
+$GLOBALS['softone_post_meta']                     = array();
+$GLOBALS['softone_term_calls']                    = array();
+$GLOBALS['softone_object_terms']                  = array();
+$GLOBALS['softone_attribute_taxonomies']          = array();
+$GLOBALS['softone_next_attribute_taxonomy_id']    = 1;
+$GLOBALS['softone_terms']                         = array();
+$GLOBALS['softone_next_term_id']                  = 1;
+$GLOBALS['softone_clean_term_cache_invocations']  = array();
+
+$colour_slug     = 'colour';
+$colour_taxonomy = wc_attribute_taxonomy_name( $colour_slug );
+$attribute_id    = wc_create_attribute(
+    array(
+        'slug' => $colour_slug,
+        'name' => 'Colour',
+    )
+);
+
+if ( is_wp_error( $attribute_id ) ) {
+    throw new RuntimeException( 'Failed to register the colour attribute taxonomy for related item testing.' );
+}
+
+$seed_term = wp_insert_term( 'Green', $colour_taxonomy );
+if ( is_wp_error( $seed_term ) ) {
+    throw new RuntimeException( 'Failed to seed the related colour term.' );
+}
+
+$colour_term_id = (int) $seed_term['term_id'];
+
+$parent_product = new WC_Product_Simple();
+$parent_product->set_attributes( array() );
+$parent_product_id = $parent_product->save();
+
+$parent_mtrl = 'PARENT-200';
+update_post_meta( $parent_product_id, Softone_Item_Sync::META_MTRL, $parent_mtrl );
+$related_sync->map_product_id( $parent_mtrl, $parent_product_id );
+
+$related_sync->set_child_mtrls( $parent_mtrl, array() );
+$related_sync->refresh_related_item_children_public( $parent_mtrl );
+
+$initial_queue = $related_sync->get_queued_colour_syncs();
+if ( ! empty( $initial_queue ) ) {
+    throw new RuntimeException( 'Colour variation sync should not queue when no child materials exist.' );
+}
+
+$stored_related_meta = get_post_meta( $parent_product_id, Softone_Item_Sync::META_RELATED_ITEM_MTRLS, true );
+if ( '' !== $stored_related_meta ) {
+    throw new RuntimeException( 'Parent related material list should be cleared when no child identifiers are present.' );
+}
+
+$child_product = new WC_Product_Simple();
+$child_product->set_attributes(
+    array(
+        $colour_taxonomy => array( $colour_term_id ),
+    )
+);
+$child_product_id = $child_product->save();
+
+$child_mtrl = 'CHILD-200';
+update_post_meta( $child_product_id, Softone_Item_Sync::META_MTRL, $child_mtrl );
+$related_sync->map_product_id( $child_mtrl, $child_product_id );
+
+$related_sync->set_child_mtrls( $parent_mtrl, array( $child_mtrl ) );
+$related_sync->refresh_related_item_children_public( $parent_mtrl );
+
+$queued_syncs = $related_sync->get_queued_colour_syncs();
+if ( count( $queued_syncs ) !== 1 ) {
+    throw new RuntimeException( 'Expected a colour variation sync request when child materials are available.' );
+}
+
+$queued_request = $queued_syncs[0];
+if ( $queued_request['product_id'] !== $parent_product_id ) {
+    throw new RuntimeException( 'Queued colour variation sync should reference the parent product identifier.' );
+}
+
+if ( $queued_request['related_item_mtrls'] !== array( $parent_mtrl, $child_mtrl ) ) {
+    throw new RuntimeException( 'Queued colour variation sync should merge the parent and child material identifiers.' );
+}
+
+$stored_related_meta = get_post_meta( $parent_product_id, Softone_Item_Sync::META_RELATED_ITEM_MTRLS, true );
+if ( $stored_related_meta !== array( $child_mtrl ) ) {
+    throw new RuntimeException( 'Parent related material list should store the child identifier after refresh.' );
+}
+
+$related_sync->process_pending_colour_variation_syncs_public();
+
+$processed_syncs = $related_sync->get_synced_colour_variations();
+if ( count( $processed_syncs ) !== 1 ) {
+    throw new RuntimeException( 'Expected the queued colour variation sync to process exactly once.' );
+}
+
+$processed_entry = $processed_syncs[0];
+if ( $processed_entry['product_id'] !== $parent_product_id ) {
+    throw new RuntimeException( 'Processed colour variation sync should target the parent product identifier.' );
+}
+
+if ( $processed_entry['related_item_mtrls'] !== array( $parent_mtrl, $child_mtrl ) ) {
+    throw new RuntimeException( 'Processed colour variation sync should retain both parent and child material identifiers.' );
+}
+
+$recorded_variations = get_post_meta( $parent_product_id, '_test_colour_variations', true );
+if ( $recorded_variations !== array( $child_mtrl ) ) {
+    throw new RuntimeException( 'Parent product should record the child material as a variation without requiring another import.' );
+}
+
 echo "Taxonomy refresh regression test passed." . PHP_EOL;
 echo "Attribute term normalisation regression test passed." . PHP_EOL;
+echo "Related item colour variation regression test passed." . PHP_EOL;
