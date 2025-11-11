@@ -1093,6 +1093,7 @@ protected function import_row( array $data, $run_timestamp ) {
         $should_create_colour_variation = false;
     }
 
+    $sku_adjusted_after_save = false;
     if ( ! $should_create_colour_variation && '' !== $effective_sku && '' === $product->get_sku() ) {
         $product->set_sku( $effective_sku );
     }
@@ -1126,6 +1127,27 @@ protected function import_row( array $data, $run_timestamp ) {
 
     $all_related_item_mtrls = array_values( array_unique( array_filter( array_map( 'strval', $all_related_item_mtrls ) ) ) );
 
+    $related_variation_candidates = array();
+    if ( ! empty( $all_related_item_mtrls ) ) {
+        $related_variation_candidates = array_values(
+            array_filter(
+                array_map(
+                    'strval',
+                    array_diff( $all_related_item_mtrls, array( $mtrl ) )
+                )
+            )
+        );
+    }
+
+    if ( empty( $related_variation_candidates ) ) {
+        $should_create_colour_variation = false;
+    }
+
+    if ( ! $should_create_colour_variation && '' !== $effective_sku && '' === $product->get_sku() ) {
+        $product->set_sku( $effective_sku );
+        $sku_adjusted_after_save = true;
+    }
+
     if ( '' !== $colour_taxonomy ) {
         $related_colour_term_ids = array();
 
@@ -1158,7 +1180,7 @@ protected function import_row( array $data, $run_timestamp ) {
             $this->ensure_parent_colour_attribute_terms( $product_id, $colour_taxonomy, $related_colour_term_ids );
         }
 
-        if ( ! empty( $all_related_item_mtrls ) ) {
+        if ( ! empty( $related_variation_candidates ) ) {
             $this->queue_colour_variation_sync( $product_id, $mtrl, $all_related_item_mtrls, $colour_taxonomy );
         }
     }
@@ -1174,6 +1196,10 @@ protected function import_row( array $data, $run_timestamp ) {
             $mtrl,
             $should_backorder
         );
+    }
+
+    if ( $sku_adjusted_after_save ) {
+        $product->save();
     }
 
     // ---------- IMAGES (after save) ----------
