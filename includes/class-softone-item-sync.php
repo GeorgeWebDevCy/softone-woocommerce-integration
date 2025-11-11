@@ -2036,21 +2036,25 @@ protected function import_row( array $data, $run_timestamp ) {
             $variations_to_sync = array();
             $additional_term_ids = array();
 
-            foreach ( $related_item_mtrls as $related_mtrl ) {
-                $related_product_id = $this->find_product_id_by_mtrl( $related_mtrl );
-                if ( $related_product_id <= 0 ) {
-                    continue;
-                }
+		foreach ( $related_item_mtrls as $related_mtrl ) {
+			$related_product_id = $this->find_product_id_by_mtrl( $related_mtrl );
+			if ( $related_product_id <= 0 ) {
+				$related_product_id = $this->find_variation_id_by_mtrl( $related_mtrl );
+			}
 
-                $related_product = wc_get_product( $related_product_id );
-                if ( ! $related_product ) {
-                    continue;
-                }
+			if ( $related_product_id <= 0 ) {
+				continue;
+			}
 
-                $colour_term_id = $this->find_colour_term_id_for_product( $related_product, $colour_taxonomy );
-                if ( $colour_term_id <= 0 ) {
-                    continue;
-                }
+			$related_product = wc_get_product( $related_product_id );
+			if ( ! $related_product ) {
+				continue;
+			}
+
+			$colour_term_id = $this->find_colour_term_id_for_product( $related_product, $colour_taxonomy );
+			if ( $colour_term_id <= 0 ) {
+				continue;
+			}
 
                 $price_value = $related_product->get_regular_price();
                 if ( '' === $price_value ) {
@@ -2149,56 +2153,100 @@ protected function import_row( array $data, $run_timestamp ) {
          * @param string           $colour_taxonomy
          * @return int
          */
-        protected function find_colour_term_id_for_product( $product, $colour_taxonomy ) {
-            if ( ! $product || ! method_exists( $product, 'get_attributes' ) ) {
-                return 0;
-            }
+		protected function find_colour_term_id_for_product( $product, $colour_taxonomy ) {
+			if ( ! $product || ! method_exists( $product, 'get_attributes' ) ) {
+				return 0;
+			}
 
-            $colour_taxonomy = (string) $colour_taxonomy;
-            if ( '' === $colour_taxonomy ) {
-                return 0;
-            }
+			$colour_taxonomy = (string) $colour_taxonomy;
+			if ( '' === $colour_taxonomy ) {
+				return 0;
+			}
 
-            $normalized_key = $colour_taxonomy;
-            if ( function_exists( 'wc_attribute_taxonomy_name' ) ) {
-                $normalized_key = wc_attribute_taxonomy_name( $this->resolve_colour_attribute_slug() );
-            }
+			$normalized_key = $colour_taxonomy;
+			if ( function_exists( 'wc_attribute_taxonomy_name' ) ) {
+				$normalized_key = wc_attribute_taxonomy_name( $this->resolve_colour_attribute_slug() );
+			}
 
-            $attributes = $product->get_attributes();
-            foreach ( $attributes as $attribute ) {
-                $name = '';
-                $options = array();
+			if ( class_exists( 'WC_Product_Variation' ) && $product instanceof WC_Product_Variation ) {
+				$attribute_keys = array( $colour_taxonomy, $normalized_key );
 
-                if ( $attribute instanceof WC_Product_Attribute ) {
-                    $name    = $attribute->get_name();
-                    $options = (array) $attribute->get_options();
-                } elseif ( is_array( $attribute ) ) {
-                    $name    = isset( $attribute['name'] ) ? (string) $attribute['name'] : '';
-                    $options = isset( $attribute['options'] ) ? (array) $attribute['options'] : array();
-                }
+				if ( function_exists( 'wc_variation_attribute_name' ) ) {
+					$attribute_keys[] = wc_variation_attribute_name( $colour_taxonomy );
+					if ( $normalized_key !== $colour_taxonomy ) {
+						$attribute_keys[] = wc_variation_attribute_name( $normalized_key );
+					}
+				} else {
+					$attribute_keys[] = 'attribute_' . $colour_taxonomy;
+					if ( $normalized_key !== $colour_taxonomy ) {
+						$attribute_keys[] = 'attribute_' . $normalized_key;
+					}
+				}
 
-                if ( $name === $colour_taxonomy || $name === $normalized_key ) {
-                    foreach ( $options as $option ) {
-                        $term_id = $this->normalise_colour_term_option( $option, $colour_taxonomy );
-                        if ( $term_id > 0 ) {
-                            return $term_id;
-                        }
-                    }
-                }
-            }
+				$attribute_keys = array_values( array_unique( array_filter( array_map( 'strval', $attribute_keys ) ) ) );
 
-            if ( method_exists( $product, 'get_id' ) && function_exists( 'wp_get_post_terms' ) ) {
-                $terms = wp_get_post_terms( (int) $product->get_id(), $colour_taxonomy, array( 'fields' => 'ids' ) );
-                if ( ! is_wp_error( $terms ) && ! empty( $terms ) ) {
-                    $term = reset( $terms );
-                    if ( false !== $term ) {
-                        return (int) $term;
-                    }
-                }
-            }
+				foreach ( $attribute_keys as $attribute_key ) {
+					if ( '' === $attribute_key ) {
+						continue;
+					}
 
-            return 0;
-        }
+					$raw_option = $product->get_attribute( $attribute_key );
+					if ( '' === $raw_option ) {
+						continue;
+					}
+
+					$term_id = $this->normalise_colour_term_option( $raw_option, $colour_taxonomy );
+					if ( $term_id > 0 ) {
+						return $term_id;
+					}
+				}
+			}
+
+			$attributes = $product->get_attributes();
+			foreach ( $attributes as $key => $attribute ) {
+				$name = '';
+				$options = array();
+
+				if ( $attribute instanceof WC_Product_Attribute ) {
+					$name    = $attribute->get_name();
+					$options = (array) $attribute->get_options();
+				} elseif ( is_array( $attribute ) ) {
+					$name    = isset( $attribute['name'] ) ? (string) $attribute['name'] : '';
+					$options = isset( $attribute['options'] ) ? (array) $attribute['options'] : array();
+				} elseif ( is_scalar( $attribute ) ) {
+					$name    = (string) $key;
+					$options = array( $attribute );
+				} else {
+					continue;
+				}
+
+				$name = (string) $name;
+				if ( 0 === strpos( $name, 'attribute_' ) ) {
+					$name = substr( $name, strlen( 'attribute_' ) );
+				}
+
+				if ( $name === $colour_taxonomy || $name === $normalized_key ) {
+					foreach ( $options as $option ) {
+						$term_id = $this->normalise_colour_term_option( $option, $colour_taxonomy );
+						if ( $term_id > 0 ) {
+							return $term_id;
+						}
+					}
+				}
+			}
+
+			if ( method_exists( $product, 'get_id' ) && function_exists( 'wp_get_post_terms' ) ) {
+				$terms = wp_get_post_terms( (int) $product->get_id(), $colour_taxonomy, array( 'fields' => 'ids' ) );
+				if ( ! is_wp_error( $terms ) && ! empty( $terms ) ) {
+					$term = reset( $terms );
+					if ( false !== $term ) {
+						return (int) $term;
+					}
+				}
+			}
+
+			return 0;
+		}
 
         /**
          * Refresh the list of Softone materials associated with a parent product.
@@ -2300,23 +2348,47 @@ protected function import_row( array $data, $run_timestamp ) {
          * @param string $mtrl Softone material identifier.
          * @return int
          */
-        protected function find_product_id_by_mtrl( $mtrl ) {
-            global $wpdb;
+		protected function find_product_id_by_mtrl( $mtrl ) {
+			global $wpdb;
 
-            $mtrl = trim( (string) $mtrl );
-            if ( '' === $mtrl ) {
-                return 0;
-            }
+			$mtrl = trim( (string) $mtrl );
+			if ( '' === $mtrl ) {
+				return 0;
+			}
 
-            $query = $wpdb->prepare(
-                "SELECT p.ID FROM {$wpdb->posts} p INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id WHERE pm.meta_key = %s AND pm.meta_value = %s AND p.post_type = %s ORDER BY p.ID ASC LIMIT 1",
-                self::META_MTRL,
-                $mtrl,
-                'product'
-            );
+			$query = $wpdb->prepare(
+				"SELECT p.ID FROM {$wpdb->posts} p INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id WHERE pm.meta_key = %s AND pm.meta_value = %s AND p.post_type = %s ORDER BY p.ID ASC LIMIT 1",
+				self::META_MTRL,
+				$mtrl,
+				'product'
+			);
 
-            return (int) $wpdb->get_var( $query );
-        }
+			return (int) $wpdb->get_var( $query );
+		}
+
+		/**
+		 * Find the variation post ID that owns the supplied Softone material identifier.
+		 *
+		 * @param string $mtrl Softone material identifier.
+		 * @return int
+		 */
+		protected function find_variation_id_by_mtrl( $mtrl ) {
+			global $wpdb;
+
+			$mtrl = trim( (string) $mtrl );
+			if ( '' === $mtrl ) {
+				return 0;
+			}
+
+			$query = $wpdb->prepare(
+				"SELECT p.ID FROM {$wpdb->posts} p INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id WHERE pm.meta_key = %s AND pm.meta_value = %s AND p.post_type = %s ORDER BY p.ID ASC LIMIT 1",
+				self::META_MTRL,
+				$mtrl,
+				'product_variation'
+			);
+
+			return (int) $wpdb->get_var( $query );
+		}
 
         /**
          * Locate all Softone materials that reference the supplied parent material.
