@@ -3061,9 +3061,53 @@ protected function prepare_attribute_assignments( array $data, $product, array $
     }
 
     // ---------------- Hidden custom attribute: related_item_mtrl ----------------
-    $related_mtrl = (string) $this->get_value( $data, array( 'related_item_mtrl', 'related_mtrl', 'rel_mtrl' ) );
+    $related_mtrl = (string) $this->get_value(
+        $data,
+        array( 'softone_related_item_mtrl', 'related_item_mtrl', 'related_mtrl', 'rel_mtrl' )
+    );
     $related_mtrl = trim( $related_mtrl );
-    $related_mtrl_tokens = $this->parse_related_item_mtrls( $related_mtrl );
+
+    $related_mtrl_tokens = array();
+    $related_list_keys   = array(
+        'softone_related_item_mtrls',
+        'softone_related_item_mtrll',
+        'related_item_mtrls',
+        'related_item_mtrll',
+    );
+
+    foreach ( $related_list_keys as $list_key ) {
+        if ( isset( $data[ $list_key ] ) && '' !== trim( (string) $data[ $list_key ] ) ) {
+            $raw_value = $data[ $list_key ];
+
+            if ( is_array( $raw_value ) ) {
+                foreach ( $raw_value as $token_value ) {
+                    $related_mtrl_tokens = array_merge(
+                        $related_mtrl_tokens,
+                        $this->parse_related_item_mtrls( (string) $token_value )
+                    );
+                }
+            } else {
+                $related_mtrl_tokens = array_merge(
+                    $related_mtrl_tokens,
+                    $this->parse_related_item_mtrls( (string) $raw_value )
+                );
+            }
+        }
+    }
+
+    if ( empty( $related_mtrl_tokens ) ) {
+        $related_mtrl_tokens = $this->parse_related_item_mtrls( $related_mtrl );
+    }
+
+    if ( '' !== $related_mtrl ) {
+        $related_mtrl_tokens[] = $related_mtrl;
+    }
+
+    $related_mtrl_tokens = array_values(
+        array_unique(
+            array_filter( array_map( 'strval', $related_mtrl_tokens ) )
+        )
+    );
     if ( $related_mtrl !== '' && class_exists( 'WC_Product_Attribute' ) ) {
         try {
             $attr = new WC_Product_Attribute();
