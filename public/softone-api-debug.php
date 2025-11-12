@@ -191,6 +191,7 @@ return $decoded;
 $action_messages = array();
 $session_result  = array();
 $sql_result      = array();
+$variation_flow  = softone_debug_collect_variation_flow();
 
 $inputs = array(
 'sql_name'      => 'getItems',
@@ -388,6 +389,57 @@ return '<details><summary>' . softone_debug_escape( $title ) . '</summary><pre>'
 }
 
 /**
+ * Summarise the product import and variation aggregation flow.
+ *
+ * @return array[]
+ */
+function softone_debug_collect_variation_flow() {
+$flow = array(
+array(
+'stage'      => '1. Fetch SoftOne inventory',
+'single'     => 'Each synchronisation run requests the configured stored SQL (default "getItems") and treats every row as a stand-alone WooCommerce product update.',
+'variation'  => 'SoftOne material identifiers and related item tokens are captured for later processing while the product is still simple.',
+'references' => 'Softone_API_Client::sql_data()',
+),
+array(
+'stage'      => '2. Map catalogue data onto the product',
+'single'     => 'Taxonomies such as colour, size, and brand are ensured and assigned to the imported product.',
+'variation'  => 'The synchroniser records attribute values so that they can be reused when building variations after the single product import completes.',
+'references' => 'Softone_Item_Sync::prepare_attribute_assignments()',
+),
+array(
+'stage'      => '3. Queue related items for variation sync',
+'single'     => 'Once the product is updated, the import flow concludes the single-product stage for that SoftOne material.',
+'variation'  => 'Any related SoftOne items identified in the payload are queued for colour aggregation to be processed after the batch finishes.',
+'references' => 'Softone_Item_Sync::queue_colour_variation_sync()',
+),
+array(
+'stage'      => '4. Ensure WooCommerce variations',
+'single'     => 'The base product remains published as a simple record and retains its own SKU and stock configuration.',
+'variation'  => 'Queued items trigger creation or updates of WC_Product_Variation instances, aligning colour attributes, prices, and stock.',
+'references' => 'Softone_Item_Sync::ensure_colour_variation()',
+),
+);
+
+if ( class_exists( 'Softone_Item_Sync' ) ) {
+if ( defined( 'Softone_Item_Sync::META_MTRL' ) ) {
+$meta_key = Softone_Item_Sync::META_MTRL;
+$flow[0]['variation'] .= ' Material IDs are stored on the product using the post meta key "' . $meta_key . '".';
+}
+
+if ( method_exists( 'Softone_Item_Sync', 'process_pending_colour_variation_syncs' ) ) {
+$flow[2]['references'] .= ' & Softone_Item_Sync::process_pending_colour_variation_syncs()';
+}
+
+if ( method_exists( 'Softone_Item_Sync', 'sync_related_colour_variations' ) ) {
+$flow[3]['references'] .= ' / Softone_Item_Sync::sync_related_colour_variations()';
+}
+}
+
+return $flow;
+}
+
+/**
  * Render a SqlData table cell with improved formatting.
  *
  * @param mixed $value Value to display.
@@ -493,6 +545,7 @@ overflow-x: auto;
 margin: 0 -0.5rem;
 padding: 0.5rem;
 border-radius: 6px;
+width: 100%;
 }
 
 .table-wrapper table {
@@ -507,7 +560,9 @@ table.settings-table td,
 table.trace-table th,
 table.trace-table td,
 table.rows-table th,
-table.rows-table td {
+table.rows-table td,
+table.flow-table th,
+table.flow-table td {
 border: 1px solid #e2e4e7;
 padding: 0.65rem;
 vertical-align: top;
@@ -518,6 +573,19 @@ table.settings-table th {
 background: #f6f7f7;
 width: 32%;
 font-weight: 600;
+}
+
+table.flow-table thead {
+background: #f6f7f7;
+}
+
+table.flow-table th {
+width: 18%;
+font-weight: 600;
+}
+
+table.flow-table td {
+background: #fff;
 }
 
 table.rows-table thead {
@@ -665,6 +733,37 @@ min-width: 100%;
 </tbody>
 </table>
 </div>
+<?php endif; ?>
+</section>
+
+<section>
+<h2>Product import &amp; variation flow</h2>
+<p>This flow illustrates how every SoftOne item is first treated as a single product before any variation logic runs, making it easier to diagnose where a particular item sits in the pipeline.</p>
+<?php if ( ! empty( $variation_flow ) ) : ?>
+<div class="table-wrapper">
+<table class="flow-table">
+<thead>
+<tr>
+<th>Stage</th>
+<th>Single product handling</th>
+<th>Variation preparation</th>
+<th>Key references</th>
+</tr>
+</thead>
+<tbody>
+<?php foreach ( $variation_flow as $step ) : ?>
+<tr>
+<td><?php echo softone_debug_escape( $step['stage'] ); ?></td>
+<td><?php echo softone_debug_escape( $step['single'] ); ?></td>
+<td><?php echo softone_debug_escape( $step['variation'] ); ?></td>
+<td><?php echo softone_debug_escape( $step['references'] ); ?></td>
+</tr>
+<?php endforeach; ?>
+</tbody>
+</table>
+</div>
+<?php else : ?>
+<p>Variation flow details are unavailable because the synchroniser class could not be loaded.</p>
 <?php endif; ?>
 </section>
 
