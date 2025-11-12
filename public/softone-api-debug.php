@@ -1,31 +1,12 @@
 <?php
-/**
- * SoftOne API troubleshooting helper.
- *
- * Drop this script in a web-accessible directory (e.g., public_html) and load it in a browser.
- * It renders a form for crafting SoftOne API requests and prints the raw payloads, cURL metadata,
- * and formatted responses to help diagnose integration issues.
- */
-
+if ( isset( $_GET['debug'] ) ) {
 ini_set( 'display_errors', '1' );
+ini_set( 'display_startup_errors', '1' );
 error_reporting( E_ALL );
+}
 
+if ( ! ini_get( 'date.timezone' ) ) {
 date_default_timezone_set( 'UTC' );
-
-/**
- * Retrieve a POST value while preserving empty strings.
- *
- * @param string $key     Request key.
- * @param mixed  $default Default value when the key is not present.
- *
- * @return mixed
- */
-function softone_debug_request_value( $key, $default = '' ) {
-	if ( isset( $_POST[ $key ] ) ) {
-		return is_array( $_POST[ $key ] ) ? $_POST[ $key ] : (string) $_POST[ $key ];
-	}
-
-	return $default;
 }
 
 /**
@@ -36,713 +17,682 @@ function softone_debug_request_value( $key, $default = '' ) {
  * @return string
  */
 function softone_debug_escape( $value ) {
-	return htmlspecialchars( (string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+return htmlspecialchars( (string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
 }
 
 /**
- * Output the HTML checked attribute when a condition is truthy.
+ * Pretty-print arrays/objects as JSON when possible.
  *
- * @param bool $is_checked Whether the checkbox should be checked.
- *
- * @return string
- */
-function softone_debug_checked_attr( $is_checked ) {
-	return $is_checked ? 'checked' : '';
-}
-
-/**
- * Parse JSON input into an array.
- *
- * @param string $raw        JSON string supplied by the user.
- * @param array  $messages   Reference to the message list for recording warnings.
- * @param string $field_name Field label for contextual errors.
- *
- * @return array|null Null when the field is empty.
- */
-function softone_debug_parse_json_field( $raw, array &$messages, $field_name ) {
-	$raw = trim( (string) $raw );
-
-	if ( '' === $raw ) {
-		return null;
-	}
-
-	$decoded = json_decode( $raw, true );
-
-	if ( null === $decoded && JSON_ERROR_NONE !== json_last_error() ) {
-		$messages[] = sprintf( 'The %1$s field contains invalid JSON: %2$s', $field_name, json_last_error_msg() );
-
-		return null;
-	}
-
-	return $decoded;
-}
-
-/**
- * Remove null values from an array recursively.
- *
- * @param array $data Raw data.
- *
- * @return array
- */
-function softone_debug_remove_nulls( array $data ) {
-	foreach ( $data as $key => $value ) {
-		if ( is_array( $value ) ) {
-			$data[ $key ] = softone_debug_remove_nulls( $value );
-		} elseif ( null === $value ) {
-			unset( $data[ $key ] );
-		}
-	}
-
-	return $data;
-}
-
-/**
- * Build the SoftOne payload based on the submitted form.
- *
- * @param array $inputs   Sanitised request values.
- * @param array $messages Collector for validation messages.
- *
- * @return array
- */
-function softone_debug_build_payload( array $inputs, array &$messages ) {
-	$service     = isset( $inputs['service'] ) ? $inputs['service'] : 'login';
-	$service_key = strtolower( $service );
-	$payload     = array();
-
-	switch ( $service_key ) {
-		case 'login':
-			$payload = array(
-				'username' => $inputs['username'],
-				'password' => $inputs['password'],
-			);
-
-			if ( '' !== $inputs['app_id'] ) {
-				$payload['appId'] = $inputs['app_id'];
-			}
-
-			break;
-
-		case 'authenticate':
-			$payload = array();
-
-			if ( '' === $inputs['client_id'] ) {
-				$messages[] = 'Authenticate requests require a client ID.';
-			}
-
-			break;
-
-		case 'sqldata':
-			$sql_name = $inputs['sql_name'];
-
-			if ( '' === $sql_name ) {
-				$messages[] = 'SqlData requests require the SQL name.';
-			}
-
-			$payload = array(
-				'SqlName' => $sql_name,
-			);
-
-			$params = softone_debug_parse_json_field( $inputs['sql_params'], $messages, 'SqlData parameters' );
-
-			if ( null !== $params ) {
-				$payload['params'] = $params;
-			}
-
-			if ( '' !== $inputs['app_id'] ) {
-				$payload['appId'] = $inputs['app_id'];
-			}
-
-			break;
-
-		case 'setdata':
-			$object_name = $inputs['object_name'];
-			$data_block  = softone_debug_parse_json_field( $inputs['object_data'], $messages, 'setData payload' );
-
-			if ( '' === $object_name ) {
-				$messages[] = 'setData requests require the SoftOne object name (e.g., CUSTOMER, SALDOC).';
-			}
-
-			if ( null === $data_block ) {
-				$messages[] = 'setData requests require JSON data describing the entity.';
-			}
-
-			$payload = array(
-				'object' => $object_name,
-				'data'   => null === $data_block ? array() : $data_block,
-			);
-
-			break;
-
-		default:
-			$custom = softone_debug_parse_json_field( $inputs['custom_payload'], $messages, 'custom payload' );
-
-			if ( null === $custom ) {
-				$messages[] = 'Provide a JSON object for the custom payload.';
-			}
-
-			$payload = null === $custom ? array() : $custom;
-	}
-
-	if ( '' !== $inputs['client_id'] ) {
-		if ( 'sqldata' === $service_key ) {
-			$payload['clientid'] = $inputs['client_id'];
-		} else {
-			$payload['clientID'] = $inputs['client_id'];
-		}
-	}
-
-	$handshake_fields = array( 'company', 'branch', 'module', 'refid' );
-
-	foreach ( $handshake_fields as $field ) {
-		if ( '' !== $inputs[ $field ] && ! isset( $payload[ $field ] ) ) {
-			$payload[ $field ] = $inputs[ $field ];
-		}
-	}
-
-	if ( '' !== $inputs['warehouse'] && ! isset( $payload['warehouse'] ) ) {
-		$payload['warehouse'] = $inputs['warehouse'];
-	}
-
-	if ( '' !== $inputs['areas'] && ! isset( $payload['areas'] ) ) {
-		$payload['areas'] = $inputs['areas'];
-	}
-
-	if ( '' !== $inputs['socurrency'] && ! isset( $payload['socurrency'] ) ) {
-		$payload['socurrency'] = $inputs['socurrency'];
-	}
-
-	if ( '' !== $inputs['trdcategory'] && ! isset( $payload['trdcategory'] ) ) {
-		$payload['trdcategory'] = $inputs['trdcategory'];
-	}
-
-	$extra = softone_debug_parse_json_field( $inputs['extra_payload'], $messages, 'extra payload' );
-
-	if ( null !== $extra ) {
-		if ( ! is_array( $extra ) ) {
-			$messages[] = 'Extra payload must decode into an object or array.';
-		} else {
-			$payload = array_merge( $payload, $extra );
-		}
-	}
-
-	$payload = array_merge( array( 'service' => $service ), $payload );
-
-	return softone_debug_remove_nulls( $payload );
-}
-
-/**
- * Parse raw header output from cURL.
- *
- * @param string $raw_headers Header block.
- *
- * @return array
- */
-function softone_debug_parse_headers( $raw_headers ) {
-	$headers = array();
-	$lines   = preg_split( '/\r?\n/', trim( (string) $raw_headers ) );
-
-	foreach ( $lines as $line ) {
-		if ( '' === trim( $line ) ) {
-			continue;
-		}
-
-		if ( false === strpos( $line, ':' ) ) {
-			$headers[] = $line;
-			continue;
-		}
-
-		list( $key, $value ) = array_map( 'trim', explode( ':', $line, 2 ) );
-		$headers[ $key ]     = $value;
-	}
-
-	return $headers;
-}
-
-/**
- * Render a value as pretty-printed JSON when possible.
- *
- * @param mixed $value Data to render.
+ * @param mixed $value Value to render.
  *
  * @return string
  */
 function softone_debug_pretty_json( $value ) {
-	if ( is_string( $value ) ) {
-		$json = json_decode( $value, true );
+if ( is_string( $value ) ) {
+$decoded = json_decode( $value, true );
 
-		if ( null !== $json && JSON_ERROR_NONE === json_last_error() ) {
-			$value = $json;
-		}
-	}
-
-	if ( is_array( $value ) ) {
-		$encoded = json_encode( $value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
-
-		if ( false !== $encoded ) {
-			return $encoded;
-		}
-	}
-
-	return (string) $value;
+if ( null !== $decoded && JSON_ERROR_NONE === json_last_error() ) {
+$value = $decoded;
+}
 }
 
-$defaults = array(
-	'endpoint'    => 'https://ptkids.oncloud.gr/s1services',
-	'username'    => '',
-	'password'    => '',
-	'app_id'      => '1000',
-	'company'     => '10',
-	'branch'      => '101',
-	'module'      => '0',
-	'client_id'   => '',
-	'warehouse'   => '',
-	'areas'       => '',
-	'socurrency'  => '',
-	'trdcategory' => '',
-	'refid'       => '1000',
+if ( is_array( $value ) ) {
+$encoded = json_encode( $value, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
+
+if ( false !== $encoded ) {
+return $encoded;
+}
+}
+
+return (string) $value;
+}
+
+/**
+ * Mask sensitive identifiers leaving the trailing characters visible.
+ *
+ * @param string $value Raw identifier.
+ *
+ * @return string
+ */
+function softone_debug_mask_value( $value ) {
+$value = (string) $value;
+
+if ( '' === $value ) {
+return '';
+}
+
+$length = strlen( $value );
+
+if ( $length <= 4 ) {
+return str_repeat( '•', $length );
+}
+
+return str_repeat( '•', max( 0, $length - 4 ) ) . substr( $value, -4 );
+}
+
+/**
+ * Locate the WordPress bootstrap file relative to this script.
+ *
+ * @return string|false
+ */
+function softone_debug_locate_wp_load() {
+if ( defined( 'ABSPATH' ) ) {
+return ABSPATH . 'wp-load.php';
+}
+
+$paths   = array();
+$current = __DIR__;
+
+for ( $depth = 0; $depth < 8; $depth++ ) {
+$paths[] = $current . '/wp-load.php';
+$paths[] = $current . '/../wp-load.php';
+$paths[] = $current . '/../../wp-load.php';
+$current = dirname( $current );
+}
+
+$paths = array_unique( array_map( 'realpath', array_filter( $paths, 'file_exists' ) ) );
+
+if ( empty( $paths ) ) {
+return false;
+}
+
+return array_shift( $paths );
+}
+
+$environment_messages = array();
+$wp_load_path          = softone_debug_locate_wp_load();
+$wp_loaded             = false;
+
+if ( $wp_load_path && file_exists( $wp_load_path ) ) {
+require_once $wp_load_path;
+$wp_loaded              = true;
+$environment_messages[] = 'WordPress environment loaded from: ' . $wp_load_path;
+} elseif ( defined( 'ABSPATH' ) ) {
+$wp_loaded              = true;
+$environment_messages[] = 'WordPress was already loaded by the hosting environment.';
+} else {
+$environment_messages[] = 'Unable to locate wp-load.php. Checked parent directories relative to ' . __DIR__ . '.';
+}
+
+$settings_summary = array();
+$raw_settings     = array();
+$client           = null;
+$trace            = null;
+$trace_entries    = array();
+
+if ( $wp_loaded ) {
+$plugin_root = dirname( __DIR__ );
+
+if ( file_exists( $plugin_root . '/includes/softone-woocommerce-integration-settings.php' ) ) {
+require_once $plugin_root . '/includes/softone-woocommerce-integration-settings.php';
+}
+
+if ( file_exists( $plugin_root . '/includes/class-softone-process-trace.php' ) ) {
+require_once $plugin_root . '/includes/class-softone-process-trace.php';
+}
+
+if ( function_exists( 'softone_wc_integration_get_settings' ) ) {
+$raw_settings = softone_wc_integration_get_settings();
+
+$settings_summary = array(
+'Endpoint'              => isset( $raw_settings['endpoint'] ) ? (string) $raw_settings['endpoint'] : '',
+'Username'              => isset( $raw_settings['username'] ) ? (string) $raw_settings['username'] : '',
+'Password'              => softone_debug_mask_value( isset( $raw_settings['password'] ) ? $raw_settings['password'] : '' ),
+'App ID'                => isset( $raw_settings['app_id'] ) ? (string) $raw_settings['app_id'] : '',
+'Company'               => isset( $raw_settings['company'] ) ? (string) $raw_settings['company'] : '',
+'Branch'                => isset( $raw_settings['branch'] ) ? (string) $raw_settings['branch'] : '',
+'Module'                => isset( $raw_settings['module'] ) ? (string) $raw_settings['module'] : '',
+'RefID'                 => isset( $raw_settings['refid'] ) ? (string) $raw_settings['refid'] : '',
+'Default SALDOC Series' => isset( $raw_settings['default_saldoc_series'] ) ? (string) $raw_settings['default_saldoc_series'] : '',
+'Warehouse'             => isset( $raw_settings['warehouse'] ) ? (string) $raw_settings['warehouse'] : '',
+'Areas'                 => isset( $raw_settings['areas'] ) ? (string) $raw_settings['areas'] : '',
+'Currency'              => isset( $raw_settings['socurrency'] ) ? (string) $raw_settings['socurrency'] : '',
+'Trading Category'      => isset( $raw_settings['trdcategory'] ) ? (string) $raw_settings['trdcategory'] : '',
+'Request Timeout'       => isset( $raw_settings['timeout'] ) ? (string) $raw_settings['timeout'] : '',
 );
+}
+
+if ( class_exists( 'Softone_Process_Trace' ) && class_exists( 'Softone_Process_Trace_Api_Client' ) ) {
+$trace         = new Softone_Process_Trace();
+$stream_logger = class_exists( 'Softone_Process_Trace_Stream_Logger' ) ? new Softone_Process_Trace_Stream_Logger( $trace ) : null;
+$client        = new Softone_Process_Trace_Api_Client( $trace, array(), $stream_logger );
+} elseif ( class_exists( 'Softone_API_Client' ) ) {
+$client = new Softone_API_Client();
+}
+}
+
+/**
+ * Decode JSON strings while recording errors.
+ *
+ * @param string $raw        Raw JSON string.
+ * @param array  $messages   Collector for validation messages.
+ * @param string $field_name Field label.
+ *
+ * @return array|null
+ */
+function softone_debug_parse_json( $raw, array &$messages, $field_name ) {
+$raw = trim( (string) $raw );
+
+if ( '' === $raw ) {
+return null;
+}
+
+$decoded = json_decode( $raw, true );
+
+if ( null === $decoded && JSON_ERROR_NONE !== json_last_error() ) {
+$messages[] = sprintf( '%1$s contains invalid JSON: %2$s', $field_name, json_last_error_msg() );
+
+return null;
+}
+
+return $decoded;
+}
+
+$action_messages = array();
+$session_result  = array();
+$sql_result      = array();
 
 $inputs = array(
-	'endpoint'       => softone_debug_request_value( 'endpoint', $defaults['endpoint'] ),
-	'username'       => softone_debug_request_value( 'username', $defaults['username'] ),
-	'password'       => softone_debug_request_value( 'password', $defaults['password'] ),
-	'app_id'         => softone_debug_request_value( 'app_id', $defaults['app_id'] ),
-	'company'        => softone_debug_request_value( 'company', $defaults['company'] ),
-	'branch'         => softone_debug_request_value( 'branch', $defaults['branch'] ),
-	'module'         => softone_debug_request_value( 'module', $defaults['module'] ),
-	'client_id'      => softone_debug_request_value( 'client_id', $defaults['client_id'] ),
-	'refid'          => softone_debug_request_value( 'refid', $defaults['refid'] ),
-	'warehouse'      => softone_debug_request_value( 'warehouse', $defaults['warehouse'] ),
-	'areas'          => softone_debug_request_value( 'areas', $defaults['areas'] ),
-	'socurrency'     => softone_debug_request_value( 'socurrency', $defaults['socurrency'] ),
-	'trdcategory'    => softone_debug_request_value( 'trdcategory', $defaults['trdcategory'] ),
-	'service'        => softone_debug_request_value( 'service', 'login' ),
-	'sql_name'       => softone_debug_request_value( 'sql_name', '' ),
-	'sql_params'     => softone_debug_request_value( 'sql_params', '' ),
-	'object_name'    => softone_debug_request_value( 'object_name', '' ),
-	'object_data'    => softone_debug_request_value( 'object_data', '' ),
-	'custom_payload' => softone_debug_request_value( 'custom_payload', '' ),
-	'extra_payload'  => softone_debug_request_value( 'extra_payload', '' ),
-	'timeout'        => (int) softone_debug_request_value( 'timeout', 20 ),
-	'skip_ssl'       => isset( $_POST['skip_ssl'] ) && '1' === $_POST['skip_ssl'],
+'sql_name'      => 'getItems',
+'sql_params'    => '{"pMins":99999}',
+'extra_payload' => '',
+'limit_rows'    => 10,
 );
 
-$messages = array();
-$results  = null;
-$executed = 'POST' === $_SERVER['REQUEST_METHOD'];
+if ( 'POST' === $_SERVER['REQUEST_METHOD'] ) {
+$post_values = $_POST;
 
-if ( $executed ) {
-	$payload = softone_debug_build_payload( $inputs, $messages );
-	$json    = json_encode( $payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
-
-	if ( false === $json ) {
-		$messages[] = 'Unable to encode the payload as JSON. Please review the inputs.';
-	} else {
-		$endpoint = trim( $inputs['endpoint'] );
-
-		if ( '' === $endpoint ) {
-			$messages[] = 'The endpoint URL is required.';
-		} else {
-			$ch = curl_init( $endpoint );
-
-			if ( false === $ch ) {
-				$messages[] = 'Failed to initialise cURL. Verify that the PHP cURL extension is enabled.';
-			} else {
-                                $headers = array(
-                                        'Content-Type: application/json',
-                                        'Accept: application/json',
-                                        'User-Agent: SoftOne-Debug/1.0 (+https://github.com/)'
-                                );
-
-				$timeout = max( 1, (int) $inputs['timeout'] );
-
-				$verbose_stream = fopen( 'php://temp', 'w+' );
-
-				curl_setopt_array(
-					$ch,
-					array(
-						CURLOPT_POST           => true,
-						CURLOPT_RETURNTRANSFER => true,
-						CURLOPT_HTTPHEADER     => $headers,
-						CURLOPT_POSTFIELDS     => $json,
-						CURLOPT_TIMEOUT        => $timeout,
-						CURLOPT_CONNECTTIMEOUT => $timeout,
-						CURLOPT_HEADER         => true,
-						CURLOPT_VERBOSE        => true,
-						CURLOPT_STDERR         => $verbose_stream,
-					)
-				);
-
-				if ( $inputs['skip_ssl'] ) {
-					curl_setopt( $ch, CURLOPT_SSL_VERIFYPEER, false );
-					curl_setopt( $ch, CURLOPT_SSL_VERIFYHOST, false );
-				}
-
-				$response      = curl_exec( $ch );
-				$curl_error    = curl_error( $ch );
-				$error_code    = curl_errno( $ch );
-				$info          = curl_getinfo( $ch );
-				$header_size   = isset( $info['header_size'] ) ? (int) $info['header_size'] : 0;
-				$raw_headers   = $header_size > 0 ? substr( $response, 0, $header_size ) : '';
-				$raw_body      = $header_size > 0 ? substr( $response, $header_size ) : $response;
-				$decoded_body  = json_decode( $raw_body, true );
-				$headers_array = softone_debug_parse_headers( $raw_headers );
-
-				rewind( $verbose_stream );
-				$verbose_log = stream_get_contents( $verbose_stream );
-				fclose( $verbose_stream );
-
-				curl_close( $ch );
-
-                                $results = array(
-                                        'payload'         => $payload,
-                                        'payload_json'    => $json,
-                                        'request_headers' => $headers,
-                                        'endpoint'        => $endpoint,
-                                        'response_raw'    => $response,
-                                        'http_code'       => isset( $info['http_code'] ) ? (int) $info['http_code'] : null,
-                                        'curl_info'       => $info,
-                                        'raw_headers'     => $raw_headers,
-                                        'headers'         => $headers_array,
-                                        'raw_body'        => $raw_body,
-                                        'body_decoded'    => ( null !== $decoded_body && JSON_ERROR_NONE === json_last_error() ) ? $decoded_body : null,
-                                        'curl_error'      => $curl_error,
-                                        'curl_errno'      => $error_code,
-                                        'verbose_log'     => $verbose_log,
-                                );
-			}
-		}
-	}
+if ( function_exists( 'wp_unslash' ) ) {
+$post_values = wp_unslash( $post_values );
 }
 
+if ( isset( $post_values['sql_name'] ) ) {
+$inputs['sql_name'] = is_callable( 'sanitize_text_field' ) ? sanitize_text_field( $post_values['sql_name'] ) : (string) $post_values['sql_name'];
+}
+
+if ( isset( $post_values['sql_params'] ) ) {
+$inputs['sql_params'] = (string) $post_values['sql_params'];
+}
+
+if ( isset( $post_values['extra_payload'] ) ) {
+$inputs['extra_payload'] = (string) $post_values['extra_payload'];
+}
+
+if ( isset( $post_values['limit_rows'] ) ) {
+$inputs['limit_rows'] = (int) $post_values['limit_rows'];
+}
+}
+
+$action = '';
+
+if ( isset( $_POST['softone_debug_action'] ) ) {
+$raw_action = $_POST['softone_debug_action'];
+
+if ( function_exists( 'wp_unslash' ) ) {
+$raw_action = wp_unslash( $raw_action );
+}
+
+$action = preg_replace( '/[^a-z0-9_\-]/', '', strtolower( (string) $raw_action ) );
+}
+
+if ( $client && 'POST' === $_SERVER['REQUEST_METHOD'] ) {
+if ( function_exists( 'check_admin_referer' ) && isset( $_POST['softone_debug_nonce'] ) ) {
+check_admin_referer( 'softone_debug_action', 'softone_debug_nonce' );
+}
+
+switch ( $action ) {
+case 'refresh_session':
+try {
+if ( method_exists( $client, 'clear_cached_client_id' ) ) {
+$client->clear_cached_client_id();
+}
+
+if ( method_exists( $client, 'login' ) ) {
+$login_response = $client->login();
+} else {
+throw new RuntimeException( 'Softone client is missing the login method.' );
+}
+
+$session_result['login_response'] = $login_response;
+
+$client_id = isset( $login_response['clientID'] ) ? (string) $login_response['clientID'] : '';
+
+if ( '' === $client_id ) {
+throw new Softone_API_Client_Exception( '[SO-DBG-001] SoftOne login did not return a clientID.' );
+}
+
+if ( method_exists( $client, 'authenticate' ) ) {
+$authenticate_response = $client->authenticate( $client_id );
+} else {
+throw new RuntimeException( 'Softone client is missing the authenticate method.' );
+}
+
+$session_result['authenticate_response'] = $authenticate_response;
+$session_result['client_id']            = isset( $authenticate_response['clientID'] ) ? (string) $authenticate_response['clientID'] : '';
+$session_result['status']               = 'success';
+
+$action_messages[] = 'SoftOne session refreshed successfully.';
+} catch ( Exception $exception ) {
+$session_result['status'] = 'error';
+$session_result['error']  = $exception->getMessage();
+$action_messages[]        = 'Error refreshing SoftOne session: ' . $exception->getMessage();
+}
+break;
+
+case 'sql_data':
+$sql_messages = array();
+$sql_name     = isset( $inputs['sql_name'] ) ? trim( $inputs['sql_name'] ) : '';
+
+$params = softone_debug_parse_json( $inputs['sql_params'], $sql_messages, 'SQL parameters' );
+$extra  = softone_debug_parse_json( $inputs['extra_payload'], $sql_messages, 'Extra payload' );
+
+if ( '' === $sql_name ) {
+$sql_messages[] = 'SQL name is required.';
+}
+
+if ( empty( $sql_messages ) ) {
+try {
+$params_array = is_array( $params ) ? $params : array();
+$extra_array  = is_array( $extra ) ? $extra : array();
+$response     = $client->sql_data( $sql_name, $params_array, $extra_array );
+
+$sql_result['status']    = 'success';
+$sql_result['response']  = $response;
+$sql_result['row_count'] = isset( $response['rows'] ) && is_array( $response['rows'] ) ? count( $response['rows'] ) : 0;
+$sql_result['messages']  = $sql_messages;
+
+$action_messages[] = sprintf( 'SqlData request "%s" executed successfully.', $sql_name );
+} catch ( Exception $exception ) {
+$sql_result['status']   = 'error';
+$sql_result['error']    = $exception->getMessage();
+$sql_result['messages'] = $sql_messages;
+
+$action_messages[] = 'SqlData request failed: ' . $exception->getMessage();
+}
+} else {
+$sql_result['status']   = 'error';
+$sql_result['messages'] = $sql_messages;
+
+$action_messages[] = 'SqlData request aborted due to validation errors.';
+}
+break;
+}
+}
+
+if ( $trace instanceof Softone_Process_Trace ) {
+$trace_entries = $trace->get_entries();
+}
+
+$wp_site_url = function_exists( 'get_site_url' ) ? get_site_url() : '';
+$wp_home_url = function_exists( 'home_url' ) ? home_url() : '';
+$wp_timezone = function_exists( 'wp_timezone_string' ) ? wp_timezone_string() : 'UTC';
+$wp_version  = function_exists( 'get_bloginfo' ) ? get_bloginfo( 'version', 'display' ) : '';
+$plugin_active = false;
+
+if ( function_exists( 'is_plugin_active' ) ) {
+$plugin_active = is_plugin_active( 'softone-woocommerce-integration/softone-woocommerce-integration.php' );
+} elseif ( class_exists( 'Softone_Woocommerce_Integration' ) ) {
+$plugin_active = true;
+}
+
+function softone_debug_render_trace( $entries ) {
+if ( empty( $entries ) ) {
+return '';
+}
+
+$output = '<table class="trace-table">';
+$output .= '<thead><tr><th>Time</th><th>Type</th><th>Action</th><th>Level</th><th>Message</th><th>Context</th></tr></thead>';
+$output .= '<tbody>';
+
+foreach ( $entries as $entry ) {
+$timestamp = isset( $entry['timestamp'] ) ? (int) $entry['timestamp'] : time();
+$time      = function_exists( 'wp_date' ) ? wp_date( 'Y-m-d H:i:s', $timestamp ) : date( 'Y-m-d H:i:s', $timestamp );
+
+$output .= '<tr>';
+$output .= '<td>' . softone_debug_escape( $time ) . '</td>';
+$output .= '<td>' . softone_debug_escape( isset( $entry['type'] ) ? $entry['type'] : '' ) . '</td>';
+$output .= '<td>' . softone_debug_escape( isset( $entry['action'] ) ? $entry['action'] : '' ) . '</td>';
+$output .= '<td>' . softone_debug_escape( isset( $entry['level'] ) ? $entry['level'] : '' ) . '</td>';
+$output .= '<td>' . softone_debug_escape( isset( $entry['message'] ) ? $entry['message'] : '' ) . '</td>';
+$output .= '<td><pre>' . softone_debug_escape( softone_debug_pretty_json( isset( $entry['context'] ) ? $entry['context'] : array() ) ) . '</pre></td>';
+$output .= '</tr>';
+}
+
+$output .= '</tbody></table>';
+
+return $output;
+}
+
+function softone_debug_render_messages( $messages, $class = 'notice' ) {
+if ( empty( $messages ) ) {
+return '';
+}
+
+$output = '<div class="' . softone_debug_escape( $class ) . '"><ul>';
+
+foreach ( $messages as $message ) {
+$output .= '<li>' . softone_debug_escape( $message ) . '</li>';
+}
+
+$output .= '</ul></div>';
+
+return $output;
+}
+
+function softone_debug_render_response_block( $title, $data ) {
+if ( empty( $data ) || ! is_array( $data ) ) {
+return '';
+}
+
+return '<details><summary>' . softone_debug_escape( $title ) . '</summary><pre>' . softone_debug_escape( softone_debug_pretty_json( $data ) ) . '</pre></details>';
+}
+
+$limit_rows = isset( $inputs['limit_rows'] ) ? (int) $inputs['limit_rows'] : 10;
+$sql_rows   = array();
+
+if ( isset( $sql_result['response']['rows'] ) && is_array( $sql_result['response']['rows'] ) ) {
+$sql_rows = $sql_result['response']['rows'];
+}
+
+if ( $limit_rows > 0 && count( $sql_rows ) > $limit_rows ) {
+$sql_rows = array_slice( $sql_rows, 0, $limit_rows );
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<meta charset="utf-8" />
-	<title>SoftOne API Debugger</title>
-	<meta name="viewport" content="width=device-width, initial-scale=1" />
-	<style>
-		body {
-			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-			margin: 0;
-			padding: 0;
-			background: #f5f5f5;
-			color: #1d2327;
-		}
+<meta charset="utf-8" />
+<title>SoftOne API Debugger</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+body {
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+margin: 0;
+background: #f7f7f7;
+color: #1d2327;
+}
 
-		header {
-			background: #23282d;
-			color: #fff;
-			padding: 1.5rem 2rem;
-		}
+header {
+background: #23282d;
+color: #fff;
+padding: 1.5rem 2rem;
+}
 
-		header h1 {
-			margin: 0;
-			font-size: 1.75rem;
-		}
+header h1 {
+margin: 0;
+font-size: 1.75rem;
+}
 
-		main {
-			padding: 2rem;
-		}
+main {
+padding: 2rem;
+max-width: 1100px;
+margin: 0 auto;
+}
 
-		form {
-			background: #fff;
-			border-radius: 8px;
-			box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-			padding: 1.5rem;
-			margin-bottom: 2rem;
-		}
+section {
+background: #fff;
+border-radius: 8px;
+padding: 1.5rem;
+margin-bottom: 1.5rem;
+box-shadow: 0 1px 3px rgba( 0, 0, 0, 0.08 );
+}
 
-		fieldset {
-			border: 1px solid #ccd0d4;
-			border-radius: 6px;
-			margin-bottom: 1.5rem;
-			padding: 1rem;
-		}
+section h2 {
+margin-top: 0;
+}
 
-		legend {
-			font-weight: 600;
-			padding: 0 0.5rem;
-		}
+.notice {
+border-left: 4px solid #2271b1;
+background: #f0f6fc;
+padding: 1rem;
+margin-bottom: 1rem;
+}
 
-		label {
-			display: block;
-			font-weight: 600;
-			margin-bottom: 0.35rem;
-		}
+.notice ul {
+margin: 0;
+padding-left: 1.25rem;
+}
 
-		input[type="text"],
-		input[type="password"],
-		input[type="number"],
-		select,
-		textarea {
-			width: 100%;
-			box-sizing: border-box;
-			padding: 0.5rem 0.75rem;
-			border-radius: 4px;
-			border: 1px solid #ccd0d4;
-			font-size: 0.95rem;
-			font-family: inherit;
-			margin-bottom: 0.75rem;
-		}
+.error {
+border-left-color: #d63638;
+background: #fcf0f1;
+}
 
-		textarea {
-			min-height: 120px;
-			resize: vertical;
-		}
+table.settings-table,
+table.trace-table,
+table.rows-table {
+width: 100%;
+border-collapse: collapse;
+font-size: 0.95rem;
+}
 
-		.button-primary {
-			background: #007cba;
-			border: none;
-			color: #fff;
-			padding: 0.75rem 1.5rem;
-			font-size: 1rem;
-			border-radius: 4px;
-			cursor: pointer;
-		}
+table.settings-table th,
+table.settings-table td,
+table.trace-table th,
+table.trace-table td,
+table.rows-table th,
+table.rows-table td {
+border: 1px solid #e2e4e7;
+padding: 0.65rem;
+vertical-align: top;
+}
 
-		.button-primary:hover {
-			background: #006ba1;
-		}
+table.rows-table thead {
+background: #f6f7f7;
+}
 
-		.notice {
-			background: #fff8e5;
-			border-left: 4px solid #ffb900;
-			padding: 1rem;
-			margin-bottom: 1.5rem;
-		}
+form .field {
+display: flex;
+flex-direction: column;
+margin-bottom: 1rem;
+}
 
-		.notice.error {
-			background: #fbeaea;
-			border-left-color: #d63638;
-		}
+form label {
+font-weight: 600;
+margin-bottom: 0.4rem;
+}
 
-		pre {
-			background: #1e1e1e;
-			color: #f5f5f5;
-			padding: 1rem;
-			overflow-x: auto;
-			border-radius: 6px;
-			font-size: 0.9rem;
-		}
+form input[type="text"],
+form input[type="number"],
+form textarea {
+padding: 0.6rem;
+border-radius: 4px;
+border: 1px solid #8c8f94;
+font-size: 1rem;
+font-family: inherit;
+}
 
-		details {
-			margin-bottom: 1.5rem;
-		}
+form textarea {
+min-height: 120px;
+}
 
-		details summary {
-			cursor: pointer;
-			font-weight: 600;
-			margin-bottom: 0.75rem;
-		}
+form button {
+display: inline-flex;
+align-items: center;
+gap: 0.5rem;
+background: #2271b1;
+color: #fff;
+border: none;
+border-radius: 4px;
+padding: 0.7rem 1.2rem;
+cursor: pointer;
+font-size: 1rem;
+}
 
-		.output-grid {
-			display: grid;
-			grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-			gap: 1.5rem;
-		}
+form button.secondary {
+background: #50575e;
+}
 
-		.output-card {
-			background: #fff;
-			border-radius: 8px;
-			box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-			padding: 1.25rem;
-		}
+details summary {
+cursor: pointer;
+font-weight: 600;
+margin-bottom: 0.5rem;
+}
 
-		.output-card h2 {
-			margin-top: 0;
-		}
-	</style>
+pre {
+font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+font-size: 0.9rem;
+background: #f6f7f7;
+padding: 0.75rem;
+border-radius: 4px;
+overflow-x: auto;
+}
+
+.action-buttons {
+display: flex;
+flex-wrap: wrap;
+gap: 0.75rem;
+}
+
+@media (max-width: 720px) {
+main {
+padding: 1rem;
+}
+
+form .action-buttons {
+flex-direction: column;
+}
+}
+</style>
 </head>
 <body>
-	<header>
-		<h1>SoftOne API Debugger</h1>
-		<p>Inspect requests and responses exchanged with your SoftOne endpoint. Sensitive credentials are not stored.</p>
-	</header>
-	<main>
-		<?php if ( ! empty( $messages ) ) : ?>
-		<div class="notice error">
-			<ul>
-				<?php foreach ( $messages as $message ) : ?>
-				<li><?php echo softone_debug_escape( $message ); ?></li>
-				<?php endforeach; ?>
-				</ul>
-			</div>
-		<?php endif; ?>
+<header>
+<h1>SoftOne API Debugger</h1>
+<p>Inspect WordPress configuration and execute SoftOne API calls using the plugin settings.</p>
+</header>
+<main>
+<?php echo softone_debug_render_messages( $environment_messages ); ?>
 
-		<form method="post">
-			<fieldset>
-				<legend>Connection</legend>
-				<label for="endpoint">Endpoint URL</label>
-				<input type="text" id="endpoint" name="endpoint" value="<?php echo softone_debug_escape( $inputs['endpoint'] ); ?>" placeholder="https://example.com/s1services" required />
+<section>
+<h2>Environment</h2>
+<table class="settings-table">
+<tbody>
+<tr><th>Site URL</th><td><?php echo softone_debug_escape( $wp_site_url ); ?></td></tr>
+<tr><th>Home URL</th><td><?php echo softone_debug_escape( $wp_home_url ); ?></td></tr>
+<tr><th>WordPress Version</th><td><?php echo softone_debug_escape( $wp_version ); ?></td></tr>
+<tr><th>Timezone</th><td><?php echo softone_debug_escape( $wp_timezone ); ?></td></tr>
+<tr><th>Plugin Active</th><td><?php echo $plugin_active ? 'Yes' : 'No'; ?></td></tr>
+<tr><th>Client Class</th><td><?php echo softone_debug_escape( $client ? get_class( $client ) : 'Unavailable' ); ?></td></tr>
+</tbody>
+</table>
+</section>
 
-				<label for="timeout">Timeout (seconds)</label>
-				<input type="number" id="timeout" name="timeout" min="1" step="1" value="<?php echo softone_debug_escape( $inputs['timeout'] ); ?>" />
+<section>
+<h2>Connection Settings Overview</h2>
+<?php if ( empty( $settings_summary ) ) : ?>
+<p>The plugin settings could not be loaded. Verify that the plugin is active and configured.</p>
+<?php else : ?>
+<table class="settings-table">
+<tbody>
+<?php foreach ( $settings_summary as $label => $value ) : ?>
+<tr>
+<th><?php echo softone_debug_escape( $label ); ?></th>
+<td><?php echo softone_debug_escape( $value ); ?></td>
+</tr>
+<?php endforeach; ?>
+</tbody>
+</table>
+<?php endif; ?>
+</section>
 
-				<label>
-					<input type="checkbox" name="skip_ssl" value="1" <?php echo softone_debug_checked_attr( $inputs['skip_ssl'] ); ?> />
-					Skip SSL verification (only for debugging!)
-				</label>
-			</fieldset>
+<section>
+<h2>Actions</h2>
+<?php echo softone_debug_render_messages( $action_messages, 'notice' ); ?>
 
-			<fieldset>
-				<legend>Credentials &amp; Defaults</legend>
-				<label for="username">Username</label>
-				<input type="text" id="username" name="username" value="<?php echo softone_debug_escape( $inputs['username'] ); ?>" />
+<div class="action-buttons">
+<form method="post">
+<?php if ( function_exists( 'wp_nonce_field' ) ) { wp_nonce_field( 'softone_debug_action', 'softone_debug_nonce' ); } ?>
+<input type="hidden" name="softone_debug_action" value="refresh_session" />
+<button type="submit">Refresh SoftOne Session</button>
+</form>
+</div>
 
-				<label for="password">Password</label>
-				<input type="password" id="password" name="password" value="<?php echo softone_debug_escape( $inputs['password'] ); ?>" />
+<hr />
 
-				<label for="app_id">App ID</label>
-				<input type="text" id="app_id" name="app_id" value="<?php echo softone_debug_escape( $inputs['app_id'] ); ?>" />
+<form method="post">
+<?php if ( function_exists( 'wp_nonce_field' ) ) { wp_nonce_field( 'softone_debug_action', 'softone_debug_nonce' ); } ?>
+<input type="hidden" name="softone_debug_action" value="sql_data" />
+<div class="field">
+<label for="sql_name">Stored SQL Name</label>
+<input type="text" id="sql_name" name="sql_name" value="<?php echo softone_debug_escape( $inputs['sql_name'] ); ?>" placeholder="getItems" />
+</div>
+<div class="field">
+<label for="sql_params">SQL Parameters (JSON)</label>
+<textarea id="sql_params" name="sql_params" placeholder='{"pMins":99999}'><?php echo softone_debug_escape( $inputs['sql_params'] ); ?></textarea>
+</div>
+<div class="field">
+<label for="extra_payload">Extra Payload (JSON)</label>
+<textarea id="extra_payload" name="extra_payload" placeholder='{"clientid":"123"}'><?php echo softone_debug_escape( $inputs['extra_payload'] ); ?></textarea>
+</div>
+<div class="field">
+<label for="limit_rows">Display first N rows</label>
+<input type="number" id="limit_rows" name="limit_rows" min="0" step="1" value="<?php echo softone_debug_escape( (string) $inputs['limit_rows'] ); ?>" />
+</div>
+<button type="submit" class="secondary">Run SqlData Request</button>
+</form>
+</section>
 
-				<div class="output-grid">
-					<div>
-						<label for="company">Company</label>
-						<input type="text" id="company" name="company" value="<?php echo softone_debug_escape( $inputs['company'] ); ?>" />
-					</div>
-					<div>
-						<label for="branch">Branch</label>
-						<input type="text" id="branch" name="branch" value="<?php echo softone_debug_escape( $inputs['branch'] ); ?>" />
-					</div>
-					<div>
-						<label for="module">Module</label>
-						<input type="text" id="module" name="module" value="<?php echo softone_debug_escape( $inputs['module'] ); ?>" />
-					</div>
-					<div>
-						<label for="refid">RefID</label>
-						<input type="text" id="refid" name="refid" value="<?php echo softone_debug_escape( $inputs['refid'] ); ?>" />
-					</div>
-					<div>
-						<label for="warehouse">Warehouse</label>
-						<input type="text" id="warehouse" name="warehouse" value="<?php echo softone_debug_escape( $inputs['warehouse'] ); ?>" />
-					</div>
-					<div>
-						<label for="areas">Areas</label>
-						<input type="text" id="areas" name="areas" value="<?php echo softone_debug_escape( $inputs['areas'] ); ?>" />
-					</div>
-					<div>
-						<label for="socurrency">Currency</label>
-						<input type="text" id="socurrency" name="socurrency" value="<?php echo softone_debug_escape( $inputs['socurrency'] ); ?>" />
-					</div>
-					<div>
-						<label for="trdcategory">Trading Category</label>
-						<input type="text" id="trdcategory" name="trdcategory" value="<?php echo softone_debug_escape( $inputs['trdcategory'] ); ?>" />
-					</div>
-				</div>
-			</fieldset>
+<?php if ( ! empty( $session_result ) ) : ?>
+<section>
+<h2>Session Debug</h2>
+<?php if ( 'success' === ( isset( $session_result['status'] ) ? $session_result['status'] : '' ) ) : ?>
+<p><strong>Authenticated Client ID:</strong> <?php echo softone_debug_escape( softone_debug_mask_value( isset( $session_result['client_id'] ) ? $session_result['client_id'] : '' ) ); ?></p>
+<?php else : ?>
+<div class="notice error">
+<ul><li><?php echo softone_debug_escape( isset( $session_result['error'] ) ? $session_result['error'] : 'Session refresh failed.' ); ?></li></ul>
+</div>
+<?php endif; ?>
 
-			<fieldset>
-				<legend>Request Builder</legend>
-				<label for="service">Service</label>
-				<select id="service" name="service">
-					<?php
-					$services = array(
-						'login'        => 'login',
-						'authenticate' => 'authenticate',
-						'sqldata'      => 'SqlData',
-						'setdata'      => 'setData',
-						'custom'       => 'Custom JSON',
-					);
+<?php
+echo softone_debug_render_response_block( 'Login Response', isset( $session_result['login_response'] ) ? $session_result['login_response'] : array() );
+echo softone_debug_render_response_block( 'Authenticate Response', isset( $session_result['authenticate_response'] ) ? $session_result['authenticate_response'] : array() );
+?>
+</section>
+<?php endif; ?>
 
-					foreach ( $services as $value => $label ) {
-						$selected = ( $inputs['service'] === $value ) ? 'selected' : '';
-						printf( '<option value="%1$s" %3$s>%2$s</option>', softone_debug_escape( $value ), softone_debug_escape( $label ), $selected );
-					}
-					?>
-				</select>
+<?php if ( ! empty( $sql_result ) ) : ?>
+<section>
+<h2>SqlData Result</h2>
+<?php if ( ! empty( $sql_result['messages'] ) ) : ?>
+<?php echo softone_debug_render_messages( $sql_result['messages'], 'notice' ); ?>
+<?php endif; ?>
 
-				<label for="client_id">Client ID</label>
-				<input type="text" id="client_id" name="client_id" value="<?php echo softone_debug_escape( $inputs['client_id'] ); ?>" />
+<?php if ( 'success' === ( isset( $sql_result['status'] ) ? $sql_result['status'] : '' ) ) : ?>
+<p><strong>Total rows returned:</strong> <?php echo softone_debug_escape( (string) $sql_result['row_count'] ); ?></p>
+<?php if ( ! empty( $sql_rows ) ) : ?>
+<table class="rows-table">
+<thead><tr>
+<?php foreach ( array_keys( $sql_rows[0] ) as $column ) : ?>
+<th><?php echo softone_debug_escape( $column ); ?></th>
+<?php endforeach; ?>
+</tr></thead>
+<tbody>
+<?php foreach ( $sql_rows as $row ) : ?>
+<tr>
+<?php foreach ( $row as $value ) : ?>
+<td><?php echo softone_debug_escape( is_scalar( $value ) ? (string) $value : softone_debug_pretty_json( $value ) ); ?></td>
+<?php endforeach; ?>
+</tr>
+<?php endforeach; ?>
+</tbody>
+</table>
+<?php endif; ?>
 
-				<div id="sqldata-fields">
-					<label for="sql_name">SqlData &ndash; Stored SQL name</label>
-					<input type="text" id="sql_name" name="sql_name" value="<?php echo softone_debug_escape( $inputs['sql_name'] ); ?>" />
+<?php echo softone_debug_render_response_block( 'Raw SqlData Response', isset( $sql_result['response'] ) ? $sql_result['response'] : array() ); ?>
+<?php else : ?>
+<div class="notice error">
+<ul><li><?php echo softone_debug_escape( isset( $sql_result['error'] ) ? $sql_result['error'] : 'SqlData request failed.' ); ?></li></ul>
+</div>
+<?php endif; ?>
+</section>
+<?php endif; ?>
 
-					<label for="sql_params">SqlData &ndash; Parameters (JSON)</label>
-					<textarea id="sql_params" name="sql_params" placeholder='{"param1":"value"}'><?php echo softone_debug_escape( $inputs['sql_params'] ); ?></textarea>
-				</div>
-
-				<div id="setdata-fields">
-					<label for="object_name">setData &ndash; Object</label>
-					<input type="text" id="object_name" name="object_name" value="<?php echo softone_debug_escape( $inputs['object_name'] ); ?>" />
-
-					<label for="object_data">setData &ndash; Data (JSON)</label>
-					<textarea id="object_data" name="object_data" placeholder='{"SALDOC":{"TRDR":123}}'><?php echo softone_debug_escape( $inputs['object_data'] ); ?></textarea>
-				</div>
-
-                                <div id="custom-payload-wrapper">
-                                        <label for="custom_payload">Custom JSON payload</label>
-                                        <textarea id="custom_payload" name="custom_payload" placeholder='{"key":"value"}'><?php echo softone_debug_escape( $inputs['custom_payload'] ); ?></textarea>
-                                </div>
-
-				<label for="extra_payload">Extra payload to merge (JSON)</label>
-				<textarea id="extra_payload" name="extra_payload" placeholder='{"key":"value"}'><?php echo softone_debug_escape( $inputs['extra_payload'] ); ?></textarea>
-			</fieldset>
-
-			<button type="submit" class="button-primary">Send request</button>
-		</form>
-
-		<?php if ( $results ) : ?>
-		<section class="output-grid">
-				<div class="output-card">
-					<h2>Request</h2>
-					<p><strong>Endpoint:</strong> <?php echo softone_debug_escape( $results['endpoint'] ); ?></p>
-					<h3>Headers</h3>
-					<pre><?php echo softone_debug_escape( implode( "\n", $results['request_headers'] ) ); ?></pre>
-					<h3>Payload</h3>
-					<pre><?php echo softone_debug_escape( softone_debug_pretty_json( $results['payload'] ) ); ?></pre>
-				</div>
-
-				<div class="output-card">
-					<h2>Response</h2>
-					<p><strong>Status code:</strong> <?php echo softone_debug_escape( $results['http_code'] ); ?></p>
-					<h3>Headers</h3>
-					<pre><?php echo softone_debug_escape( softone_debug_pretty_json( $results['headers'] ) ); ?></pre>
-<h3>Body</h3>
-<pre><?php echo softone_debug_escape( softone_debug_pretty_json( null !== $results['body_decoded'] ? $results['body_decoded'] : $results['raw_body'] ) ); ?></pre>
-				</div>
-
-				<div class="output-card">
-					<h2>cURL diagnostics</h2>
-					<h3>Info</h3>
-					<pre><?php echo softone_debug_escape( softone_debug_pretty_json( $results['curl_info'] ) ); ?></pre>
-					<h3>Error</h3>
-					<pre><?php echo softone_debug_escape( sprintf( 'Code: %1$s | Message: %2$s', $results['curl_errno'], $results['curl_error'] ) ); ?></pre>
-					<h3>Verbose log</h3>
-					<pre><?php echo softone_debug_escape( $results['verbose_log'] ); ?></pre>
-				</div>
-		</section>
-		<?php elseif ( $executed && empty( $messages ) ) : ?>
-		<div class="notice">No response was returned. Check the cURL diagnostics for clues.</div>
-		<?php endif; ?>
-	</main>
-	<script>
-	(function() {
-		const serviceSelect = document.getElementById( 'service' );
-		const sqlFields = document.getElementById( 'sqldata-fields' );
-		const setDataFields = document.getElementById( 'setdata-fields' );
-		const customWrapper = document.getElementById( 'custom-payload-wrapper' );
-
-		function toggleFields() {
-			const value = serviceSelect.value.toLowerCase();
-
-			if ( sqlFields ) {
-				sqlFields.style.display = ( 'sqldata' === value ) ? 'block' : 'none';
-			}
-
-			if ( setDataFields ) {
-				setDataFields.style.display = ( 'setdata' === value ) ? 'block' : 'none';
-			}
-
-			if ( customWrapper ) {
-				customWrapper.style.display = ( 'custom' === value ) ? 'block' : 'none';
-			}
-		}
-
-		toggleFields();
-		serviceSelect.addEventListener( 'change', toggleFields );
-	})();
-	</script>
+<?php if ( ! empty( $trace_entries ) ) : ?>
+<section>
+<h2>Process Trace</h2>
+<?php echo softone_debug_render_trace( $trace_entries ); ?>
+</section>
+<?php endif; ?>
+</main>
 </body>
 </html>
