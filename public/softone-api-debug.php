@@ -187,6 +187,179 @@ function softone_debug_summarise_session_cache( array $meta, $resolved_ttl = nul
     return $summary;
 }
 
+/**
+ * Normalise checkbox/flag style inputs to booleans.
+ *
+ * @param mixed $value Raw value.
+ *
+ * @return bool
+ */
+function softone_debug_normalize_flag( $value ) {
+    if ( is_bool( $value ) ) {
+        return $value;
+    }
+
+    if ( is_numeric( $value ) ) {
+        if ( function_exists( 'absint' ) ) {
+            return (bool) absint( $value );
+        }
+
+        return abs( (int) $value ) > 0;
+    }
+
+    $value = strtolower( trim( (string) $value ) );
+
+    return in_array( $value, array( '1', 'true', 'yes', 'on' ), true );
+}
+
+/**
+ * Render a checked attribute when the value is truthy.
+ *
+ * @param bool $is_checked Value to normalise.
+ *
+ * @return string
+ */
+function softone_debug_checked_attribute( $is_checked ) {
+    return $is_checked ? ' checked="checked"' : '';
+}
+
+/**
+ * Format boolean values as human readable strings.
+ *
+ * @param bool $value Raw boolean.
+ *
+ * @return string
+ */
+function softone_debug_format_boolean_label( $value ) {
+    $value = (bool) $value;
+
+    if ( function_exists( '__' ) ) {
+        return $value ? __( 'Yes', 'softone-woocommerce-integration' ) : __( 'No', 'softone-woocommerce-integration' );
+    }
+
+    return $value ? 'Yes' : 'No';
+}
+
+/**
+ * Format integers using the current locale where possible.
+ *
+ * @param int $value Raw integer value.
+ *
+ * @return string
+ */
+function softone_debug_format_number( $value ) {
+    if ( function_exists( 'number_format_i18n' ) ) {
+        return number_format_i18n( (int) $value );
+    }
+
+    return (string) (int) $value;
+}
+
+/**
+ * Build a concise summary of an item sync run.
+ *
+ * @param array<string,mixed> $result       Result payload returned by the synchroniser.
+ * @param int                 $started_at   Timestamp when the run started.
+ * @param int                 $finished_at  Timestamp when the run completed.
+ * @param bool                $success      Whether the run completed successfully.
+ *
+ * @return array<string,mixed>
+ */
+function softone_debug_prepare_sync_summary( array $result, $started_at, $finished_at, $success ) {
+    $started_at  = max( 0, (int) $started_at );
+    $finished_at = max( $started_at, (int) $finished_at );
+    $duration    = max( 0, $finished_at - $started_at );
+
+    $summary = array(
+        'success'               => (bool) $success,
+        'processed'             => isset( $result['processed'] ) ? (int) $result['processed'] : 0,
+        'created'               => isset( $result['created'] ) ? (int) $result['created'] : 0,
+        'updated'               => isset( $result['updated'] ) ? (int) $result['updated'] : 0,
+        'skipped'               => isset( $result['skipped'] ) ? (int) $result['skipped'] : 0,
+        'stale_processed'       => isset( $result['stale_processed'] ) ? (int) $result['stale_processed'] : 0,
+        'started_at'            => $started_at,
+        'finished_at'           => $finished_at,
+        'duration_seconds'      => $duration,
+        'started_at_formatted'  => softone_debug_format_timestamp( $started_at ),
+        'finished_at_formatted' => softone_debug_format_timestamp( $finished_at ),
+        'duration_human'        => '',
+    );
+
+    if ( $duration > 0 ) {
+        if ( function_exists( 'human_time_diff' ) ) {
+            $summary['duration_human'] = human_time_diff( $started_at, $finished_at );
+        } else {
+            $summary['duration_human'] = $duration . ' seconds';
+        }
+    } else {
+        $summary['duration_human'] = function_exists( '__' ) ? __( 'less than a minute', 'softone-woocommerce-integration' ) : 'less than a minute';
+    }
+
+    return $summary;
+}
+
+/**
+ * Prepare key/value rows for displaying the sync summary table.
+ *
+ * @param array<string,mixed> $summary Summary payload.
+ * @param array<string,bool>  $options Options used for the run.
+ *
+ * @return array<string,string>
+ */
+function softone_debug_prepare_sync_display_rows( array $summary, array $options = array() ) {
+    $rows = array();
+
+    if ( isset( $summary['success'] ) ) {
+        $rows['Status'] = $summary['success'] ? 'Success' : 'Failed';
+    }
+
+    if ( array_key_exists( 'force_full_import', $options ) ) {
+        $rows['Force full import'] = softone_debug_format_boolean_label( $options['force_full_import'] );
+    }
+
+    if ( array_key_exists( 'force_taxonomy_refresh', $options ) ) {
+        $rows['Force taxonomy refresh'] = softone_debug_format_boolean_label( $options['force_taxonomy_refresh'] );
+    }
+
+    if ( isset( $summary['processed'] ) ) {
+        $rows['Processed products'] = softone_debug_format_number( $summary['processed'] );
+    }
+
+    if ( isset( $summary['created'] ) ) {
+        $rows['Created products'] = softone_debug_format_number( $summary['created'] );
+    }
+
+    if ( isset( $summary['updated'] ) ) {
+        $rows['Updated products'] = softone_debug_format_number( $summary['updated'] );
+    }
+
+    if ( isset( $summary['skipped'] ) ) {
+        $rows['Skipped products'] = softone_debug_format_number( $summary['skipped'] );
+    }
+
+    if ( isset( $summary['stale_processed'] ) && $summary['stale_processed'] > 0 ) {
+        $rows['Stale products handled'] = softone_debug_format_number( $summary['stale_processed'] );
+    }
+
+    if ( ! empty( $summary['started_at_formatted'] ) ) {
+        $rows['Started at'] = $summary['started_at_formatted'];
+    }
+
+    if ( ! empty( $summary['finished_at_formatted'] ) ) {
+        $rows['Finished at'] = $summary['finished_at_formatted'];
+    }
+
+    if ( isset( $summary['duration_human'] ) && '' !== $summary['duration_human'] ) {
+        $rows['Duration'] = $summary['duration_human'];
+    }
+
+    if ( isset( $summary['duration_seconds'] ) ) {
+        $rows['Duration (seconds)'] = softone_debug_format_number( $summary['duration_seconds'] );
+    }
+
+    return $rows;
+}
+
 $environment_messages = array();
 $wp_load_path          = softone_debug_locate_wp_load();
 $wp_loaded             = false;
@@ -207,46 +380,71 @@ $raw_settings     = array();
 $client           = null;
 $trace            = null;
 $trace_entries    = array();
+$activity_logger  = null;
+$item_sync        = null;
 
 if ( $wp_loaded ) {
-$plugin_root = dirname( __DIR__ );
+    $plugin_root = dirname( __DIR__ );
 
-if ( file_exists( $plugin_root . '/includes/softone-woocommerce-integration-settings.php' ) ) {
-require_once $plugin_root . '/includes/softone-woocommerce-integration-settings.php';
-}
+    if ( file_exists( $plugin_root . '/includes/softone-woocommerce-integration-settings.php' ) ) {
+        require_once $plugin_root . '/includes/softone-woocommerce-integration-settings.php';
+    }
 
-if ( file_exists( $plugin_root . '/includes/class-softone-process-trace.php' ) ) {
-require_once $plugin_root . '/includes/class-softone-process-trace.php';
-}
+    if ( file_exists( $plugin_root . '/includes/class-softone-process-trace.php' ) ) {
+        require_once $plugin_root . '/includes/class-softone-process-trace.php';
+    }
 
-if ( function_exists( 'softone_wc_integration_get_settings' ) ) {
-$raw_settings = softone_wc_integration_get_settings();
+    if ( file_exists( $plugin_root . '/includes/class-softone-item-sync.php' ) ) {
+        require_once $plugin_root . '/includes/class-softone-item-sync.php';
+    }
 
-$settings_summary = array(
-'Endpoint'              => isset( $raw_settings['endpoint'] ) ? (string) $raw_settings['endpoint'] : '',
-'Username'              => isset( $raw_settings['username'] ) ? (string) $raw_settings['username'] : '',
-'Password'              => softone_debug_mask_value( isset( $raw_settings['password'] ) ? $raw_settings['password'] : '' ),
-'App ID'                => isset( $raw_settings['app_id'] ) ? (string) $raw_settings['app_id'] : '',
-'Company'               => isset( $raw_settings['company'] ) ? (string) $raw_settings['company'] : '',
-'Branch'                => isset( $raw_settings['branch'] ) ? (string) $raw_settings['branch'] : '',
-'Module'                => isset( $raw_settings['module'] ) ? (string) $raw_settings['module'] : '',
-'RefID'                 => isset( $raw_settings['refid'] ) ? (string) $raw_settings['refid'] : '',
-'Default SALDOC Series' => isset( $raw_settings['default_saldoc_series'] ) ? (string) $raw_settings['default_saldoc_series'] : '',
-'Warehouse'             => isset( $raw_settings['warehouse'] ) ? (string) $raw_settings['warehouse'] : '',
-'Areas'                 => isset( $raw_settings['areas'] ) ? (string) $raw_settings['areas'] : '',
-'Currency'              => isset( $raw_settings['socurrency'] ) ? (string) $raw_settings['socurrency'] : '',
-'Trading Category'      => isset( $raw_settings['trdcategory'] ) ? (string) $raw_settings['trdcategory'] : '',
-'Request Timeout'       => isset( $raw_settings['timeout'] ) ? (string) $raw_settings['timeout'] : '',
-);
-}
+    if ( function_exists( 'softone_wc_integration_get_settings' ) ) {
+        $raw_settings = softone_wc_integration_get_settings();
 
-if ( class_exists( 'Softone_Process_Trace' ) && class_exists( 'Softone_Process_Trace_Api_Client' ) ) {
-$trace         = new Softone_Process_Trace();
-$stream_logger = class_exists( 'Softone_Process_Trace_Stream_Logger' ) ? new Softone_Process_Trace_Stream_Logger( $trace ) : null;
-$client        = new Softone_Process_Trace_Api_Client( $trace, array(), $stream_logger );
-} elseif ( class_exists( 'Softone_API_Client' ) ) {
-$client = new Softone_API_Client();
-}
+        $settings_summary = array(
+            'Endpoint'              => isset( $raw_settings['endpoint'] ) ? (string) $raw_settings['endpoint'] : '',
+            'Username'              => isset( $raw_settings['username'] ) ? (string) $raw_settings['username'] : '',
+            'Password'              => softone_debug_mask_value( isset( $raw_settings['password'] ) ? $raw_settings['password'] : '' ),
+            'App ID'                => isset( $raw_settings['app_id'] ) ? (string) $raw_settings['app_id'] : '',
+            'Company'               => isset( $raw_settings['company'] ) ? (string) $raw_settings['company'] : '',
+            'Branch'                => isset( $raw_settings['branch'] ) ? (string) $raw_settings['branch'] : '',
+            'Module'                => isset( $raw_settings['module'] ) ? (string) $raw_settings['module'] : '',
+            'RefID'                 => isset( $raw_settings['refid'] ) ? (string) $raw_settings['refid'] : '',
+            'Default SALDOC Series' => isset( $raw_settings['default_saldoc_series'] ) ? (string) $raw_settings['default_saldoc_series'] : '',
+            'Warehouse'             => isset( $raw_settings['warehouse'] ) ? (string) $raw_settings['warehouse'] : '',
+            'Areas'                 => isset( $raw_settings['areas'] ) ? (string) $raw_settings['areas'] : '',
+            'Currency'              => isset( $raw_settings['socurrency'] ) ? (string) $raw_settings['socurrency'] : '',
+            'Trading Category'      => isset( $raw_settings['trdcategory'] ) ? (string) $raw_settings['trdcategory'] : '',
+            'Request Timeout'       => isset( $raw_settings['timeout'] ) ? (string) $raw_settings['timeout'] : '',
+        );
+    }
+
+    if ( class_exists( 'Softone_Process_Trace' ) && class_exists( 'Softone_Process_Trace_Api_Client' ) ) {
+        $trace         = new Softone_Process_Trace();
+        $stream_logger = class_exists( 'Softone_Process_Trace_Stream_Logger' ) ? new Softone_Process_Trace_Stream_Logger( $trace ) : null;
+        $client        = new Softone_Process_Trace_Api_Client( $trace, array(), $stream_logger );
+
+        if ( class_exists( 'Softone_Process_Trace_Activity_Logger' ) ) {
+            $activity_logger = new Softone_Process_Trace_Activity_Logger( $trace );
+        }
+    } elseif ( class_exists( 'Softone_API_Client' ) ) {
+        $client = new Softone_API_Client();
+    }
+
+    if ( $trace instanceof Softone_Process_Trace && ! $activity_logger && class_exists( 'Softone_Process_Trace_Activity_Logger' ) ) {
+        $activity_logger = new Softone_Process_Trace_Activity_Logger( $trace );
+    }
+
+    if ( class_exists( 'Softone_Item_Sync' ) && $client instanceof Softone_API_Client ) {
+        $item_logger        = isset( $stream_logger ) && $stream_logger ? $stream_logger : null;
+        $activity_instance  = ( class_exists( 'Softone_Sync_Activity_Logger' ) && $activity_logger instanceof Softone_Sync_Activity_Logger ) ? $activity_logger : null;
+
+        try {
+            $item_sync = new Softone_Item_Sync( $client, $item_logger, null, $activity_instance );
+        } catch ( Exception $exception ) {
+            $environment_messages[] = 'Unable to initialise item synchroniser: ' . $exception->getMessage();
+        }
+    }
 }
 
 /**
@@ -279,7 +477,13 @@ return $decoded;
 $action_messages = array();
 $session_result  = array();
 $sql_result      = array();
+$sync_result     = array();
 $variation_flow  = softone_debug_collect_variation_flow();
+
+$sync_options = array(
+    'force_full_import'      => false,
+    'force_taxonomy_refresh' => false,
+);
 
 $inputs = array(
 'sql_name'      => 'getItems',
@@ -294,6 +498,9 @@ $post_values = $_POST;
 if ( function_exists( 'wp_unslash' ) ) {
 $post_values = wp_unslash( $post_values );
 }
+
+$sync_options['force_full_import']      = isset( $post_values['force_full_import'] ) ? softone_debug_normalize_flag( $post_values['force_full_import'] ) : false;
+$sync_options['force_taxonomy_refresh'] = isset( $post_values['force_taxonomy_refresh'] ) ? softone_debug_normalize_flag( $post_values['force_taxonomy_refresh'] ) : false;
 
 if ( isset( $post_values['sql_name'] ) ) {
 $inputs['sql_name'] = is_callable( 'sanitize_text_field' ) ? sanitize_text_field( $post_values['sql_name'] ) : (string) $post_values['sql_name'];
@@ -391,6 +598,87 @@ case 'refresh_session':
                 remove_filter( 'softone_wc_integration_client_ttl', 'softone_debug_capture_session_data', 10 );
             }
         }
+        break;
+
+case 'run_sync':
+        if ( ! $item_sync || ! ( $trace instanceof Softone_Process_Trace ) ) {
+            $sync_result['status'] = 'error';
+            $sync_result['error']  = 'Item sync could not be executed because the synchroniser is unavailable.';
+            $action_messages[]     = 'Item sync is unavailable in this environment.';
+            break;
+        }
+
+        if ( function_exists( 'set_time_limit' ) ) {
+            @set_time_limit( 0 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+        }
+
+        $force_full = ! empty( $sync_options['force_full_import'] );
+        $force_tax  = ! empty( $sync_options['force_taxonomy_refresh'] );
+        $started_at = time();
+
+        if ( $trace instanceof Softone_Process_Trace ) {
+            $trace->add_event(
+                'note',
+                'debug_sync_start',
+                'Starting Softone item sync via debug tool.',
+                array(
+                    'force_full_import'      => $force_full,
+                    'force_taxonomy_refresh' => $force_tax,
+                )
+            );
+        }
+
+        try {
+            $result      = $item_sync->sync( $force_full, $force_tax );
+            $finished_at = time();
+            $summary     = softone_debug_prepare_sync_summary( $result, $started_at, $finished_at, true );
+
+            if ( $trace instanceof Softone_Process_Trace ) {
+                $trace->add_event( 'note', 'debug_sync_completed', 'Softone item sync completed via debug tool.', $summary );
+            }
+
+            $sync_result = array(
+                'status'  => 'success',
+                'result'  => $result,
+                'summary' => $summary,
+                'options' => array(
+                    'force_full_import'      => $force_full,
+                    'force_taxonomy_refresh' => $force_tax,
+                ),
+            );
+
+            $processed = isset( $summary['processed'] ) ? (int) $summary['processed'] : 0;
+            $action_messages[] = sprintf( 'Item sync completed successfully. Processed %d items.', $processed );
+        } catch ( Exception $exception ) {
+            $finished_at = time();
+            $summary     = softone_debug_prepare_sync_summary( array(), $started_at, $finished_at, false );
+
+            if ( $trace instanceof Softone_Process_Trace ) {
+                $trace->add_event(
+                    'note',
+                    'debug_sync_failed',
+                    'Softone item sync failed via debug tool.',
+                    array_merge(
+                        $summary,
+                        array( 'error' => $exception->getMessage() )
+                    ),
+                    'error'
+                );
+            }
+
+            $sync_result = array(
+                'status'  => 'error',
+                'error'   => $exception->getMessage(),
+                'summary' => $summary,
+                'options' => array(
+                    'force_full_import'      => $force_full,
+                    'force_taxonomy_refresh' => $force_tax,
+                ),
+            );
+
+            $action_messages[] = 'Item sync failed: ' . $exception->getMessage();
+        }
+
         break;
 
 case 'sql_data':
@@ -592,6 +880,13 @@ $sql_rows = $sql_result['response']['rows'];
 if ( $limit_rows > 0 && count( $sql_rows ) > $limit_rows ) {
 $sql_rows = array_slice( $sql_rows, 0, $limit_rows );
 }
+
+$sync_summary_rows = array();
+
+if ( ! empty( $sync_result['summary'] ) && is_array( $sync_result['summary'] ) ) {
+    $options            = isset( $sync_result['options'] ) && is_array( $sync_result['options'] ) ? $sync_result['options'] : array();
+    $sync_summary_rows  = softone_debug_prepare_sync_display_rows( $sync_result['summary'], $options );
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -713,6 +1008,23 @@ form .field {
 display: flex;
 flex-direction: column;
 margin-bottom: 1rem;
+}
+
+form .field.checkbox-field {
+flex-direction: row;
+align-items: center;
+}
+
+form .field.checkbox-field label {
+font-weight: 400;
+margin-bottom: 0;
+display: flex;
+align-items: center;
+gap: 0.4rem;
+}
+
+form .field.checkbox-field input[type="checkbox"] {
+margin: 0;
 }
 
 form label {
@@ -890,6 +1202,23 @@ min-width: 100%;
 <input type="hidden" name="softone_debug_action" value="refresh_session" />
 <button type="submit">Refresh SoftOne Session</button>
 </form>
+<form method="post" class="sync-form">
+<?php if ( function_exists( 'wp_nonce_field' ) ) { wp_nonce_field( 'softone_debug_action', 'softone_debug_nonce' ); } ?>
+<input type="hidden" name="softone_debug_action" value="run_sync" />
+<div class="field checkbox-field">
+<label>
+<input type="checkbox" name="force_full_import" value="1"<?php echo softone_debug_checked_attribute( $sync_options['force_full_import'] ); ?> />
+Force full import (ignore delta window)
+</label>
+</div>
+<div class="field checkbox-field">
+<label>
+<input type="checkbox" name="force_taxonomy_refresh" value="1"<?php echo softone_debug_checked_attribute( $sync_options['force_taxonomy_refresh'] ); ?> />
+Force taxonomy refresh
+</label>
+</div>
+<button type="submit">Run Item Sync Trace</button>
+</form>
 </div>
 
 <hr />
@@ -916,6 +1245,47 @@ min-width: 100%;
 <button type="submit" class="secondary">Run SqlData Request</button>
 </form>
 </section>
+
+<?php if ( ! empty( $sync_result ) ) : ?>
+<section>
+<h2>Item Sync Result</h2>
+<?php if ( 'success' === ( isset( $sync_result['status'] ) ? $sync_result['status'] : '' ) ) : ?>
+    <?php if ( ! empty( $sync_summary_rows ) ) : ?>
+    <div class="table-wrapper">
+    <table class="settings-table">
+    <tbody>
+    <?php foreach ( $sync_summary_rows as $label => $value ) : ?>
+    <tr>
+    <th><?php echo softone_debug_escape( $label ); ?></th>
+    <td><?php echo softone_debug_escape( $value ); ?></td>
+    </tr>
+    <?php endforeach; ?>
+    </tbody>
+    </table>
+    </div>
+    <?php endif; ?>
+    <?php echo softone_debug_render_response_block( 'Raw Sync Result', isset( $sync_result['result'] ) ? $sync_result['result'] : array() ); ?>
+<?php else : ?>
+    <div class="notice error">
+        <ul><li><?php echo softone_debug_escape( isset( $sync_result['error'] ) ? $sync_result['error'] : 'Item sync failed.' ); ?></li></ul>
+    </div>
+    <?php if ( ! empty( $sync_summary_rows ) ) : ?>
+    <div class="table-wrapper">
+    <table class="settings-table">
+    <tbody>
+    <?php foreach ( $sync_summary_rows as $label => $value ) : ?>
+    <tr>
+    <th><?php echo softone_debug_escape( $label ); ?></th>
+    <td><?php echo softone_debug_escape( $value ); ?></td>
+    </tr>
+    <?php endforeach; ?>
+    </tbody>
+    </table>
+    </div>
+    <?php endif; ?>
+<?php endif; ?>
+</section>
+<?php endif; ?>
 
 <?php if ( ! empty( $session_result ) ) : ?>
 <section>
