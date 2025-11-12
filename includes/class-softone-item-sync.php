@@ -1057,6 +1057,7 @@ protected function import_row( array $data, $run_timestamp ) {
     }
 
     $colour_taxonomy = $this->normalize_attribute_taxonomy_name( $this->resolve_colour_attribute_slug() );
+    $received_related_payload = $this->received_related_item_payload( $data );
 
     if ( isset( $attribute_assignments['values'][ $colour_taxonomy ] ) ) {
         if ( '' === $colour_value_for_variation ) {
@@ -1115,7 +1116,13 @@ protected function import_row( array $data, $run_timestamp ) {
         update_post_meta( $product_id, self::META_MTRL, $mtrl );
     }
 
-    $this->sync_related_item_relationships( $product_id, $mtrl, $related_item_mtrl_value, $related_item_mtrls );
+    $this->sync_related_item_relationships(
+        $product_id,
+        $mtrl,
+        $related_item_mtrl_value,
+        $related_item_mtrls,
+        $received_related_payload
+    );
 
     $all_related_item_mtrls = $related_item_mtrls;
     $stored_related = get_post_meta( $product_id, self::META_RELATED_ITEM_MTRLS, true );
@@ -1642,15 +1649,20 @@ protected function import_row( array $data, $run_timestamp ) {
          * @param string $mtrl                Current Softone material identifier.
          * @param string $related_item_mtrl   Related Softone material identifier from the payload.
          * @param array<int,string> $related_item_mtrls List of related Softone material identifiers from the payload.
+         * @param bool   $received_related_payload Whether the Softone payload included related item fields.
          * @return void
          */
-        protected function sync_related_item_relationships( $product_id, $mtrl, $related_item_mtrl, array $related_item_mtrls = array() ) {
+        protected function sync_related_item_relationships( $product_id, $mtrl, $related_item_mtrl, array $related_item_mtrls = array(), $received_related_payload = true ) {
             $product_id         = (int) $product_id;
             $mtrl               = trim( (string) $mtrl );
             $related_item_mtrl  = trim( (string) $related_item_mtrl );
             $related_item_mtrls = array_values( array_filter( array_map( 'strval', $related_item_mtrls ) ) );
 
             if ( $product_id <= 0 ) {
+                return;
+            }
+
+            if ( ! $received_related_payload ) {
                 return;
             }
 
@@ -2614,6 +2626,33 @@ protected function import_row( array $data, $run_timestamp ) {
             $tokens = array_values( array_unique( $tokens ) );
 
             return $tokens;
+        }
+
+        /**
+         * Determine whether the Softone payload included any related item fields.
+         *
+         * @param array<string,mixed> $data Payload from Softone.
+         * @return bool
+         */
+        protected function received_related_item_payload( array $data ) {
+            $related_keys = array(
+                'softone_related_item_mtrl',
+                'related_item_mtrl',
+                'related_mtrl',
+                'rel_mtrl',
+                'softone_related_item_mtrls',
+                'softone_related_item_mtrll',
+                'related_item_mtrls',
+                'related_item_mtrll',
+            );
+
+            foreach ( $related_keys as $key ) {
+                if ( array_key_exists( $key, $data ) ) {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
 
