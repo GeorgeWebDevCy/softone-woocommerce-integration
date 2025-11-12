@@ -380,6 +380,7 @@ $raw_settings     = array();
 $client           = null;
 $trace            = null;
 $trace_entries    = array();
+$variation_diagnostics = softone_debug_collect_variation_diagnostics( array() );
 $activity_logger  = null;
 $item_sync        = null;
 
@@ -723,6 +724,7 @@ break;
 
 if ( $trace instanceof Softone_Process_Trace ) {
 $trace_entries = $trace->get_entries();
+$variation_diagnostics = softone_debug_collect_variation_diagnostics( $trace_entries );
 }
 
 $wp_site_url = function_exists( 'get_site_url' ) ? get_site_url() : '';
@@ -811,13 +813,13 @@ array(
 array(
 'stage'      => '3. Queue related items for variation sync',
 'single'     => 'Once the product is updated, the import flow concludes the single-product stage for that SoftOne material.',
-'variation'  => 'Any related SoftOne items identified in the payload are queued for colour aggregation to be processed after the batch finishes.',
+'variation'  => 'Any related SoftOne items identified in the payload are queued for colour aggregation after the batch finishes so the base product can persist before variation logic runs.',
 'references' => 'Softone_Item_Sync::queue_colour_variation_sync()',
 ),
 array(
 'stage'      => '4. Ensure WooCommerce variations',
 'single'     => 'The base product remains published as a simple record and retains its own SKU and stock configuration.',
-'variation'  => 'Queued items trigger creation or updates of WC_Product_Variation instances, aligning colour attributes, prices, and stock.',
+'variation'  => 'Queued items trigger creation or updates of WC_Product_Variation instances, aligning colour attributes, prices, stock, and generating unique SKUs when duplicates are detected.',
 'references' => 'Softone_Item_Sync::ensure_colour_variation()',
 ),
 );
@@ -838,6 +840,239 @@ $flow[3]['references'] .= ' / Softone_Item_Sync::sync_related_colour_variations(
 }
 
 return $flow;
+}
+
+function softone_debug_collect_variation_diagnostics( array $entries ) {
+$diagnostics = array(
+'entries_recorded'      => ! empty( $entries ),
+'queue_requests'        => 0,
+'queues_processed'      => 0,
+'queue_size_total'      => 0,
+'sync_runs'             => 0,
+'variations_created'    => 0,
+'variations_updated'    => 0,
+'variations_saved'      => 0,
+'related_token_total'   => 0,
+'sku_adjustments'       => array(),
+'sku_cleared'           => array(),
+);
+
+if ( empty( $entries ) ) {
+$diagnostics['has_variation_events'] = false;
+$diagnostics['average_queue_size']   = 0.0;
+
+return $diagnostics;
+}
+
+foreach ( $entries as $entry ) {
+if ( ! is_array( $entry ) ) {
+continue;
+}
+
+$message = isset( $entry['message'] ) ? (string) $entry['message'] : '';
+$context = isset( $entry['context'] ) && is_array( $entry['context'] ) ? $entry['context'] : array();
+
+switch ( $message ) {
+case 'Queued colour variation synchronisation request.':
+$diagnostics['queue_requests']++;
+
+if ( isset( $context['related_item_mtrls'] ) && is_array( $context['related_item_mtrls'] ) ) {
+$diagnostics['related_token_total'] += count( array_filter( array_map( 'strval', $context['related_item_mtrls'] ) ) );
+}
+
+break;
+
+case 'Processing queued colour variation synchronisation requests.':
+$diagnostics['queues_processed']++;
+
+if ( isset( $context['queue_size'] ) && is_numeric( $context['queue_size'] ) ) {
+$diagnostics['queue_size_total'] += (int) $context['queue_size'];
+}
+
+break;
+
+case 'Synchronising related colour variations.':
+$diagnostics['sync_runs']++;
+break;
+
+case 'Creating new colour variation for product.':
+$diagnostics['variations_created']++;
+break;
+
+case 'Updating existing colour variation.':
+$diagnostics['variations_updated']++;
+break;
+
+case 'Saved colour variation for product.':
+$diagnostics['variations_saved']++;
+break;
+
+case 'Adjusted colour variation SKU to avoid duplication.':
+$diagnostics['sku_adjustments'][] = array(
+'product_id'   => isset( $context['product_id'] ) ? (int) $context['product_id'] : 0,
+'variation_id' => isset( $context['variation_id'] ) ? (int) $context['variation_id'] : 0,
+'requested_sku'=> isset( $context['requested_sku'] ) ? (string) $context['requested_sku'] : '',
+'assigned_sku' => isset( $context['assigned_sku'] ) ? (string) $context['assigned_sku'] : '',
+);
+break;
+
+case 'Unable to assign unique SKU to colour variation; leaving blank to avoid duplication.':
+$suffix_parts = array();
+
+if ( isset( $context['suffix_parts'] ) && is_array( $context['suffix_parts'] ) ) {
+$suffix_parts = array_values( array_filter( array_map( 'strval', $context['suffix_parts'] ) ) );
+}
+
+$diagnostics['sku_cleared'][] = array(
+'product_id'   => isset( $context['product_id'] ) ? (int) $context['product_id'] : 0,
+'variation_id' => isset( $context['variation_id'] ) ? (int) $context['variation_id'] : 0,
+'requested_sku'=> isset( $context['requested_sku'] ) ? (string) $context['requested_sku'] : '',
+'suffix'       => implode( '-', $suffix_parts ),
+);
+break;
+}
+}
+
+if ( $diagnostics['queues_processed'] > 0 && $diagnostics['queue_size_total'] > 0 ) {
+$diagnostics['average_queue_size'] = $diagnostics['queue_size_total'] / $diagnostics['queues_processed'];
+} else {
+$diagnostics['average_queue_size'] = 0.0;
+}
+
+$diagnostics['has_variation_events'] = (
+$diagnostics['queue_requests'] > 0 ||
+$diagnostics['queues_processed'] > 0 ||
+$diagnostics['sync_runs'] > 0 ||
+$diagnostics['variations_created'] > 0 ||
+$diagnostics['variations_updated'] > 0 ||
+$diagnostics['variations_saved'] > 0 ||
+! empty( $diagnostics['sku_adjustments'] ) ||
+! empty( $diagnostics['sku_cleared'] )
+);
+
+return $diagnostics;
+}
+
+function softone_debug_render_variation_diagnostics( array $diagnostics ) {
+if ( empty( $diagnostics ) || empty( $diagnostics['entries_recorded'] ) ) {
+return '<p>No trace entries are available. Run the item sync above to capture diagnostics.</p>';
+}
+
+if ( empty( $diagnostics['has_variation_events'] ) ) {
+return '<p>No colour variation events were recorded in the latest sync trace.</p>';
+}
+
+$summary_items = array();
+
+if ( ! empty( $diagnostics['queue_requests'] ) ) {
+$summary_items['Queued variation requests'] = softone_debug_format_number( (int) $diagnostics['queue_requests'] );
+}
+
+if ( ! empty( $diagnostics['queues_processed'] ) ) {
+$summary_items['Processed queues'] = softone_debug_format_number( (int) $diagnostics['queues_processed'] );
+}
+
+if ( ! empty( $diagnostics['sync_runs'] ) ) {
+$summary_items['Colour sync batches'] = softone_debug_format_number( (int) $diagnostics['sync_runs'] );
+}
+
+if ( ! empty( $diagnostics['variations_created'] ) ) {
+$summary_items['Variations created'] = softone_debug_format_number( (int) $diagnostics['variations_created'] );
+}
+
+if ( ! empty( $diagnostics['variations_updated'] ) ) {
+$summary_items['Variations updated'] = softone_debug_format_number( (int) $diagnostics['variations_updated'] );
+}
+
+if ( ! empty( $diagnostics['variations_saved'] ) ) {
+$summary_items['Variations saved'] = softone_debug_format_number( (int) $diagnostics['variations_saved'] );
+}
+
+if ( ! empty( $diagnostics['related_token_total'] ) ) {
+$summary_items['Related item tokens captured'] = softone_debug_format_number( (int) $diagnostics['related_token_total'] );
+}
+
+if ( ! empty( $diagnostics['sku_adjustments'] ) ) {
+$summary_items['SKU adjustments applied'] = softone_debug_format_number( count( $diagnostics['sku_adjustments'] ) );
+}
+
+if ( ! empty( $diagnostics['sku_cleared'] ) ) {
+$summary_items['Variations cleared to avoid duplicates'] = softone_debug_format_number( count( $diagnostics['sku_cleared'] ) );
+}
+
+if ( ! empty( $diagnostics['average_queue_size'] ) ) {
+$average_queue = (float) $diagnostics['average_queue_size'];
+
+if ( function_exists( 'number_format_i18n' ) ) {
+$summary_items['Average queue size'] = number_format_i18n( $average_queue, 2 );
+} else {
+$summary_items['Average queue size'] = number_format( $average_queue, 2 );
+}
+}
+
+$output = '';
+
+if ( ! empty( $summary_items ) ) {
+$output .= '<ul>';
+
+foreach ( $summary_items as $label => $value ) {
+$output .= '<li><strong>' . softone_debug_escape( $label ) . ':</strong> ' . softone_debug_escape( $value ) . '</li>';
+}
+
+$output .= '</ul>';
+}
+
+if ( ! empty( $diagnostics['sku_adjustments'] ) ) {
+$output .= '<h3>Adjusted variation SKUs</h3>';
+$output .= '<div class="table-wrapper"><table class="rows-table"><thead><tr><th>Product ID</th><th>Variation ID</th><th>Requested SKU</th><th>Assigned SKU</th></tr></thead><tbody>';
+
+foreach ( $diagnostics['sku_adjustments'] as $adjustment ) {
+$product_id   = isset( $adjustment['product_id'] ) ? (int) $adjustment['product_id'] : 0;
+$variation_id = isset( $adjustment['variation_id'] ) ? (int) $adjustment['variation_id'] : 0;
+$requested    = isset( $adjustment['requested_sku'] ) ? (string) $adjustment['requested_sku'] : '';
+$assigned     = isset( $adjustment['assigned_sku'] ) ? (string) $adjustment['assigned_sku'] : '';
+
+$output .= '<tr>';
+$output .= '<td>' . softone_debug_escape( softone_debug_format_number( $product_id ) ) . '</td>';
+$output .= '<td>' . softone_debug_escape( softone_debug_format_number( $variation_id ) ) . '</td>';
+$output .= '<td>' . softone_debug_escape( $requested ) . '</td>';
+$output .= '<td>' . softone_debug_escape( $assigned ) . '</td>';
+$output .= '</tr>';
+}
+
+$output .= '</tbody></table></div>';
+}
+
+if ( ! empty( $diagnostics['sku_cleared'] ) ) {
+$output .= '<h3>Variations cleared to prevent duplicate SKUs</h3>';
+$output .= '<div class="table-wrapper"><table class="rows-table"><thead><tr><th>Product ID</th><th>Variation ID</th><th>Requested SKU</th><th>Generated suffix</th></tr></thead><tbody>';
+
+foreach ( $diagnostics['sku_cleared'] as $cleared ) {
+$product_id   = isset( $cleared['product_id'] ) ? (int) $cleared['product_id'] : 0;
+$variation_id = isset( $cleared['variation_id'] ) ? (int) $cleared['variation_id'] : 0;
+$requested    = isset( $cleared['requested_sku'] ) ? (string) $cleared['requested_sku'] : '';
+$suffix       = isset( $cleared['suffix'] ) ? (string) $cleared['suffix'] : '';
+
+if ( '' === $suffix ) {
+$suffix = '—';
+}
+
+$output .= '<tr>';
+$output .= '<td>' . softone_debug_escape( softone_debug_format_number( $product_id ) ) . '</td>';
+$output .= '<td>' . softone_debug_escape( softone_debug_format_number( $variation_id ) ) . '</td>';
+$output .= '<td>' . softone_debug_escape( $requested ) . '</td>';
+$output .= '<td>' . softone_debug_escape( $suffix ) . '</td>';
+$output .= '</tr>';
+}
+
+$output .= '</tbody></table></div>';
+}
+
+if ( '' === $output ) {
+return '<p>No colour variation diagnostics were generated for the latest sync run.</p>';
+}
+
+return $output;
 }
 
 /**
@@ -1190,6 +1425,12 @@ min-width: 100%;
 <?php else : ?>
 <p>Variation flow details are unavailable because the synchroniser class could not be loaded.</p>
 <?php endif; ?>
+</section>
+
+<section>
+<h2>Variation diagnostics</h2>
+<p>Review queued batches, creation counts, and SKU adjustments captured during the latest sync trace.</p>
+<?php echo softone_debug_render_variation_diagnostics( $variation_diagnostics ); ?>
 </section>
 
 <section>
