@@ -9,6 +9,12 @@ if ( ! ini_get( 'date.timezone' ) ) {
 date_default_timezone_set( 'UTC' );
 }
 
+$softone_debug_session_capture = array(
+    'login_response'        => null,
+    'authenticate_response' => null,
+    'ttl'                   => null,
+);
+
 /**
  * Escape content for safe HTML output.
  *
@@ -97,6 +103,88 @@ return false;
 }
 
 return array_shift( $paths );
+}
+
+/**
+ * Capture SoftOne session bootstrap details when refreshing via the API client.
+ *
+ * @param int                     $ttl                    Resolved TTL value.
+ * @param array<string,mixed>     $login_response         Login response payload.
+ * @param array<string,mixed>     $authenticate_response  Authenticate response payload.
+ * @param Softone_API_Client|null $client                 API client instance.
+ *
+ * @return int
+ */
+function softone_debug_capture_session_data( $ttl, $login_response, $authenticate_response, $client ) {
+    global $softone_debug_session_capture;
+
+    if ( ! is_array( $softone_debug_session_capture ) ) {
+        $softone_debug_session_capture = array();
+    }
+
+    $softone_debug_session_capture['login_response']        = is_array( $login_response ) ? $login_response : array();
+    $softone_debug_session_capture['authenticate_response'] = is_array( $authenticate_response ) ? $authenticate_response : array();
+    $softone_debug_session_capture['ttl']                   = is_numeric( $ttl ) ? (int) $ttl : $ttl;
+
+    return $ttl;
+}
+
+/**
+ * Format a timestamp for display using the current WordPress timezone when available.
+ *
+ * @param int|string $timestamp Raw timestamp.
+ *
+ * @return string
+ */
+function softone_debug_format_timestamp( $timestamp ) {
+    if ( ! is_numeric( $timestamp ) ) {
+        return '';
+    }
+
+    $timestamp = (int) $timestamp;
+    $callback  = function_exists( 'wp_date' ) ? 'wp_date' : 'date';
+
+    return call_user_func( $callback, 'Y-m-d H:i:s', $timestamp );
+}
+
+/**
+ * Summarise cached session metadata for display.
+ *
+ * @param array<string,mixed> $meta Raw metadata stored by the client.
+ * @param int|null            $resolved_ttl TTL determined during the refresh.
+ *
+ * @return array<string,mixed>
+ */
+function softone_debug_summarise_session_cache( array $meta, $resolved_ttl = null ) {
+    $summary = array();
+
+    if ( isset( $meta['client_id'] ) && '' !== (string) $meta['client_id'] ) {
+        $summary['Cached client ID'] = softone_debug_mask_value( $meta['client_id'] );
+    }
+
+    if ( null !== $resolved_ttl && is_numeric( $resolved_ttl ) ) {
+        $ttl_seconds = (int) $resolved_ttl;
+        $summary['Resolved TTL (seconds)'] = $ttl_seconds;
+        $summary['Resolved TTL (minutes)'] = round( $ttl_seconds / 60, 2 );
+    }
+
+    if ( isset( $meta['ttl'] ) && is_numeric( $meta['ttl'] ) ) {
+        $stored_ttl = (int) $meta['ttl'];
+        $summary['Stored TTL (seconds)'] = $stored_ttl;
+        $summary['Stored TTL (minutes)'] = round( $stored_ttl / 60, 2 );
+    }
+
+    if ( isset( $meta['cached_at'] ) && is_numeric( $meta['cached_at'] ) ) {
+        $summary['Cached at'] = softone_debug_format_timestamp( $meta['cached_at'] );
+    }
+
+    if ( isset( $meta['expires_at'] ) && is_numeric( $meta['expires_at'] ) ) {
+        $expires_at = (int) $meta['expires_at'];
+        $summary['Expires at']            = softone_debug_format_timestamp( $expires_at );
+        $summary['Seconds until expiry'] = max( 0, $expires_at - time() );
+    }
+
+    return $summary;
 }
 
 $environment_messages = array();
@@ -243,42 +331,67 @@ check_admin_referer( 'softone_debug_action', 'softone_debug_nonce' );
 
 switch ( $action ) {
 case 'refresh_session':
-try {
-if ( method_exists( $client, 'clear_cached_client_id' ) ) {
-$client->clear_cached_client_id();
-}
+        $filter_added = false;
 
-if ( method_exists( $client, 'login' ) ) {
-$login_response = $client->login();
-} else {
-throw new RuntimeException( 'Softone client is missing the login method.' );
-}
+        try {
+            if ( method_exists( $client, 'clear_cached_client_id' ) ) {
+                $client->clear_cached_client_id();
+            }
 
-$session_result['login_response'] = $login_response;
+            global $softone_debug_session_capture;
+            $softone_debug_session_capture = array(
+                'login_response'        => null,
+                'authenticate_response' => null,
+                'ttl'                   => null,
+            );
 
-$client_id = isset( $login_response['clientID'] ) ? (string) $login_response['clientID'] : '';
+            if ( function_exists( 'add_filter' ) ) {
+                add_filter( 'softone_wc_integration_client_ttl', 'softone_debug_capture_session_data', 10, 4 );
+                $filter_added = true;
+            }
 
-if ( '' === $client_id ) {
-throw new Softone_API_Client_Exception( '[SO-DBG-001] SoftOne login did not return a clientID.' );
-}
+            if ( method_exists( $client, 'get_client_id' ) ) {
+                $client_id = $client->get_client_id( true );
+            } else {
+                throw new RuntimeException( 'Softone client is missing the get_client_id method.' );
+            }
 
-if ( method_exists( $client, 'authenticate' ) ) {
-$authenticate_response = $client->authenticate( $client_id );
-} else {
-throw new RuntimeException( 'Softone client is missing the authenticate method.' );
-}
+            $session_result['client_id'] = (string) $client_id;
+            $session_result['status']    = 'success';
 
-$session_result['authenticate_response'] = $authenticate_response;
-$session_result['client_id']            = isset( $authenticate_response['clientID'] ) ? (string) $authenticate_response['clientID'] : '';
-$session_result['status']               = 'success';
+            if ( isset( $softone_debug_session_capture['login_response'] ) && ! empty( $softone_debug_session_capture['login_response'] ) ) {
+                $session_result['login_response'] = $softone_debug_session_capture['login_response'];
+            }
 
-$action_messages[] = 'SoftOne session refreshed successfully.';
-} catch ( Exception $exception ) {
-$session_result['status'] = 'error';
-$session_result['error']  = $exception->getMessage();
-$action_messages[]        = 'Error refreshing SoftOne session: ' . $exception->getMessage();
-}
-break;
+            if ( isset( $softone_debug_session_capture['authenticate_response'] ) && ! empty( $softone_debug_session_capture['authenticate_response'] ) ) {
+                $session_result['authenticate_response'] = $softone_debug_session_capture['authenticate_response'];
+            }
+
+            if ( isset( $softone_debug_session_capture['ttl'] ) && is_numeric( $softone_debug_session_capture['ttl'] ) ) {
+                $session_result['ttl'] = (int) $softone_debug_session_capture['ttl'];
+            }
+
+            if ( function_exists( 'get_option' ) && class_exists( 'Softone_API_Client' ) ) {
+                $meta = get_option( Softone_API_Client::OPTION_CLIENT_ID_META_KEY, array() );
+
+                if ( is_array( $meta ) ) {
+                    $session_result['cache_summary'] = softone_debug_summarise_session_cache( $meta, isset( $session_result['ttl'] ) ? $session_result['ttl'] : null );
+                }
+            } elseif ( isset( $session_result['ttl'] ) ) {
+                $session_result['cache_summary'] = softone_debug_summarise_session_cache( array(), $session_result['ttl'] );
+            }
+
+            $action_messages[] = 'SoftOne session refreshed successfully using the plugin session bootstrap.';
+        } catch ( Exception $exception ) {
+            $session_result['status'] = 'error';
+            $session_result['error']  = $exception->getMessage();
+            $action_messages[]        = 'Error refreshing SoftOne session: ' . $exception->getMessage();
+        } finally {
+            if ( $filter_added && function_exists( 'remove_filter' ) ) {
+                remove_filter( 'softone_wc_integration_client_ttl', 'softone_debug_capture_session_data', 10 );
+            }
+        }
+        break;
 
 case 'sql_data':
 $sql_messages = array();
@@ -808,11 +921,18 @@ min-width: 100%;
 <section>
 <h2>Session Debug</h2>
 <?php if ( 'success' === ( isset( $session_result['status'] ) ? $session_result['status'] : '' ) ) : ?>
-<p><strong>Authenticated Client ID:</strong> <?php echo softone_debug_escape( softone_debug_mask_value( isset( $session_result['client_id'] ) ? $session_result['client_id'] : '' ) ); ?></p>
+    <p><strong>Authenticated Client ID:</strong> <?php echo softone_debug_escape( softone_debug_mask_value( isset( $session_result['client_id'] ) ? $session_result['client_id'] : '' ) ); ?></p>
+    <?php
+    if ( isset( $session_result['ttl'] ) && $session_result['ttl'] > 0 ) {
+        echo '<p><strong>Resolved TTL:</strong> ' . softone_debug_escape( (string) $session_result['ttl'] ) . ' seconds</p>';
+    }
+
+    echo softone_debug_render_response_block( 'Session Cache Summary', isset( $session_result['cache_summary'] ) ? $session_result['cache_summary'] : array() );
+    ?>
 <?php else : ?>
-<div class="notice error">
-<ul><li><?php echo softone_debug_escape( isset( $session_result['error'] ) ? $session_result['error'] : 'Session refresh failed.' ); ?></li></ul>
-</div>
+    <div class="notice error">
+        <ul><li><?php echo softone_debug_escape( isset( $session_result['error'] ) ? $session_result['error'] : 'Session refresh failed.' ); ?></li></ul>
+    </div>
 <?php endif; ?>
 
 <?php
