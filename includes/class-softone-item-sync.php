@@ -1157,6 +1157,9 @@ protected function import_row( array $data, $run_timestamp ) {
 
     if ( '' !== $colour_taxonomy ) {
         $related_colour_term_ids = array();
+        $missing_related_products = array();
+        $related_without_colour  = array();
+        $ready_for_colour_aggregation = true;
 
         if ( $colour_term_id > 0 ) {
             $related_colour_term_ids[] = (int) $colour_term_id;
@@ -1166,28 +1169,46 @@ protected function import_row( array $data, $run_timestamp ) {
             foreach ( $all_related_item_mtrls as $related_mtrl ) {
                 $related_product_id = $this->find_product_id_by_mtrl( $related_mtrl );
                 if ( $related_product_id <= 0 ) {
+                    $missing_related_products[] = (string) $related_mtrl;
+                    $ready_for_colour_aggregation = false;
                     continue;
                 }
 
                 $related_product = wc_get_product( $related_product_id );
                 if ( ! $related_product ) {
+                    $missing_related_products[] = (string) $related_mtrl;
+                    $ready_for_colour_aggregation = false;
                     continue;
                 }
 
                 $related_term_id = $this->find_colour_term_id_for_product( $related_product, $colour_taxonomy );
                 if ( $related_term_id > 0 ) {
                     $related_colour_term_ids[] = (int) $related_term_id;
+                } else {
+                    $related_without_colour[] = (string) $related_mtrl;
+                    $ready_for_colour_aggregation = false;
                 }
             }
         }
 
         $related_colour_term_ids = array_values( array_unique( array_filter( array_map( 'intval', $related_colour_term_ids ) ) ) );
 
-        if ( ! empty( $related_colour_term_ids ) ) {
+        if ( $ready_for_colour_aggregation && ! empty( $related_colour_term_ids ) ) {
             $this->ensure_parent_colour_attribute_terms( $product_id, $colour_taxonomy, $related_colour_term_ids );
+        } elseif ( ! $ready_for_colour_aggregation && ( ! empty( $missing_related_products ) || ! empty( $related_without_colour ) ) ) {
+            $this->log(
+                'debug',
+                'SOFTONE_ATTR_SYNC_021 Deferred colour aggregation until related items are imported.',
+                array(
+                    'product_id'               => $product_id,
+                    'colour_taxonomy'          => $colour_taxonomy,
+                    'missing_related_products' => $missing_related_products,
+                    'related_without_colour'   => $related_without_colour,
+                )
+            );
         }
 
-        if ( ! empty( $related_variation_candidates ) ) {
+        if ( $ready_for_colour_aggregation && ! empty( $related_variation_candidates ) ) {
             $this->queue_colour_variation_sync( $product_id, $mtrl, $all_related_item_mtrls, $colour_taxonomy );
         }
     }
