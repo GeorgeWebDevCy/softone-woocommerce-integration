@@ -1520,8 +1520,59 @@ protected function import_row( array $data, $run_timestamp ) {
                 )
             );
 
+            $assigned_sku = '';
+
             if ( '' !== $sku ) {
-                $variation->set_sku( $sku );
+                $variation_id = $variation->get_id() ? (int) $variation->get_id() : 0;
+                $suffix_parts = array();
+
+                if ( isset( $term->slug ) && '' !== $term->slug ) {
+                    $term_slug = (string) $term->slug;
+                    if ( function_exists( 'sanitize_title' ) ) {
+                        $term_slug = sanitize_title( $term_slug );
+                    }
+                    if ( '' !== $term_slug ) {
+                        $suffix_parts[] = $term_slug;
+                    }
+                }
+
+                $suffix_parts[] = 'var';
+                $suffix_parts[] = (string) $product_id;
+                $suffix_parts   = array_values( array_filter( array_map( 'strval', $suffix_parts ) ) );
+
+                $unique_sku = $this->ensure_unique_sku( $sku, $variation_id, $suffix_parts );
+
+                if ( '' === $unique_sku ) {
+                    $this->log(
+                        'warning',
+                        'Unable to assign unique SKU to colour variation; leaving blank to avoid duplication.',
+                        array(
+                            'product_id'      => $product_id,
+                            'variation_id'    => $variation_id,
+                            'requested_sku'   => $sku,
+                            'suffix_parts'    => $suffix_parts,
+                        )
+                    );
+                    $variation->set_sku( '' );
+                } else {
+                    if ( $unique_sku !== $sku ) {
+                        $this->log(
+                            'info',
+                            'Adjusted colour variation SKU to avoid duplication.',
+                            array(
+                                'product_id'      => $product_id,
+                                'variation_id'    => $variation_id,
+                                'requested_sku'   => $sku,
+                                'assigned_sku'    => $unique_sku,
+                            )
+                        );
+                    }
+
+                    $variation->set_sku( $unique_sku );
+                    $assigned_sku = $unique_sku;
+                }
+            } else {
+                $variation->set_sku( '' );
             }
 
             if ( null !== $price_value ) {
@@ -1572,13 +1623,18 @@ protected function import_row( array $data, $run_timestamp ) {
                 WC_Product_Variable::sync( $product_id );
             }
 
+            if ( method_exists( $variation, 'get_sku' ) ) {
+                $assigned_sku = (string) $variation->get_sku();
+            }
+
             $this->log(
                 'info',
                 'Saved colour variation for product.',
                 array(
                     'product_id'   => $product_id,
                     'variation_id' => $variation_id,
-                    'sku'          => $sku,
+                    'sku'          => $assigned_sku,
+                    'requested_sku' => $sku,
                     'price_value'  => $price_value,
                     'stock_amount' => $stock_amount,
                     'should_backorder' => $should_backorder,
