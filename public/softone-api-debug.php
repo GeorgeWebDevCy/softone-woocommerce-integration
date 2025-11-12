@@ -340,7 +340,7 @@ if ( empty( $entries ) ) {
 return '';
 }
 
-$output = '<table class="trace-table">';
+$output = '<div class="table-wrapper"><table class="trace-table">';
 $output .= '<thead><tr><th>Time</th><th>Type</th><th>Action</th><th>Level</th><th>Message</th><th>Context</th></tr></thead>';
 $output .= '<tbody>';
 
@@ -358,7 +358,7 @@ $output .= '<td><pre>' . softone_debug_escape( softone_debug_pretty_json( isset(
 $output .= '</tr>';
 }
 
-$output .= '</tbody></table>';
+$output .= '</tbody></table></div>';
 
 return $output;
 }
@@ -385,6 +385,36 @@ return '';
 }
 
 return '<details><summary>' . softone_debug_escape( $title ) . '</summary><pre>' . softone_debug_escape( softone_debug_pretty_json( $data ) ) . '</pre></details>';
+}
+
+/**
+ * Render a SqlData table cell with improved formatting.
+ *
+ * @param mixed $value Value to display.
+ *
+ * @return string
+ */
+function softone_debug_render_sql_cell( $value ) {
+if ( is_scalar( $value ) ) {
+$string    = (string) $value;
+$formatted = softone_debug_pretty_json( $string );
+
+if ( $formatted !== $string ) {
+return '<pre class="cell-pre">' . softone_debug_escape( $formatted ) . '</pre>';
+}
+
+if ( false !== strpos( $string, "\n" ) ) {
+return '<pre class="cell-pre">' . softone_debug_escape( $string ) . '</pre>';
+}
+
+return '<span class="cell-text">' . softone_debug_escape( $string ) . '</span>';
+}
+
+if ( is_array( $value ) || is_object( $value ) ) {
+return '<pre class="cell-pre">' . softone_debug_escape( softone_debug_pretty_json( $value ) ) . '</pre>';
+}
+
+return '<span class="cell-text">' . softone_debug_escape( (string) $value ) . '</span>';
 }
 
 $limit_rows = isset( $inputs['limit_rows'] ) ? (int) $inputs['limit_rows'] : 10;
@@ -458,12 +488,18 @@ border-left-color: #d63638;
 background: #fcf0f1;
 }
 
-table.settings-table,
-table.trace-table,
-table.rows-table {
+.table-wrapper {
+overflow-x: auto;
+margin: 0 -0.5rem;
+padding: 0.5rem;
+border-radius: 6px;
+}
+
+.table-wrapper table {
 width: 100%;
 border-collapse: collapse;
 font-size: 0.95rem;
+min-width: 520px;
 }
 
 table.settings-table th,
@@ -475,10 +511,21 @@ table.rows-table td {
 border: 1px solid #e2e4e7;
 padding: 0.65rem;
 vertical-align: top;
+word-break: break-word;
+}
+
+table.settings-table th {
+background: #f6f7f7;
+width: 32%;
+font-weight: 600;
 }
 
 table.rows-table thead {
 background: #f6f7f7;
+}
+
+.cell-text {
+display: block;
 }
 
 form .field {
@@ -538,6 +585,19 @@ border-radius: 4px;
 overflow-x: auto;
 }
 
+pre.cell-pre {
+margin: 0;
+background: transparent;
+padding: 0;
+white-space: pre-wrap;
+word-break: break-word;
+}
+
+.trace-table pre {
+margin: 0;
+white-space: pre-wrap;
+}
+
 .action-buttons {
 display: flex;
 flex-wrap: wrap;
@@ -552,6 +612,15 @@ padding: 1rem;
 form .action-buttons {
 flex-direction: column;
 }
+
+.table-wrapper {
+margin: 0 -0.75rem;
+padding: 0.5rem 0.75rem;
+}
+
+.table-wrapper table {
+min-width: 100%;
+}
 }
 </style>
 </head>
@@ -565,6 +634,7 @@ flex-direction: column;
 
 <section>
 <h2>Environment</h2>
+<div class="table-wrapper">
 <table class="settings-table">
 <tbody>
 <tr><th>Site URL</th><td><?php echo softone_debug_escape( $wp_site_url ); ?></td></tr>
@@ -575,6 +645,7 @@ flex-direction: column;
 <tr><th>Client Class</th><td><?php echo softone_debug_escape( $client ? get_class( $client ) : 'Unavailable' ); ?></td></tr>
 </tbody>
 </table>
+</div>
 </section>
 
 <section>
@@ -582,6 +653,7 @@ flex-direction: column;
 <?php if ( empty( $settings_summary ) ) : ?>
 <p>The plugin settings could not be loaded. Verify that the plugin is active and configured.</p>
 <?php else : ?>
+<div class="table-wrapper">
 <table class="settings-table">
 <tbody>
 <?php foreach ( $settings_summary as $label => $value ) : ?>
@@ -592,6 +664,7 @@ flex-direction: column;
 <?php endforeach; ?>
 </tbody>
 </table>
+</div>
 <?php endif; ?>
 </section>
 
@@ -660,6 +733,7 @@ echo softone_debug_render_response_block( 'Authenticate Response', isset( $sessi
 <?php if ( 'success' === ( isset( $sql_result['status'] ) ? $sql_result['status'] : '' ) ) : ?>
 <p><strong>Total rows returned:</strong> <?php echo softone_debug_escape( (string) $sql_result['row_count'] ); ?></p>
 <?php if ( ! empty( $sql_rows ) ) : ?>
+<div class="table-wrapper">
 <table class="rows-table">
 <thead><tr>
 <?php foreach ( array_keys( $sql_rows[0] ) as $column ) : ?>
@@ -670,12 +744,13 @@ echo softone_debug_render_response_block( 'Authenticate Response', isset( $sessi
 <?php foreach ( $sql_rows as $row ) : ?>
 <tr>
 <?php foreach ( $row as $value ) : ?>
-<td><?php echo softone_debug_escape( is_scalar( $value ) ? (string) $value : softone_debug_pretty_json( $value ) ); ?></td>
+<td><?php echo softone_debug_render_sql_cell( $value ); ?></td>
 <?php endforeach; ?>
 </tr>
 <?php endforeach; ?>
 </tbody>
 </table>
+</div>
 <?php endif; ?>
 
 <?php echo softone_debug_render_response_block( 'Raw SqlData Response', isset( $sql_result['response'] ) ? $sql_result['response'] : array() ); ?>
