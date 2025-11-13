@@ -425,7 +425,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 }
 
                 $hash = $this->hash_item_rows( $rows );
-                if ( isset( $hashes[ $hash ] ) ) {
+                if ( 0 === $index && isset( $hashes[ $hash ] ) ) {
                     $warnings[] = __( 'Detected repeated page payload while fetching Softone items. Import halted to prevent an infinite loop.', 'softone-woocommerce-integration' );
                     $this->log(
                         'warning',
