@@ -904,14 +904,6 @@ protected function import_row( array $data, $run_timestamp ) {
 
     $colour_value_for_variation = $anticipated_colour;
 
-    $colour_suffix_for_sku = $this->format_colour_for_sku(
-        '' !== $colour_value_for_variation ? $colour_value_for_variation : $derived_colour
-    );
-
-    if ( '' !== $sku_requested && '' !== $colour_suffix_for_sku ) {
-        $sku_requested .= '-' . $colour_suffix_for_sku;
-    }
-
     if ( '' === $mtrl && '' === $sku_requested ) {
         throw new Exception( __( 'Unable to determine a product identifier for the imported row.', 'softone-woocommerce-integration' ) );
     }
@@ -1039,9 +1031,6 @@ protected function import_row( array $data, $run_timestamp ) {
 
     // ---------- SKU (ensure unique, but if someone else owns it, we UPDATE THAT product) ----------
     $extra_suffixes = array();
-    if ( '' !== $colour_suffix_for_sku && function_exists( 'sanitize_title' ) ) {
-        $extra_suffixes[] = sanitize_title( $colour_suffix_for_sku );
-    }
 
     // If we’re updating a different product but the SKU belongs to another product, switch to that product to avoid duplicates
     if ( '' !== $sku_requested && $is_new && $existing_by_sku_id > 0 ) {
