@@ -50,6 +50,7 @@ if ( ! function_exists( 'softone_wc_integration_get_settings' ) ) {
             'client_id_ttl'         => Softone_API_Client::DEFAULT_CLIENT_ID_TTL,
             'zero_stock_quantity_fallback'    => 'no',
             'backorder_out_of_stock_products' => 'no',
+            'enable_variable_product_handling' => 'no',
         );
 
         $settings = wp_parse_args( $stored, $defaults );
