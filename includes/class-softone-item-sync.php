@@ -64,6 +64,9 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         /** @var array<int, array<string, mixed>> */
         protected $pending_colour_variation_syncs = array();
 
+        /** @var array<int, array<string, mixed>> */
+        protected $pending_single_product_variations = array();
+
         public function __construct( ?Softone_API_Client $api_client = null, $logger = null, $category_logger = null, ?Softone_Sync_Activity_Logger $activity_logger = null ) {
             $this->api_client = $api_client ?: new Softone_API_Client();
             $this->logger     = $logger ?: $this->get_default_logger();
@@ -77,7 +80,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $this->activity_logger = $activity_logger;
 
             $this->reset_caches();
-            $this->pending_colour_variation_syncs = array();
+            $this->pending_colour_variation_syncs     = array();
+            $this->pending_single_product_variations = array();
         }
 
         /** @return void */
@@ -147,6 +151,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
             $this->reset_caches();
             $this->maybe_adjust_memory_limits();
+
+            $this->pending_single_product_variations = array();
 
             $cache_addition_previous_state = null;
             $term_counting_previous_state  = null;
@@ -229,6 +235,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     }
                 }
 
+                $this->process_pending_single_product_variations();
                 $this->process_pending_colour_variation_syncs();
 
                 $stale_processed = $this->handle_stale_products( $started_at );
@@ -250,8 +257,9 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 if ( function_exists( 'wp_defer_comment_counting' ) && null !== $comment_count_previous_state ) {
                     wp_defer_comment_counting( $comment_count_previous_state );
                 }
-                $this->pending_colour_variation_syncs = array();
-                $this->force_taxonomy_refresh = $previous_force_taxonomy_refresh;
+                $this->pending_colour_variation_syncs     = array();
+                $this->pending_single_product_variations = array();
+                $this->force_taxonomy_refresh             = $previous_force_taxonomy_refresh;
             }
         }
 
@@ -330,6 +338,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     'skipped'   => 0,
                 ),
                 'pending_variations'       => array(),
+                'pending_single_variations'=> array(),
                 'page_hashes'              => array(),
                 'cache_stats'              => $this->cache_stats,
                 'total_rows'               => null,
@@ -367,6 +376,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $total_rows             = isset( $state['total_rows'] ) ? $state['total_rows'] : null;
             $force_tax_refresh      = isset( $state['force_taxonomy_refresh'] ) ? (bool) $state['force_taxonomy_refresh'] : false;
             $pending_variations     = isset( $state['pending_variations'] ) && is_array( $state['pending_variations'] ) ? $state['pending_variations'] : array();
+            $pending_single_variations = isset( $state['pending_single_variations'] ) && is_array( $state['pending_single_variations'] ) ? $state['pending_single_variations'] : array();
 
             $stats = wp_parse_args(
                 $stats,
@@ -383,7 +393,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
             $previous_force_taxonomy_refresh = $this->force_taxonomy_refresh;
             $this->force_taxonomy_refresh    = $force_tax_refresh;
-            $this->pending_colour_variation_syncs = $pending_variations;
+            $this->pending_colour_variation_syncs     = $pending_variations;
+            $this->pending_single_product_variations = $pending_single_variations;
 
             $remaining = $batch_size;
             $complete  = false;
@@ -469,11 +480,13 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $state['stats']              = $stats;
             $state['page_hashes']        = $hashes;
             $state['cache_stats']        = $aggregate_cache_stats;
-            $state['pending_variations'] = $this->pending_colour_variation_syncs;
+            $state['pending_variations']         = $this->pending_colour_variation_syncs;
+            $state['pending_single_variations']  = $this->pending_single_product_variations;
             $state['total_rows']         = $total_rows;
             $state['complete']           = $complete;
 
             if ( $complete ) {
+                $this->process_pending_single_product_variations();
                 $this->process_pending_colour_variation_syncs();
                 $stale_processed = $this->handle_stale_products( $started_at );
 
@@ -483,8 +496,10 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
                 $this->log( 'debug', 'Softone item sync cache usage summary.', array( 'cache_stats' => $aggregate_cache_stats, 'mode' => 'async' ) );
 
-                $state['pending_variations'] = array();
-                $this->pending_colour_variation_syncs = array();
+                $state['pending_variations']        = array();
+                $state['pending_single_variations'] = array();
+                $this->pending_colour_variation_syncs     = array();
+                $this->pending_single_product_variations = array();
             }
 
             $this->force_taxonomy_refresh = $previous_force_taxonomy_refresh;
@@ -1214,7 +1229,7 @@ protected function import_row( array $data, $run_timestamp ) {
     }
 
     if ( $should_create_colour_variation ) {
-        $this->ensure_colour_variation(
+        $this->queue_single_product_variation(
             $product_id,
             $colour_term_id,
             $colour_taxonomy,
@@ -1640,6 +1655,52 @@ protected function import_row( array $data, $run_timestamp ) {
                     'should_backorder' => $should_backorder,
                 )
             );
+
+            $this->maybe_draft_single_product_source( $mtrl, $product_id );
+        }
+
+        /**
+         * Move single-product records to draft once they are represented as variations.
+         *
+         * @param string $mtrl             Softone material identifier for the variation source.
+         * @param int    $parent_product_id Parent variable product ID.
+         * @return void
+         */
+        protected function maybe_draft_single_product_source( $mtrl, $parent_product_id ) {
+            $mtrl = trim( (string) $mtrl );
+            $parent_product_id = (int) $parent_product_id;
+
+            if ( '' === $mtrl || $parent_product_id <= 0 ) {
+                return;
+            }
+
+            $source_product_id = $this->find_product_id_by_mtrl( $mtrl );
+
+            if ( $source_product_id <= 0 || $source_product_id === $parent_product_id ) {
+                return;
+            }
+
+            $source_product = wc_get_product( $source_product_id );
+            if ( ! $source_product ) {
+                return;
+            }
+
+            if ( 'draft' === $source_product->get_status() ) {
+                return;
+            }
+
+            $source_product->set_status( 'draft' );
+            $source_product->save();
+
+            $this->log(
+                'info',
+                'Drafted single product after creating variable variation.',
+                array(
+                    'source_product_id' => $source_product_id,
+                    'parent_product_id' => $parent_product_id,
+                    'mtrl'              => $mtrl,
+                )
+            );
         }
 
         /**
@@ -1927,6 +1988,90 @@ protected function import_row( array $data, $run_timestamp ) {
                 'related_item_mtrls'  => $related_item_mtrls,
                 'colour_taxonomy'     => $colour_taxonomy,
             );
+        }
+
+        /**
+         * Queue a single product for conversion into a variable product with a matching variation.
+         *
+         * @param int         $product_id
+         * @param int         $colour_term_id
+         * @param string      $colour_taxonomy
+         * @param string      $sku
+         * @param string|null $price_value
+         * @param int|null    $stock_amount
+         * @param string      $mtrl
+         * @param bool        $should_backorder
+         * @return void
+         */
+        protected function queue_single_product_variation( $product_id, $colour_term_id, $colour_taxonomy, $sku, $price_value, $stock_amount, $mtrl, $should_backorder ) {
+            $product_id      = (int) $product_id;
+            $colour_term_id  = (int) $colour_term_id;
+            $colour_taxonomy = (string) $colour_taxonomy;
+
+            if ( $product_id <= 0 || $colour_term_id <= 0 || '' === $colour_taxonomy ) {
+                return;
+            }
+
+            $this->pending_single_product_variations[] = array(
+                'product_id'       => $product_id,
+                'colour_term_id'   => $colour_term_id,
+                'colour_taxonomy'  => $colour_taxonomy,
+                'sku'              => (string) $sku,
+                'price_value'      => $price_value,
+                'stock_amount'     => $stock_amount,
+                'mtrl'             => (string) $mtrl,
+                'should_backorder' => (bool) $should_backorder,
+            );
+        }
+
+        /** @return void */
+        protected function process_pending_single_product_variations() {
+            if ( empty( $this->pending_single_product_variations ) ) {
+                return;
+            }
+
+            $this->log(
+                'debug',
+                'Processing queued single product variation conversions.',
+                array( 'queue_size' => count( $this->pending_single_product_variations ) )
+            );
+
+            foreach ( $this->pending_single_product_variations as $conversion ) {
+                $product_id      = isset( $conversion['product_id'] ) ? (int) $conversion['product_id'] : 0;
+                $colour_term_id  = isset( $conversion['colour_term_id'] ) ? (int) $conversion['colour_term_id'] : 0;
+                $colour_taxonomy = isset( $conversion['colour_taxonomy'] ) ? (string) $conversion['colour_taxonomy'] : '';
+                $sku             = isset( $conversion['sku'] ) ? (string) $conversion['sku'] : '';
+                $price_value     = isset( $conversion['price_value'] ) ? $conversion['price_value'] : null;
+                $stock_amount    = isset( $conversion['stock_amount'] ) ? $conversion['stock_amount'] : null;
+                $mtrl            = isset( $conversion['mtrl'] ) ? (string) $conversion['mtrl'] : '';
+                $should_backorder = isset( $conversion['should_backorder'] ) ? (bool) $conversion['should_backorder'] : false;
+
+                try {
+                    $this->ensure_colour_variation(
+                        $product_id,
+                        $colour_term_id,
+                        $colour_taxonomy,
+                        $sku,
+                        $price_value,
+                        $stock_amount,
+                        $mtrl,
+                        $should_backorder
+                    );
+                } catch ( \Throwable $throwable ) {
+                    $this->log(
+                        'error',
+                        'Failed to convert single product into variable product.',
+                        array(
+                            'product_id'      => $product_id,
+                            'colour_term_id'  => $colour_term_id,
+                            'colour_taxonomy' => $colour_taxonomy,
+                            'exception'       => $throwable,
+                        )
+                    );
+                }
+            }
+
+            $this->pending_single_product_variations = array();
         }
 
         /** @return void */
