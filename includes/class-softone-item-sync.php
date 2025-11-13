@@ -873,11 +873,20 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             return $normalized;
         }
 
-/**
- * @throws Exception
- * @return string created|updated|skipped
- */
-protected function import_row( array $data, $run_timestamp ) {
+        /**
+         * Determine whether variable product handling is enabled.
+         *
+         * @return bool
+         */
+        protected function is_variable_product_handling_enabled() {
+            return (bool) apply_filters( 'softone_wc_integration_enable_variable_product_handling', false );
+        }
+
+        /**
+         * @throws Exception
+         * @return string created|updated|skipped
+         */
+        protected function import_row( array $data, $run_timestamp ) {
     $mtrl                  = isset( $data['mtrl'] ) ? (string) $data['mtrl'] : '';
     $sku_requested         = $this->determine_sku( $data );
     $original_product_name = $this->get_value( $data, array( 'varchar02', 'desc', 'description', 'code' ) );
@@ -1031,6 +1040,7 @@ protected function import_row( array $data, $run_timestamp ) {
 
     // ---------- SKU (ensure unique, but if someone else owns it, we UPDATE THAT product) ----------
     $extra_suffixes = array();
+    $variable_product_handling_enabled = $this->is_variable_product_handling_enabled();
 
     // If we’re updating a different product but the SKU belongs to another product, switch to that product to avoid duplicates
     if ( '' !== $sku_requested && $is_new && $existing_by_sku_id > 0 ) {
@@ -1048,7 +1058,7 @@ protected function import_row( array $data, $run_timestamp ) {
     );
 
     if ( '' !== $effective_sku ) {
-        if ( $should_create_colour_variation ) {
+        if ( $should_create_colour_variation && $variable_product_handling_enabled ) {
             $product->set_sku( '' );
         } else {
             $product->set_sku( $effective_sku );
@@ -1417,17 +1427,20 @@ protected function import_row( array $data, $run_timestamp ) {
                 return;
             }
 
-            $this->log(
-                'debug',
-                'Skipping colour variation creation because variable product handling is disabled.',
-                array(
-                    'product_id'      => $product_id,
-                    'colour_term_id'  => $colour_term_id,
-                    'colour_taxonomy' => $colour_taxonomy,
-                    'sku'             => (string) $sku,
-                    'mtrl'            => (string) $mtrl,
-                )
-            );
+            if ( ! $this->is_variable_product_handling_enabled() ) {
+                $this->log(
+                    'debug',
+                    'Skipping colour variation creation because variable product handling is disabled.',
+                    array(
+                        'product_id'      => $product_id,
+                        'colour_term_id'  => $colour_term_id,
+                        'colour_taxonomy' => $colour_taxonomy,
+                        'sku'             => (string) $sku,
+                        'mtrl'            => (string) $mtrl,
+                    )
+                );
+                return;
+            }
         }
 
         /**
@@ -1725,15 +1738,18 @@ protected function import_row( array $data, $run_timestamp ) {
                 return;
             }
 
-            $this->log(
-                'debug',
-                'Skipping colour variation queue because variable product handling is disabled.',
-                array(
-                    'product_id'      => $product_id,
-                    'mtrl'            => (string) $mtrl,
-                    'colour_taxonomy' => $colour_taxonomy,
-                )
-            );
+            if ( ! $this->is_variable_product_handling_enabled() ) {
+                $this->log(
+                    'debug',
+                    'Skipping colour variation queue because variable product handling is disabled.',
+                    array(
+                        'product_id'      => $product_id,
+                        'mtrl'            => (string) $mtrl,
+                        'colour_taxonomy' => $colour_taxonomy,
+                    )
+                );
+                return;
+            }
         }
 
         /**
@@ -1757,23 +1773,26 @@ protected function import_row( array $data, $run_timestamp ) {
                 return;
             }
 
-            $this->log(
-                'debug',
-                'Skipping variable product conversion queue because variable product handling is disabled.',
-                array(
-                    'product_id'      => $product_id,
-                    'colour_term_id'  => (int) $colour_term_id,
-                    'colour_taxonomy' => $colour_taxonomy,
-                    'mtrl'            => (string) $mtrl,
-                )
-            );
+            if ( ! $this->is_variable_product_handling_enabled() ) {
+                $this->log(
+                    'debug',
+                    'Skipping variable product conversion queue because variable product handling is disabled.',
+                    array(
+                        'product_id'      => $product_id,
+                        'colour_term_id'  => (int) $colour_term_id,
+                        'colour_taxonomy' => $colour_taxonomy,
+                        'mtrl'            => (string) $mtrl,
+                    )
+                );
+                return;
+            }
         }
 
         /** @return void */
         protected function process_pending_single_product_variations() {
             $queue_size = count( $this->pending_single_product_variations );
 
-            if ( $queue_size > 0 ) {
+            if ( $queue_size > 0 && ! $this->is_variable_product_handling_enabled() ) {
                 $this->log(
                     'debug',
                     'Skipping queued single product variation conversions because variable product handling is disabled.',
@@ -1788,7 +1807,7 @@ protected function import_row( array $data, $run_timestamp ) {
         protected function process_pending_colour_variation_syncs() {
             $queue_size = count( $this->pending_colour_variation_syncs );
 
-            if ( $queue_size > 0 ) {
+            if ( $queue_size > 0 && ! $this->is_variable_product_handling_enabled() ) {
                 $this->log(
                     'debug',
                     'Skipping queued colour variation synchronisation requests because variable product handling is disabled.',
@@ -1816,15 +1835,18 @@ protected function import_row( array $data, $run_timestamp ) {
                 return;
             }
 
-            $this->log(
-                'debug',
-                'Skipping parent colour attribute assignment because variable product handling is disabled.',
-                array(
-                    'product_id'      => $product_id,
-                    'colour_taxonomy' => $colour_taxonomy,
-                    'term_ids'        => $term_ids,
-                )
-            );
+            if ( ! $this->is_variable_product_handling_enabled() ) {
+                $this->log(
+                    'debug',
+                    'Skipping parent colour attribute assignment because variable product handling is disabled.',
+                    array(
+                        'product_id'      => $product_id,
+                        'colour_taxonomy' => $colour_taxonomy,
+                        'term_ids'        => $term_ids,
+                    )
+                );
+                return;
+            }
         }
 
         /**
@@ -1845,16 +1867,19 @@ protected function import_row( array $data, $run_timestamp ) {
                 return;
             }
 
-            $this->log(
-                'debug',
-                'Skipping related colour variation synchronisation because variable product handling is disabled.',
-                array(
-                    'product_id'         => $product_id,
-                    'mtrl'               => (string) $current_mtrl,
-                    'colour_taxonomy'    => $colour_taxonomy,
-                    'related_item_mtrls' => $related_item_mtrls,
-                )
-            );
+            if ( ! $this->is_variable_product_handling_enabled() ) {
+                $this->log(
+                    'debug',
+                    'Skipping related colour variation synchronisation because variable product handling is disabled.',
+                    array(
+                        'product_id'         => $product_id,
+                        'mtrl'               => (string) $current_mtrl,
+                        'colour_taxonomy'    => $colour_taxonomy,
+                        'related_item_mtrls' => $related_item_mtrls,
+                    )
+                );
+                return;
+            }
         }
 
         /**
