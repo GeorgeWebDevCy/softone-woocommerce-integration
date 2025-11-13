@@ -16,7 +16,7 @@
  * Plugin Name:       Softone Woocommerce Integration
  * Plugin URI:        https://www.georgenicolaou.me/plugins/softone-woocommerce-integration
  * Description:       Softone Woocommerce Integration
- * Version:           1.8.83
+ * Version:           1.8.84
  * Author:            George Nicolaou
  * Author URI:        https://www.georgenicolaou.me//
  * License:           GPL-2.0+
@@ -35,7 +35,7 @@ if ( ! defined( 'WPINC' ) ) {
  * Start at version 1.0.0 and use SemVer - https://semver.org
  * Rename this for your plugin and update it as you release new versions.
  */
-define( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION', '1.8.83' );
+define( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION', '1.8.84' );
 
 // Load Composer autoloader when present (e.g. when installed via Composer).
 $softone_wc_integration_autoload = __DIR__ . '/vendor/autoload.php';
@@ -147,16 +147,6 @@ function softone_woocommerce_integration_bootstrap_update_checker() {
 	do_action( 'softone_woocommerce_integration_update_checker_ready', $update_checker );
 }
 add_action( 'plugins_loaded', 'softone_woocommerce_integration_bootstrap_update_checker', 1 );
-
-/**
- * Allow duplicate SKUs when synchronising products from SoftOne.
- *
- * WooCommerce enforces unique SKUs by default which conflicts with SoftOne
- * catalogues that intentionally reuse identifiers across related items. The
- * filter keeps WooCommerce from blocking updates so the plugin can manage
- * duplicates safely.
- */
-add_filter( 'wc_product_has_unique_sku', '__return_false', 99 );
 
 /**
  * Begins execution of the plugin.
