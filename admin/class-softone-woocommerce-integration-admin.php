@@ -419,6 +419,12 @@ array( $this, 'render_process_trace_page' )
                 );
 
                 $this->add_checkbox_field(
+                        'enable_variable_product_handling',
+                        __( 'Enable variable product handling', 'softone-woocommerce-integration' ),
+                        __( 'Allow the importer to create colour-based WooCommerce variations when related Softone items are detected.', 'softone-woocommerce-integration' )
+                );
+
+                $this->add_checkbox_field(
                         'zero_stock_quantity_fallback',
                         __( 'Treat zero Softone stock as one', 'softone-woocommerce-integration' ),
                         __( 'When Softone reports zero quantity the product will be saved with a quantity of one.', 'softone-woocommerce-integration' )
@@ -466,8 +472,9 @@ array( $this, 'render_process_trace_page' )
                 $sanitized['trdcategory']           = isset( $settings['trdcategory'] ) ? $this->sanitize_text_value( $settings['trdcategory'] ) : '';
                 $sanitized['country_mappings']      = isset( $settings['country_mappings'] ) ? $this->sanitize_country_mappings( $settings['country_mappings'] ) : array();
 
-                $zero_stock_fallback = $this->sanitize_checkbox_flag( $settings, 'zero_stock_quantity_fallback' );
-                $backorder_out_stock = $this->sanitize_checkbox_flag( $settings, 'backorder_out_of_stock_products' );
+                $zero_stock_fallback       = $this->sanitize_checkbox_flag( $settings, 'zero_stock_quantity_fallback' );
+                $backorder_out_stock       = $this->sanitize_checkbox_flag( $settings, 'backorder_out_of_stock_products' );
+                $variable_product_handling = $this->sanitize_checkbox_flag( $settings, 'enable_variable_product_handling' );
 
                 if ( 'yes' === $zero_stock_fallback && 'yes' === $backorder_out_stock ) {
                         $backorder_out_stock = 'no';
@@ -480,8 +487,9 @@ array( $this, 'render_process_trace_page' )
                         );
                 }
 
-                $sanitized['zero_stock_quantity_fallback']    = $zero_stock_fallback;
-                $sanitized['backorder_out_of_stock_products'] = $backorder_out_stock;
+                $sanitized['zero_stock_quantity_fallback']     = $zero_stock_fallback;
+                $sanitized['backorder_out_of_stock_products']  = $backorder_out_stock;
+                $sanitized['enable_variable_product_handling'] = $variable_product_handling;
 
                 return $sanitized;
 

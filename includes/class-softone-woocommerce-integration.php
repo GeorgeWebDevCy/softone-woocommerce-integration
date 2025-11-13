@@ -98,7 +98,7 @@ class Softone_Woocommerce_Integration {
                 if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
                         $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
                 } else {
-                        $this->version = '1.8.81';
+                        $this->version = '1.8.88';
                 }
 		$this->plugin_name = 'softone-woocommerce-integration';
 
@@ -114,8 +114,30 @@ class Softone_Woocommerce_Integration {
 	 *
 	 * @return void
 	 */
-	private function define_shared_hooks() {
-		$this->loader->add_action( 'init', $this, 'maybe_register_brand_taxonomy' );
+        private function define_shared_hooks() {
+                $this->loader->add_action( 'init', $this, 'maybe_register_brand_taxonomy' );
+                $this->loader->add_filter(
+                        'softone_wc_integration_enable_variable_product_handling',
+                        $this,
+                        'enable_variable_product_handling_from_settings'
+                );
+        }
+
+        /**
+         * Enable variable product handling when toggled in the plugin settings.
+         *
+         * @param bool $enabled Whether variable product handling is currently enabled.
+         *
+         * @return bool
+         */
+        public function enable_variable_product_handling_from_settings( $enabled ) {
+                $setting = softone_wc_integration_get_setting( 'enable_variable_product_handling', 'no' );
+
+                if ( 'yes' === $setting ) {
+                        return true;
+                }
+
+                return (bool) $enabled;
         }
 
 	/**

@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.8.87
+Stable tag: 1.8.88
 =======
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -46,7 +46,7 @@ The settings screen groups related options into three sections:
 
 * **Softone API Credentials** – Provide the connection details returned by SoftOne: Endpoint URL, Username, Password, App ID, Company, Branch, Module, Ref ID, Default SALDOC Series, Default Warehouse, Default AREAS, Default SOCURRENCY, Default TRDCATEGORY, and Country Mappings. All credential fields accept alphanumeric strings. The endpoint URL is normalised without trailing slashes. Passwords are stored with minimal filtering so special characters are preserved.
 * **Country Mappings** – Map WooCommerce ISO 3166-1 alpha-2 country codes to the numeric identifiers expected by SoftOne. Enter one mapping per line using the `GR:123` format; blank lines and malformed entries are ignored. Filters `softone_wc_integration_country_mappings` and `softone_wc_integration_country_id` let developers adjust mappings programmatically.
-* **Stock Behaviour** – Choose between treating zero SoftOne stock as “1” to keep items purchasable, or marking depleted items as backorderable. Only one mode can be active at a time.
+* **Stock Behaviour** – Choose between treating zero SoftOne stock as “1” to keep items purchasable, or marking depleted items as backorderable. Only one mode can be active at a time, and you can also enable colour-driven variable product handling from the same section so related SoftOne items publish as WooCommerce variations.
 
 After saving credentials, visit the **API Tester** submenu to validate connectivity and inspect sample item and order payloads. The tester records results per user and supports retrying requests without leaving the page.
 
@@ -78,6 +78,10 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Sync::schedule_event()`.
 
 == Changelog ==
+
+= 1.8.88 =
+* Feature: Add a settings toggle that enables colour-based variable product handling without requiring a code snippet filter.
+* Change: Honour the new setting in the variable product handling filter so variation queues and creation run when the checkbox is selected.
 
 = 1.8.87 =
 * Restore variable product conversion when `softone_wc_integration_enable_variable_product_handling` is enabled so colour-linked Softone items publish as WooCommerce variations with synced price, stock, and metadata.

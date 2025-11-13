@@ -3,10 +3,7 @@
 Follow these steps to confirm that enabling variable product handling now produces colour-based variations during an import run.
 
 1. **Enable the feature flag**
-   * Add the following snippet to a site-specific plugin or your theme's `functions.php`:
-     ```php
-     add_filter( 'softone_wc_integration_enable_variable_product_handling', '__return_true' );
-     ```
+   * Navigate to **Softone Integration → Settings**, open the **Stock Behaviour** section, check **Enable variable product handling**, and save the settings.
 2. **Prepare sample catalogue data**
    * Ensure Softone exposes at least two related items that share a `related_item_mtrl` relationship and distinct colour attribute values.
    * Confirm each item reports price, stock quantity, SKU, and the Softone material identifier (`MTRL`).
