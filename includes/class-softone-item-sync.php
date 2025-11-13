@@ -232,6 +232,15 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     } catch ( Exception $exception ) {
                         $stats['skipped']++;
                         $this->log( 'error', $exception->getMessage(), array( 'row' => $row ) );
+                        $this->log_activity(
+                            'product_imports',
+                            'error',
+                            __( 'Failed to import product during Softone sync.', 'softone-woocommerce-integration' ),
+                            array(
+                                'error' => $exception->getMessage(),
+                                'row'   => $this->prepare_api_payload_for_logging( $row ),
+                            )
+                        );
                     }
                 }
 
@@ -452,6 +461,15 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     } catch ( Exception $exception ) {
                         $stats['skipped']++;
                         $this->log( 'error', $exception->getMessage(), array( 'row' => $row ) );
+                        $this->log_activity(
+                            'product_imports',
+                            'error',
+                            __( 'Failed to import product during Softone sync.', 'softone-woocommerce-integration' ),
+                            array(
+                                'error' => $exception->getMessage(),
+                                'row'   => $this->prepare_api_payload_for_logging( $row ),
+                            )
+                        );
                     }
 
                     $index++;
@@ -896,20 +914,30 @@ protected function import_row( array $data, $run_timestamp ) {
 
         if ( ! $this->force_taxonomy_refresh && '' !== $existing_hash && $existing_hash === $payload_hash ) {
             if ( $categories_match ) {
+                $skip_context = array(
+                    'product_id'             => $product_id,
+                    'sku'                    => $sku_requested,
+                    'mtrl'                   => $mtrl,
+                    'payload_hash'           => $payload_hash,
+                    'existing_hash'          => $existing_hash,
+                    'category_ids'           => $category_ids,
+                    'categories_match'       => true,
+                    'force_taxonomy_refresh' => (bool) $this->force_taxonomy_refresh,
+                );
+
                 $this->log(
                     'debug',
                     'Skipping product import because the payload hash matches the existing product.',
-                    array(
-                        'product_id'             => $product_id,
-                        'sku'                    => $sku_requested,
-                        'mtrl'                   => $mtrl,
-                        'payload_hash'           => $payload_hash,
-                        'existing_hash'          => $existing_hash,
-                        'category_ids'           => $category_ids,
-                        'categories_match'       => true,
-                        'force_taxonomy_refresh' => (bool) $this->force_taxonomy_refresh,
-                    )
+                    $skip_context
                 );
+
+                $this->log_activity(
+                    'product_imports',
+                    'skipped_payload_match',
+                    __( 'Skipped importing product because the payload hash matched the stored data.', 'softone-woocommerce-integration' ),
+                    $skip_context
+                );
+
                 return 'skipped';
             }
 
@@ -1333,15 +1361,26 @@ protected function import_row( array $data, $run_timestamp ) {
     $this->assign_product_brand_term( $product_id, $brand_value );       // taxonomy product_brand
 
     $action = $is_new ? 'created' : 'updated';
+    $activity_context = array(
+        'product_id' => $product_id,
+        'sku'        => $sku_for_images,
+        'mtrl'       => $mtrl,
+        'timestamp'  => $run_timestamp,
+    );
+
+    $message = sprintf( __( 'Product %s via Softone sync.', 'softone-woocommerce-integration' ), $action );
+
     $this->log(
         'info',
-        sprintf( 'Product %s via Softone sync.', $action ),
-        array(
-            'product_id' => $product_id,
-            'sku'        => $sku_for_images,
-            'mtrl'       => $mtrl,
-            'timestamp'  => $run_timestamp,
-        )
+        $message,
+        $activity_context
+    );
+
+    $this->log_activity(
+        'product_imports',
+        $action,
+        $message,
+        $activity_context
     );
 
     return $action;
