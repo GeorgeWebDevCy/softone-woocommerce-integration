@@ -1368,295 +1368,20 @@ protected function import_row( array $data, $run_timestamp ) {
             $colour_taxonomy = (string) $colour_taxonomy;
 
             if ( $product_id <= 0 || $colour_term_id <= 0 || '' === $colour_taxonomy ) {
-                $this->log(
-                    'debug',
-                    'Skipped colour variation ensure because the required identifiers were missing.',
-                    array(
-                        'product_id'     => $product_id,
-                        'colour_term_id' => $colour_term_id,
-                        'colour_taxonomy'=> $colour_taxonomy,
-                    )
-                );
-                return;
-            }
-
-            if ( ( ! class_exists( 'WC_Product_Variation' ) || ! class_exists( 'WC_Product_Variable' ) ) && defined( 'WC_ABSPATH' ) ) {
-                $variation_path = WC_ABSPATH . 'includes/class-wc-product-variation.php';
-                if ( ! class_exists( 'WC_Product_Variation' ) && file_exists( $variation_path ) ) {
-                    include_once $variation_path;
-                }
-
-                $variable_path = WC_ABSPATH . 'includes/class-wc-product-variable.php';
-                if ( ! class_exists( 'WC_Product_Variable' ) && file_exists( $variable_path ) ) {
-                    include_once $variable_path;
-                }
-
-                $attribute_path = WC_ABSPATH . 'includes/class-wc-product-attribute.php';
-                if ( ! class_exists( 'WC_Product_Attribute' ) && file_exists( $attribute_path ) ) {
-                    include_once $attribute_path;
-                }
-            }
-
-            if ( ! class_exists( 'WC_Product_Variation' ) || ! class_exists( 'WC_Product_Variable' ) ) {
-                $this->log(
-                    'warning',
-                    'Unable to ensure colour variation because WooCommerce variation classes are unavailable.',
-                    array( 'product_id' => $product_id )
-                );
                 return;
             }
 
             $this->log(
                 'debug',
-                'Ensuring colour variation for product.',
-                array(
-                    'product_id'       => $product_id,
-                    'colour_term_id'   => $colour_term_id,
-                    'colour_taxonomy'  => $colour_taxonomy,
-                    'sku'              => $sku,
-                    'price_value'      => $price_value,
-                    'stock_amount'     => $stock_amount,
-                    'mtrl'             => $mtrl,
-                    'should_backorder' => $should_backorder,
-                )
-            );
-
-            if ( function_exists( 'wp_set_object_terms' ) ) {
-                wp_set_object_terms( $product_id, 'variable', 'product_type' );
-            }
-
-            $parent_product = wc_get_product( $product_id );
-
-            if ( ! $parent_product ) {
-                $this->log( 'warning', 'Unable to load parent product while ensuring colour variation.', array( 'product_id' => $product_id ) );
-                return;
-            }
-
-            if ( ! $parent_product instanceof WC_Product_Variable ) {
-                $parent_product = new WC_Product_Variable( $product_id );
-            }
-
-            $attributes = $parent_product->get_attributes();
-            $normalized_key = $colour_taxonomy;
-            if ( function_exists( 'wc_attribute_taxonomy_name' ) ) {
-                $normalized_key = wc_attribute_taxonomy_name( $this->resolve_colour_attribute_slug() );
-            }
-
-            foreach ( $attributes as $key => $attribute ) {
-                if ( $attribute instanceof WC_Product_Attribute ) {
-                    $name = $attribute->get_name();
-                    if ( $name === $colour_taxonomy || $name === $normalized_key ) {
-                        $attribute->set_variation( true );
-                        $this->set_attribute_taxonomy_flag( $attribute, true );
-                        $this->log(
-                            'debug',
-                            'Marked colour attribute for variation usage on parent product.',
-                            array(
-                                'product_id'      => $product_id,
-                                'attribute_name'  => $name,
-                                'colour_taxonomy' => $colour_taxonomy,
-                            )
-                        );
-                        $attributes[ $key ] = $attribute;
-                    }
-                }
-            }
-
-            $parent_product->set_attributes( $attributes );
-            $parent_product->set_manage_stock( false );
-            $parent_product->set_stock_quantity( null );
-
-            if ( null !== $stock_amount ) {
-                $parent_product->set_stock_status( $stock_amount > 0 ? 'instock' : 'outofstock' );
-            }
-
-            if ( method_exists( $parent_product, 'set_backorders' ) ) {
-                $parent_product->set_backorders( 'no' );
-            }
-
-            $parent_product->save();
-
-            $this->log(
-                'debug',
-                'Updated parent product while ensuring colour variation.',
+                'Skipping colour variation creation because variable product handling is disabled.',
                 array(
                     'product_id'      => $product_id,
-                    'colour_taxonomy' => $colour_taxonomy,
                     'colour_term_id'  => $colour_term_id,
+                    'colour_taxonomy' => $colour_taxonomy,
+                    'sku'             => (string) $sku,
+                    'mtrl'            => (string) $mtrl,
                 )
             );
-
-            $term = get_term( $colour_term_id, $colour_taxonomy );
-            if ( ! $term || is_wp_error( $term ) ) {
-                return;
-            }
-
-            $variation_id = $this->find_existing_variation_id( $product_id, $sku, $mtrl );
-
-            if ( $variation_id > 0 ) {
-                $variation = new WC_Product_Variation( $variation_id );
-                $this->log(
-                    'debug',
-                    'Updating existing colour variation.',
-                    array(
-                        'product_id'   => $product_id,
-                        'variation_id' => $variation_id,
-                        'sku'          => $sku,
-                        'mtrl'         => $mtrl,
-                    )
-                );
-            } else {
-                $variation = new WC_Product_Variation();
-                $variation->set_parent_id( $product_id );
-                $this->log(
-                    'debug',
-                    'Creating new colour variation for product.',
-                    array(
-                        'product_id'  => $product_id,
-                        'sku'         => $sku,
-                        'mtrl'        => $mtrl,
-                        'term_id'     => $colour_term_id,
-                        'taxonomy'    => $colour_taxonomy,
-                    )
-                );
-            }
-
-            $attribute_key = 'attribute_' . ( function_exists( 'sanitize_title' ) ? sanitize_title( $colour_taxonomy ) : strtolower( preg_replace( '/[^a-zA-Z0-9_]+/', '-', $colour_taxonomy ) ) );
-            $variation->set_attributes( array( $attribute_key => $term->slug ) );
-            $variation->set_status( 'publish' );
-
-            $this->log(
-                'debug',
-                'Configured variation attributes for colour.',
-                array(
-                    'product_id'    => $product_id,
-                    'attribute_key' => $attribute_key,
-                    'term_slug'     => $term->slug,
-                )
-            );
-
-            $assigned_sku = '';
-
-            if ( '' !== $sku ) {
-                $variation_id = $variation->get_id() ? (int) $variation->get_id() : 0;
-                $suffix_parts = array();
-
-                if ( isset( $term->slug ) && '' !== $term->slug ) {
-                    $term_slug = (string) $term->slug;
-                    if ( function_exists( 'sanitize_title' ) ) {
-                        $term_slug = sanitize_title( $term_slug );
-                    }
-                    if ( '' !== $term_slug ) {
-                        $suffix_parts[] = $term_slug;
-                    }
-                }
-
-                $suffix_parts[] = 'var';
-                $suffix_parts[] = (string) $product_id;
-                $suffix_parts   = array_values( array_filter( array_map( 'strval', $suffix_parts ) ) );
-
-                $unique_sku = $this->ensure_unique_sku( $sku, $variation_id, $suffix_parts );
-
-                if ( '' === $unique_sku ) {
-                    $this->log(
-                        'warning',
-                        'Unable to assign unique SKU to colour variation; leaving blank to avoid duplication.',
-                        array(
-                            'product_id'      => $product_id,
-                            'variation_id'    => $variation_id,
-                            'requested_sku'   => $sku,
-                            'suffix_parts'    => $suffix_parts,
-                        )
-                    );
-                    $variation->set_sku( '' );
-                } else {
-                    if ( $unique_sku !== $sku ) {
-                        $this->log(
-                            'info',
-                            'Adjusted colour variation SKU to avoid duplication.',
-                            array(
-                                'product_id'      => $product_id,
-                                'variation_id'    => $variation_id,
-                                'requested_sku'   => $sku,
-                                'assigned_sku'    => $unique_sku,
-                            )
-                        );
-                    }
-
-                    $variation->set_sku( $unique_sku );
-                    $assigned_sku = $unique_sku;
-                }
-            } else {
-                $variation->set_sku( '' );
-            }
-
-            if ( null !== $price_value ) {
-                $variation->set_regular_price( $price_value );
-            }
-
-            if ( null !== $stock_amount ) {
-                $variation->set_manage_stock( true );
-                $variation->set_stock_quantity( $stock_amount );
-
-                if ( $should_backorder && $stock_amount <= 0 ) {
-                    if ( method_exists( $variation, 'set_backorders' ) ) {
-                        $variation->set_backorders( 'notify' );
-                    }
-                    $variation->set_stock_status( 'onbackorder' );
-                } else {
-                    if ( method_exists( $variation, 'set_backorders' ) ) {
-                        $variation->set_backorders( 'no' );
-                    }
-                    $variation->set_stock_status( $stock_amount > 0 ? 'instock' : 'outofstock' );
-                }
-            } else {
-                $variation->set_manage_stock( false );
-                if ( method_exists( $variation, 'set_backorders' ) ) {
-                    $variation->set_backorders( 'no' );
-                }
-                $variation->set_stock_status( 'instock' );
-            }
-
-            $this->log(
-                'debug',
-                'Applied stock configuration to colour variation.',
-                array(
-                    'product_id'       => $product_id,
-                    'variation_id'     => $variation->get_id() ? (int) $variation->get_id() : 0,
-                    'stock_amount'     => $stock_amount,
-                    'should_backorder' => $should_backorder,
-                )
-            );
-
-            $variation_id = $variation->save();
-
-            if ( $variation_id && $mtrl ) {
-                update_post_meta( $variation_id, self::META_MTRL, $mtrl );
-            }
-
-            if ( class_exists( 'WC_Product_Variable' ) ) {
-                WC_Product_Variable::sync( $product_id );
-            }
-
-            if ( method_exists( $variation, 'get_sku' ) ) {
-                $assigned_sku = (string) $variation->get_sku();
-            }
-
-            $this->log(
-                'info',
-                'Saved colour variation for product.',
-                array(
-                    'product_id'   => $product_id,
-                    'variation_id' => $variation_id,
-                    'sku'          => $assigned_sku,
-                    'requested_sku' => $sku,
-                    'price_value'  => $price_value,
-                    'stock_amount' => $stock_amount,
-                    'should_backorder' => $should_backorder,
-                )
-            );
-
-            $this->maybe_draft_single_product_source( $mtrl, $product_id );
         }
 
         /**
@@ -1947,73 +1672,21 @@ protected function import_row( array $data, $run_timestamp ) {
          * @return void
          */
         protected function queue_colour_variation_sync( $product_id, $mtrl, array $related_item_mtrls, $colour_taxonomy ) {
-            $product_id         = (int) $product_id;
-            $mtrl               = trim( (string) $mtrl );
-            $colour_taxonomy    = trim( (string) $colour_taxonomy );
-            $related_item_mtrls = array_values( array_filter( array_map( 'strval', $related_item_mtrls ) ) );
+            $product_id      = (int) $product_id;
+            $colour_taxonomy = (string) $colour_taxonomy;
 
-            if ( empty( $related_item_mtrls ) && $product_id > 0 ) {
-                $stored_related = get_post_meta( $product_id, self::META_RELATED_ITEM_MTRLS, true );
-                if ( is_array( $stored_related ) ) {
-                    $related_item_mtrls = array_merge( $related_item_mtrls, array_map( 'strval', $stored_related ) );
-                } elseif ( is_string( $stored_related ) && '' !== trim( $stored_related ) ) {
-                    $related_item_mtrls = array_merge(
-                        $related_item_mtrls,
-                        $this->parse_related_item_mtrls( (string) $stored_related )
-                    );
-                }
-            }
-
-            $parent_pointer_meta = get_post_meta( $product_id, self::META_RELATED_ITEM_MTRL, true );
-            $parent_pointer      = '';
-
-            if ( is_array( $parent_pointer_meta ) && ! empty( $parent_pointer_meta ) ) {
-                $parent_pointer = (string) reset( $parent_pointer_meta );
-            } elseif ( is_string( $parent_pointer_meta ) ) {
-                $parent_pointer = trim( $parent_pointer_meta );
-            }
-
-            if ( '' !== $parent_pointer ) {
-                $related_item_mtrls = array_merge(
-                    $related_item_mtrls,
-                    array( $parent_pointer ),
-                    $this->find_child_mtrls_for_parent( $parent_pointer )
-                );
-            }
-
-            if ( '' !== $mtrl ) {
-                $related_item_mtrls   = array_merge( $related_item_mtrls, array( $mtrl ) );
-                $related_item_mtrls   = array_merge( $related_item_mtrls, $this->find_child_mtrls_for_parent( $mtrl ) );
-            }
-
-            $related_item_mtrls = array_values(
-                array_unique(
-                    array_filter(
-                        array_map( 'strval', $related_item_mtrls )
-                    )
-                )
-            );
-
-            if ( $product_id <= 0 || '' === $colour_taxonomy || count( $related_item_mtrls ) <= 1 ) {
+            if ( $product_id <= 0 || '' === $colour_taxonomy ) {
                 return;
             }
 
             $this->log(
                 'debug',
-                'Queued colour variation synchronisation request.',
+                'Skipping colour variation queue because variable product handling is disabled.',
                 array(
-                    'product_id'         => $product_id,
-                    'mtrl'               => $mtrl,
-                    'related_item_mtrls' => $related_item_mtrls,
-                    'colour_taxonomy'    => $colour_taxonomy,
+                    'product_id'      => $product_id,
+                    'mtrl'            => (string) $mtrl,
+                    'colour_taxonomy' => $colour_taxonomy,
                 )
-            );
-
-            $this->pending_colour_variation_syncs[] = array(
-                'product_id'          => $product_id,
-                'mtrl'                => $mtrl,
-                'related_item_mtrls'  => $related_item_mtrls,
-                'colour_taxonomy'     => $colour_taxonomy,
             );
         }
 
@@ -2032,70 +1705,34 @@ protected function import_row( array $data, $run_timestamp ) {
          */
         protected function queue_single_product_variation( $product_id, $colour_term_id, $colour_taxonomy, $sku, $price_value, $stock_amount, $mtrl, $should_backorder ) {
             $product_id      = (int) $product_id;
-            $colour_term_id  = (int) $colour_term_id;
             $colour_taxonomy = (string) $colour_taxonomy;
 
-            if ( $product_id <= 0 || $colour_term_id <= 0 || '' === $colour_taxonomy ) {
-                return;
-            }
-
-            $this->pending_single_product_variations[] = array(
-                'product_id'       => $product_id,
-                'colour_term_id'   => $colour_term_id,
-                'colour_taxonomy'  => $colour_taxonomy,
-                'sku'              => (string) $sku,
-                'price_value'      => $price_value,
-                'stock_amount'     => $stock_amount,
-                'mtrl'             => (string) $mtrl,
-                'should_backorder' => (bool) $should_backorder,
-            );
-        }
-
-        /** @return void */
-        protected function process_pending_single_product_variations() {
-            if ( empty( $this->pending_single_product_variations ) ) {
+            if ( $product_id <= 0 || '' === $colour_taxonomy ) {
                 return;
             }
 
             $this->log(
                 'debug',
-                'Processing queued single product variation conversions.',
-                array( 'queue_size' => count( $this->pending_single_product_variations ) )
+                'Skipping variable product conversion queue because variable product handling is disabled.',
+                array(
+                    'product_id'      => $product_id,
+                    'colour_term_id'  => (int) $colour_term_id,
+                    'colour_taxonomy' => $colour_taxonomy,
+                    'mtrl'            => (string) $mtrl,
+                )
             );
+        }
 
-            foreach ( $this->pending_single_product_variations as $conversion ) {
-                $product_id      = isset( $conversion['product_id'] ) ? (int) $conversion['product_id'] : 0;
-                $colour_term_id  = isset( $conversion['colour_term_id'] ) ? (int) $conversion['colour_term_id'] : 0;
-                $colour_taxonomy = isset( $conversion['colour_taxonomy'] ) ? (string) $conversion['colour_taxonomy'] : '';
-                $sku             = isset( $conversion['sku'] ) ? (string) $conversion['sku'] : '';
-                $price_value     = isset( $conversion['price_value'] ) ? $conversion['price_value'] : null;
-                $stock_amount    = isset( $conversion['stock_amount'] ) ? $conversion['stock_amount'] : null;
-                $mtrl            = isset( $conversion['mtrl'] ) ? (string) $conversion['mtrl'] : '';
-                $should_backorder = isset( $conversion['should_backorder'] ) ? (bool) $conversion['should_backorder'] : false;
+        /** @return void */
+        protected function process_pending_single_product_variations() {
+            $queue_size = count( $this->pending_single_product_variations );
 
-                try {
-                    $this->ensure_colour_variation(
-                        $product_id,
-                        $colour_term_id,
-                        $colour_taxonomy,
-                        $sku,
-                        $price_value,
-                        $stock_amount,
-                        $mtrl,
-                        $should_backorder
-                    );
-                } catch ( \Throwable $throwable ) {
-                    $this->log(
-                        'error',
-                        'Failed to convert single product into variable product.',
-                        array(
-                            'product_id'      => $product_id,
-                            'colour_term_id'  => $colour_term_id,
-                            'colour_taxonomy' => $colour_taxonomy,
-                            'exception'       => $throwable,
-                        )
-                    );
-                }
+            if ( $queue_size > 0 ) {
+                $this->log(
+                    'debug',
+                    'Skipping queued single product variation conversions because variable product handling is disabled.',
+                    array( 'queue_size' => $queue_size )
+                );
             }
 
             $this->pending_single_product_variations = array();
@@ -2103,52 +1740,14 @@ protected function import_row( array $data, $run_timestamp ) {
 
         /** @return void */
         protected function process_pending_colour_variation_syncs() {
-            if ( empty( $this->pending_colour_variation_syncs ) ) {
-                return;
-            }
+            $queue_size = count( $this->pending_colour_variation_syncs );
 
-            $this->log(
-                'debug',
-                'Processing queued colour variation synchronisation requests.',
-                array( 'queue_size' => count( $this->pending_colour_variation_syncs ) )
-            );
-
-            foreach ( $this->pending_colour_variation_syncs as $sync_request ) {
-                $product_id         = isset( $sync_request['product_id'] ) ? (int) $sync_request['product_id'] : 0;
-                $mtrl               = isset( $sync_request['mtrl'] ) ? (string) $sync_request['mtrl'] : '';
-                $colour_taxonomy    = isset( $sync_request['colour_taxonomy'] ) ? (string) $sync_request['colour_taxonomy'] : '';
-                $related_item_mtrls = array();
-
-                if ( isset( $sync_request['related_item_mtrls'] ) && is_array( $sync_request['related_item_mtrls'] ) ) {
-                    $related_item_mtrls = array_values( array_filter( array_map( 'strval', $sync_request['related_item_mtrls'] ) ) );
-                }
-
-                if ( $product_id <= 0 || '' === $colour_taxonomy || empty( $related_item_mtrls ) ) {
-                    continue;
-                }
-
-                try {
-                    $this->log(
-                        'debug',
-                        'Synchronising related colour variations.',
-                        array(
-                            'product_id'         => $product_id,
-                            'mtrl'               => $mtrl,
-                            'colour_taxonomy'    => $colour_taxonomy,
-                            'related_item_mtrls' => $related_item_mtrls,
-                        )
-                    );
-                    $this->sync_related_colour_variations( $product_id, $mtrl, $related_item_mtrls, $colour_taxonomy );
-                } catch ( \Throwable $throwable ) {
-                    $this->log(
-                        'error',
-                        'Failed to synchronise colour variations after completing product imports.',
-                        array(
-                            'product_id' => $product_id,
-                            'exception'  => $throwable,
-                        )
-                    );
-                }
+            if ( $queue_size > 0 ) {
+                $this->log(
+                    'debug',
+                    'Skipping queued colour variation synchronisation requests because variable product handling is disabled.',
+                    array( 'queue_size' => $queue_size )
+                );
             }
 
             $this->pending_colour_variation_syncs = array();
@@ -2171,155 +1770,15 @@ protected function import_row( array $data, $run_timestamp ) {
                 return;
             }
 
-            if ( ! function_exists( 'wc_get_product' ) || ! class_exists( 'WC_Product_Attribute' ) || ! class_exists( 'WC_Product_Variable' ) ) {
-                return;
-            }
-
-            $product = wc_get_product( $product_id );
-            if ( ! $product ) {
-                return;
-            }
-
-            if ( ! $product instanceof WC_Product_Variable ) {
-                $product = new WC_Product_Variable( $product_id );
-            }
-
-            $attributes     = $product->get_attributes();
-            $normalized_key = $colour_taxonomy;
-            if ( function_exists( 'wc_attribute_taxonomy_name' ) ) {
-                $normalized_key = wc_attribute_taxonomy_name( $this->resolve_colour_attribute_slug() );
-            }
-
-            $attribute_key     = null;
-            $existing_term_ids = array();
-
-            foreach ( $attributes as $key => $attribute ) {
-                $name = '';
-
-                if ( $attribute instanceof WC_Product_Attribute ) {
-                    $name = $attribute->get_name();
-
-                    if ( $name === $colour_taxonomy || $name === $normalized_key ) {
-                        foreach ( (array) $attribute->get_options() as $option ) {
-                            $term_id = $this->normalise_colour_term_option( $option, $colour_taxonomy );
-                            if ( $term_id > 0 ) {
-                                $existing_term_ids[] = $term_id;
-                            }
-                        }
-
-                        $attribute->set_variation( true );
-                        $this->set_attribute_taxonomy_flag( $attribute, true );
-                        $this->log(
-                            'debug',
-                            'Enabled variation usage for existing colour attribute during related sync.',
-                            array(
-                                'product_id'      => $product_id,
-                                'attribute_name'  => $name,
-                                'colour_taxonomy' => $colour_taxonomy,
-                            )
-                        );
-                        $attributes[ $key ] = $attribute;
-                        $attribute_key = $key;
-                        break;
-                    }
-                } elseif ( is_array( $attribute ) && isset( $attribute['name'] ) ) {
-                    $name = (string) $attribute['name'];
-
-                    if ( $name === $colour_taxonomy || $name === $normalized_key ) {
-                        $raw_options = isset( $attribute['options'] ) ? (array) $attribute['options'] : array();
-                        foreach ( $raw_options as $option ) {
-                            $term_id = $this->normalise_colour_term_option( $option, $colour_taxonomy );
-                            if ( $term_id > 0 ) {
-                                $existing_term_ids[] = $term_id;
-                            }
-                        }
-
-                        $attribute_object = new WC_Product_Attribute();
-                        $attribute_object->set_id( isset( $attribute['id'] ) ? (int) $attribute['id'] : 0 );
-                        $attribute_object->set_name( $colour_taxonomy );
-                        $attribute_object->set_position( isset( $attribute['position'] ) ? (int) $attribute['position'] : 0 );
-                        $attribute_object->set_visible( true );
-                        $attribute_object->set_variation( true );
-                        $this->set_attribute_taxonomy_flag( $attribute_object, true );
-                        $this->log(
-                            'debug',
-                            'Converted legacy attribute array to WC_Product_Attribute for colour variations.',
-                            array(
-                                'product_id'      => $product_id,
-                                'colour_taxonomy' => $colour_taxonomy,
-                            )
-                        );
-                        $attributes[ $key ] = $attribute_object;
-                        $attribute_key = $key;
-                        break;
-                    }
-                }
-            }
-
-            $combined_term_ids = array_values( array_unique( array_merge( $existing_term_ids, $term_ids ) ) );
-            if ( empty( $combined_term_ids ) ) {
-                return;
-            }
-
-            sort( $combined_term_ids, SORT_NUMERIC );
-
-            if ( null === $attribute_key ) {
-                $attribute_object = new WC_Product_Attribute();
-                $attribute_id    = 0;
-                if ( function_exists( 'wc_attribute_taxonomy_id_by_name' ) ) {
-                    $attribute_id = (int) wc_attribute_taxonomy_id_by_name( $this->resolve_colour_attribute_slug() );
-                }
-                $attribute_object->set_id( $attribute_id );
-                $attribute_object->set_name( $colour_taxonomy );
-                $attribute_object->set_options( $combined_term_ids );
-                $attribute_object->set_position( 0 );
-                $attribute_object->set_visible( true );
-                $attribute_object->set_variation( true );
-                $this->set_attribute_taxonomy_flag( $attribute_object, true );
-                $this->log(
-                    'debug',
-                    'Added colour attribute for related variation synchronisation.',
-                    array(
-                        'product_id'      => $product_id,
-                        'colour_taxonomy' => $colour_taxonomy,
-                        'term_ids'        => $combined_term_ids,
-                    )
-                );
-                $attributes[] = $attribute_object;
-            } else {
-                $attribute_object = $attributes[ $attribute_key ];
-                if ( $attribute_object instanceof WC_Product_Attribute ) {
-                    $attribute_object->set_options( $combined_term_ids );
-                    $attribute_object->set_variation( true );
-                    $this->set_attribute_taxonomy_flag( $attribute_object, true );
-                    $this->log(
-                        'debug',
-                        'Updated existing colour attribute options during related sync.',
-                        array(
-                            'product_id'      => $product_id,
-                            'colour_taxonomy' => $colour_taxonomy,
-                            'term_ids'        => $combined_term_ids,
-                        )
-                    );
-                    $attributes[ $attribute_key ] = $attribute_object;
-                } elseif ( is_array( $attribute_object ) ) {
-                    $attribute_object['options']   = $combined_term_ids;
-                    $attribute_object['variation'] = true;
-                    $this->log(
-                        'debug',
-                        'Updated array-based colour attribute options during related sync.',
-                        array(
-                            'product_id'      => $product_id,
-                            'colour_taxonomy' => $colour_taxonomy,
-                            'term_ids'        => $combined_term_ids,
-                        )
-                    );
-                    $attributes[ $attribute_key ]  = $attribute_object;
-                }
-            }
-
-            $product->set_attributes( $attributes );
-            $product->save();
+            $this->log(
+                'debug',
+                'Skipping parent colour attribute assignment because variable product handling is disabled.',
+                array(
+                    'product_id'      => $product_id,
+                    'colour_taxonomy' => $colour_taxonomy,
+                    'term_ids'        => $term_ids,
+                )
+            );
         }
 
         /**
@@ -2332,212 +1791,24 @@ protected function import_row( array $data, $run_timestamp ) {
          * @return void
          */
         protected function sync_related_colour_variations( $product_id, $current_mtrl, array $related_item_mtrls, $colour_taxonomy ) {
-            $product_id       = (int) $product_id;
-            $current_mtrl     = trim( (string) $current_mtrl );
-            $colour_taxonomy  = (string) $colour_taxonomy;
-            $related_item_mtrls = array_values( array_unique( array_filter( array_map( 'strval', $related_item_mtrls ) ) ) );
+            $product_id      = (int) $product_id;
+            $colour_taxonomy = (string) $colour_taxonomy;
+            $related_item_mtrls = array_values( array_filter( array_map( 'strval', $related_item_mtrls ) ) );
 
             if ( $product_id <= 0 || '' === $colour_taxonomy || empty( $related_item_mtrls ) ) {
                 return;
             }
 
-            if ( '' !== $current_mtrl ) {
-                $related_item_mtrls = array_values( array_diff( $related_item_mtrls, array( $current_mtrl ) ) );
-            }
-
-            if ( empty( $related_item_mtrls ) ) {
-                return;
-            }
-
-            if ( ! function_exists( 'wc_get_product' ) || ! class_exists( 'WC_Product_Variable' ) || ! class_exists( 'WC_Product_Attribute' ) ) {
-                return;
-            }
-
-            $parent_product = wc_get_product( $product_id );
-            if ( ! $parent_product ) {
-                return;
-            }
-
-            if ( ! $parent_product instanceof WC_Product_Variable ) {
-                $parent_product = new WC_Product_Variable( $product_id );
-            }
-
-            $normalized_key = $colour_taxonomy;
-            if ( function_exists( 'wc_attribute_taxonomy_name' ) ) {
-                $normalized_key = wc_attribute_taxonomy_name( $this->resolve_colour_attribute_slug() );
-            }
-
-            $attributes        = $parent_product->get_attributes();
-            $attribute_key     = null;
-            $existing_term_ids = array();
-
-            foreach ( $attributes as $key => $attribute ) {
-                $name = '';
-                if ( $attribute instanceof WC_Product_Attribute ) {
-                    $name = $attribute->get_name();
-                } elseif ( is_array( $attribute ) && isset( $attribute['name'] ) ) {
-                    $name = (string) $attribute['name'];
-                }
-
-                if ( $name === $colour_taxonomy || $name === $normalized_key ) {
-                    if ( $attribute instanceof WC_Product_Attribute ) {
-                        $existing_term_ids = array();
-                        foreach ( (array) $attribute->get_options() as $option ) {
-                            $term_id = $this->normalise_colour_term_option( $option, $colour_taxonomy );
-                            if ( $term_id > 0 ) {
-                                $existing_term_ids[] = $term_id;
-                            }
-                        }
-                        $attribute->set_variation( true );
-                        $this->set_attribute_taxonomy_flag( $attribute, true );
-                        $attributes[ $key ] = $attribute;
-                    } elseif ( is_array( $attribute ) ) {
-                        $existing_term_ids = array();
-                        $raw_options       = isset( $attribute['options'] ) ? (array) $attribute['options'] : array();
-                        foreach ( $raw_options as $option ) {
-                            $term_id = $this->normalise_colour_term_option( $option, $colour_taxonomy );
-                            if ( $term_id > 0 ) {
-                                $existing_term_ids[] = $term_id;
-                            }
-                        }
-                        $attribute_object = new WC_Product_Attribute();
-                        $attribute_object->set_id( isset( $attribute['id'] ) ? (int) $attribute['id'] : 0 );
-                        $attribute_object->set_name( $colour_taxonomy );
-                        $attribute_object->set_options( $existing_term_ids );
-                        $attribute_object->set_position( isset( $attribute['position'] ) ? (int) $attribute['position'] : 0 );
-                        $attribute_object->set_visible( true );
-                        $attribute_object->set_variation( true );
-                        $this->set_attribute_taxonomy_flag( $attribute_object, true );
-                        $attributes[ $key ] = $attribute_object;
-                    }
-
-                    $attribute_key = $key;
-                    break;
-                }
-            }
-
-            if ( null === $attribute_key ) {
-                $existing_term_ids = array();
-            }
-
-            $parent_colour_term_id = $this->find_colour_term_id_for_product( $parent_product, $colour_taxonomy );
-            if ( $parent_colour_term_id > 0 ) {
-                $existing_term_ids[] = (int) $parent_colour_term_id;
-            }
-
-            $variations_to_sync = array();
-            $additional_term_ids = array();
-
-		foreach ( $related_item_mtrls as $related_mtrl ) {
-			$related_product_id = $this->find_product_id_by_mtrl( $related_mtrl );
-			if ( $related_product_id <= 0 ) {
-				$related_product_id = $this->find_variation_id_by_mtrl( $related_mtrl );
-			}
-
-			if ( $related_product_id <= 0 ) {
-				continue;
-			}
-
-			$related_product = wc_get_product( $related_product_id );
-			if ( ! $related_product ) {
-				continue;
-			}
-
-			$colour_term_id = $this->find_colour_term_id_for_product( $related_product, $colour_taxonomy );
-			if ( $colour_term_id <= 0 ) {
-				continue;
-			}
-
-                $price_value = $related_product->get_regular_price();
-                if ( '' === $price_value ) {
-                    $price_value = $related_product->get_price();
-                }
-                $price_value = ( '' === $price_value ) ? null : wc_format_decimal( $price_value );
-
-                $stock_amount = null;
-                $should_backorder = false;
-                if ( $related_product->managing_stock() ) {
-                    $quantity = $related_product->get_stock_quantity();
-                    if ( null !== $quantity ) {
-                        $stock_amount = (int) $quantity;
-                    } else {
-                        $stock_amount = 0;
-                    }
-
-                    if ( method_exists( $related_product, 'get_backorders' ) ) {
-                        $backorders = (string) $related_product->get_backorders();
-                        $should_backorder = in_array( $backorders, array( 'notify', 'yes' ), true );
-                    }
-                } else {
-                    if ( method_exists( $related_product, 'get_backorders' ) ) {
-                        $backorders = (string) $related_product->get_backorders();
-                        $should_backorder = in_array( $backorders, array( 'notify', 'yes' ), true );
-                    }
-                }
-
-                $variations_to_sync[] = array(
-                    'term_id'          => (int) $colour_term_id,
-                    'sku'              => (string) $related_product->get_sku(),
-                    'price_value'      => $price_value,
-                    'stock_amount'     => $stock_amount,
-                    'mtrl'             => $related_mtrl,
-                    'should_backorder' => $should_backorder,
-                );
-
-                $additional_term_ids[] = (int) $colour_term_id;
-            }
-
-            if ( empty( $variations_to_sync ) ) {
-                return;
-            }
-
-            $final_term_ids = array_values( array_unique( array_merge( $existing_term_ids, $additional_term_ids ) ) );
-
-            if ( empty( $final_term_ids ) ) {
-                return;
-            }
-
-            sort( $final_term_ids, SORT_NUMERIC );
-
-            if ( null === $attribute_key ) {
-                $attribute_object = new WC_Product_Attribute();
-                $attribute_object->set_id( 0 );
-                $attribute_object->set_name( $colour_taxonomy );
-                $attribute_object->set_options( $final_term_ids );
-                $attribute_object->set_position( 0 );
-                $attribute_object->set_visible( true );
-                $attribute_object->set_variation( true );
-                $this->set_attribute_taxonomy_flag( $attribute_object, true );
-                $attributes[] = $attribute_object;
-            } else {
-                $attribute_object = $attributes[ $attribute_key ];
-                if ( $attribute_object instanceof WC_Product_Attribute ) {
-                    $attribute_object->set_options( $final_term_ids );
-                    $attribute_object->set_variation( true );
-                    $this->set_attribute_taxonomy_flag( $attribute_object, true );
-                    $attributes[ $attribute_key ] = $attribute_object;
-                } elseif ( is_array( $attribute_object ) ) {
-                    $attribute_object['options']   = $final_term_ids;
-                    $attribute_object['variation'] = true;
-                    $attributes[ $attribute_key ]  = $attribute_object;
-                }
-            }
-
-            $parent_product->set_attributes( $attributes );
-            $parent_product->save();
-
-            foreach ( $variations_to_sync as $variation_data ) {
-                $this->ensure_colour_variation(
-                    $product_id,
-                    (int) $variation_data['term_id'],
-                    $colour_taxonomy,
-                    $variation_data['sku'],
-                    $variation_data['price_value'],
-                    $variation_data['stock_amount'],
-                    $variation_data['mtrl'],
-                    (bool) $variation_data['should_backorder']
-                );
-            }
+            $this->log(
+                'debug',
+                'Skipping related colour variation synchronisation because variable product handling is disabled.',
+                array(
+                    'product_id'         => $product_id,
+                    'mtrl'               => (string) $current_mtrl,
+                    'colour_taxonomy'    => $colour_taxonomy,
+                    'related_item_mtrls' => $related_item_mtrls,
+                )
+            );
         }
 
         /**
