@@ -1416,15 +1416,16 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
          * @param int|null    $stock_amount
          * @param string      $mtrl
          * @param bool        $should_backorder
-         * @return void
+         * @param array       $extra_meta
+         * @return int Variation identifier or 0 on failure.
          */
-        protected function ensure_colour_variation( $product_id, $colour_term_id, $colour_taxonomy, $sku, $price_value, $stock_amount, $mtrl, $should_backorder ) {
+        protected function ensure_colour_variation( $product_id, $colour_term_id, $colour_taxonomy, $sku, $price_value, $stock_amount, $mtrl, $should_backorder, array $extra_meta = array() ) {
             $product_id      = (int) $product_id;
             $colour_term_id  = (int) $colour_term_id;
             $colour_taxonomy = (string) $colour_taxonomy;
 
             if ( $product_id <= 0 || $colour_term_id <= 0 || '' === $colour_taxonomy ) {
-                return;
+                return 0;
             }
 
             if ( ! $this->is_variable_product_handling_enabled() ) {
@@ -1439,8 +1440,154 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                         'mtrl'            => (string) $mtrl,
                     )
                 );
-                return;
+                return 0;
             }
+
+            if ( ! function_exists( 'wc_get_product' ) || ! class_exists( 'WC_Product_Variation' ) ) {
+                return 0;
+            }
+
+            $product = wc_get_product( $product_id );
+            if ( ! $product ) {
+                return 0;
+            }
+
+            if ( 'variable' !== $product->get_type() ) {
+                return 0;
+            }
+
+            $term = get_term( $colour_term_id, $colour_taxonomy );
+            if ( ! $term || is_wp_error( $term ) ) {
+                return 0;
+            }
+
+            $term_slug = isset( $term->slug ) ? (string) $term->slug : '';
+            if ( '' === $term_slug ) {
+                $term_name = isset( $term->name ) ? (string) $term->name : '';
+                if ( function_exists( 'sanitize_title' ) ) {
+                    $term_slug = sanitize_title( $term_name );
+                } else {
+                    $term_slug = strtolower( preg_replace( '/[^a-zA-Z0-9_]+/', '-', $term_name ) );
+                }
+            }
+
+            if ( '' === $term_slug ) {
+                return 0;
+            }
+
+            $attribute_key = $colour_taxonomy;
+            if ( function_exists( 'wc_variation_attribute_name' ) ) {
+                $attribute_key = wc_variation_attribute_name( $colour_taxonomy );
+            } else {
+                $attribute_key = 'attribute_' . ltrim( $colour_taxonomy, '_' );
+            }
+
+            $variation_id = $this->find_existing_variation_id( $product_id, $sku, $mtrl );
+            $is_new       = $variation_id <= 0;
+
+            if ( $is_new ) {
+                $variation = new WC_Product_Variation();
+                $variation->set_parent_id( $product_id );
+            } else {
+                $variation = wc_get_product( $variation_id );
+                if ( ! $variation ) {
+                    $variation = new WC_Product_Variation( $variation_id );
+                }
+            }
+
+            if ( ! $variation || ! $variation instanceof WC_Product_Variation ) {
+                return 0;
+            }
+
+            $attributes = $variation->get_attributes();
+            if ( ! is_array( $attributes ) ) {
+                $attributes = array();
+            }
+
+            $attributes[ $attribute_key ] = $term_slug;
+            $variation->set_attributes( $attributes );
+
+            if ( '' !== (string) $sku ) {
+                $variation->set_sku( (string) $sku );
+            } elseif ( $is_new ) {
+                $variation->set_sku( '' );
+            }
+
+            if ( null !== $price_value && '' !== $price_value ) {
+                $variation->set_regular_price( (string) $price_value );
+                $variation->set_sale_price( '' );
+                $variation->set_price( (string) $price_value );
+            } elseif ( $is_new ) {
+                $variation->set_regular_price( '' );
+                $variation->set_sale_price( '' );
+                $variation->set_price( '' );
+            }
+
+            $quantity = null;
+            if ( null !== $stock_amount ) {
+                $quantity = function_exists( 'wc_stock_amount' ) ? wc_stock_amount( $stock_amount ) : (int) $stock_amount;
+            }
+
+            if ( null !== $quantity ) {
+                $variation->set_manage_stock( true );
+                $variation->set_stock_quantity( $quantity );
+
+                if ( $should_backorder ) {
+                    $variation->set_backorders( 'notify' );
+                    $variation->set_stock_status( $quantity > 0 ? 'instock' : 'onbackorder' );
+                } else {
+                    $variation->set_backorders( 'no' );
+                    $variation->set_stock_status( $quantity > 0 ? 'instock' : 'outofstock' );
+                }
+            } else {
+                $variation->set_manage_stock( false );
+                $variation->set_stock_quantity( null );
+
+                if ( $should_backorder ) {
+                    $variation->set_backorders( 'notify' );
+                    $variation->set_stock_status( 'onbackorder' );
+                } else {
+                    $variation->set_backorders( 'no' );
+                    $variation->set_stock_status( 'instock' );
+                }
+            }
+
+            $variation->set_status( 'publish' );
+
+            $variation_id = $variation->save();
+            $variation_id = (int) $variation_id;
+
+            if ( $variation_id <= 0 ) {
+                return 0;
+            }
+
+            if ( '' !== $mtrl ) {
+                update_post_meta( $variation_id, self::META_MTRL, $mtrl );
+            }
+
+            if ( ! isset( $extra_meta[ self::META_PAYLOAD_HASH ] ) ) {
+                $parent_hash = get_post_meta( $product_id, self::META_PAYLOAD_HASH, true );
+                if ( '' !== $parent_hash ) {
+                    $extra_meta[ self::META_PAYLOAD_HASH ] = $parent_hash;
+                }
+            }
+
+            if ( ! isset( $extra_meta[ self::META_LAST_SYNC ] ) ) {
+                $parent_sync = get_post_meta( $product_id, self::META_LAST_SYNC, true );
+                if ( '' !== $parent_sync ) {
+                    $extra_meta[ self::META_LAST_SYNC ] = $parent_sync;
+                }
+            }
+
+            foreach ( $extra_meta as $meta_key => $meta_value ) {
+                if ( '' === $meta_value || null === $meta_value ) {
+                    continue;
+                }
+
+                update_post_meta( $variation_id, $meta_key, $meta_value );
+            }
+
+            return $variation_id;
         }
 
         /**
@@ -1750,6 +1897,28 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 );
                 return;
             }
+
+            $related_item_mtrls = array_values(
+                array_unique(
+                    array_filter(
+                        array_map( 'strval', $related_item_mtrls )
+                    )
+                )
+            );
+
+            if ( empty( $related_item_mtrls ) ) {
+                return;
+            }
+
+            $payload = array(
+                'product_id'          => $product_id,
+                'mtrl'                => (string) $mtrl,
+                'related_item_mtrls'  => $related_item_mtrls,
+                'colour_taxonomy'     => $colour_taxonomy,
+            );
+
+            $hash = md5( wp_json_encode( $payload ) );
+            $this->pending_colour_variation_syncs[ $hash ] = $payload;
         }
 
         /**
@@ -1786,6 +1955,20 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 );
                 return;
             }
+
+            $payload = array(
+                'product_id'      => $product_id,
+                'colour_term_id'  => (int) $colour_term_id,
+                'colour_taxonomy' => $colour_taxonomy,
+                'sku'             => (string) $sku,
+                'price_value'     => ( null === $price_value || '' === $price_value ) ? null : (string) $price_value,
+                'stock_amount'    => ( null === $stock_amount ) ? null : (int) $stock_amount,
+                'mtrl'            => (string) $mtrl,
+                'backorder'       => (bool) $should_backorder,
+            );
+
+            $hash = md5( wp_json_encode( $payload ) );
+            $this->pending_single_product_variations[ $hash ] = $payload;
         }
 
         /** @return void */
@@ -1798,9 +1981,113 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     'Skipping queued single product variation conversions because variable product handling is disabled.',
                     array( 'queue_size' => $queue_size )
                 );
+                $this->pending_single_product_variations = array();
+                return;
             }
 
+            if ( ! function_exists( 'wc_get_product' ) ) {
+                $this->pending_single_product_variations = array();
+                return;
+            }
+
+            $queue = $this->pending_single_product_variations;
             $this->pending_single_product_variations = array();
+
+            foreach ( $queue as $payload ) {
+                if ( ! is_array( $payload ) ) {
+                    continue;
+                }
+
+                $product_id      = isset( $payload['product_id'] ) ? (int) $payload['product_id'] : 0;
+                $colour_term_id  = isset( $payload['colour_term_id'] ) ? (int) $payload['colour_term_id'] : 0;
+                $colour_taxonomy = isset( $payload['colour_taxonomy'] ) ? (string) $payload['colour_taxonomy'] : '';
+
+                if ( $product_id <= 0 || $colour_term_id <= 0 || '' === $colour_taxonomy ) {
+                    continue;
+                }
+
+                $term = get_term( $colour_term_id, $colour_taxonomy );
+                if ( ! $term || is_wp_error( $term ) ) {
+                    $this->log(
+                        'debug',
+                        'Skipped single product variation conversion because the colour term was missing.',
+                        array(
+                            'product_id'     => $product_id,
+                            'colour_term_id' => $colour_term_id,
+                            'colour_taxonomy'=> $colour_taxonomy,
+                        )
+                    );
+                    continue;
+                }
+
+                $product = wc_get_product( $product_id );
+                if ( ! $product ) {
+                    continue;
+                }
+
+                if ( 'variable' !== $product->get_type() ) {
+                    if ( function_exists( 'wp_set_object_terms' ) ) {
+                        wp_set_object_terms( $product_id, 'variable', 'product_type' );
+                    }
+
+                    $product = wc_get_product( $product_id );
+                    if ( ! $product ) {
+                        continue;
+                    }
+
+                    if ( method_exists( $product, 'set_regular_price' ) ) {
+                        $product->set_regular_price( '' );
+                    }
+
+                    if ( method_exists( $product, 'set_sale_price' ) ) {
+                        $product->set_sale_price( '' );
+                    }
+
+                    if ( method_exists( $product, 'set_price' ) ) {
+                        $product->set_price( '' );
+                    }
+
+                    if ( method_exists( $product, 'set_manage_stock' ) ) {
+                        $product->set_manage_stock( false );
+                    }
+
+                    if ( method_exists( $product, 'set_stock_quantity' ) ) {
+                        $product->set_stock_quantity( null );
+                    }
+
+                    if ( method_exists( $product, 'set_backorders' ) ) {
+                        $product->set_backorders( 'no' );
+                    }
+
+                    if ( method_exists( $product, 'save' ) ) {
+                        $product->save();
+                    }
+                }
+
+                $this->ensure_parent_colour_attribute_terms( $product_id, $colour_taxonomy, array( $colour_term_id ) );
+
+                $price_value     = isset( $payload['price_value'] ) ? $payload['price_value'] : null;
+                $stock_amount    = isset( $payload['stock_amount'] ) ? $payload['stock_amount'] : null;
+                $sku             = isset( $payload['sku'] ) ? (string) $payload['sku'] : '';
+                $mtrl            = isset( $payload['mtrl'] ) ? (string) $payload['mtrl'] : '';
+                $should_backorder = isset( $payload['backorder'] ) ? (bool) $payload['backorder'] : false;
+
+                $variation_id = $this->ensure_colour_variation(
+                    $product_id,
+                    $colour_term_id,
+                    $colour_taxonomy,
+                    $sku,
+                    $price_value,
+                    $stock_amount,
+                    $mtrl,
+                    $should_backorder,
+                    array()
+                );
+
+                if ( $variation_id > 0 && '' !== $mtrl ) {
+                    update_post_meta( $variation_id, self::META_MTRL, $mtrl );
+                }
+            }
         }
 
         /** @return void */
@@ -1813,9 +2100,36 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     'Skipping queued colour variation synchronisation requests because variable product handling is disabled.',
                     array( 'queue_size' => $queue_size )
                 );
+                $this->pending_colour_variation_syncs = array();
+                return;
             }
 
+            if ( ! function_exists( 'wc_get_product' ) ) {
+                $this->pending_colour_variation_syncs = array();
+                return;
+            }
+
+            $queue = $this->pending_colour_variation_syncs;
             $this->pending_colour_variation_syncs = array();
+
+            foreach ( $queue as $payload ) {
+                if ( ! is_array( $payload ) ) {
+                    continue;
+                }
+
+                $product_id      = isset( $payload['product_id'] ) ? (int) $payload['product_id'] : 0;
+                $colour_taxonomy = isset( $payload['colour_taxonomy'] ) ? (string) $payload['colour_taxonomy'] : '';
+                $related_mtrls   = isset( $payload['related_item_mtrls'] ) && is_array( $payload['related_item_mtrls'] )
+                    ? array_values( array_unique( array_filter( array_map( 'strval', $payload['related_item_mtrls'] ) ) ) )
+                    : array();
+                $mtrl = isset( $payload['mtrl'] ) ? (string) $payload['mtrl'] : '';
+
+                if ( $product_id <= 0 || '' === $colour_taxonomy || empty( $related_mtrls ) ) {
+                    continue;
+                }
+
+                $this->sync_related_colour_variations( $product_id, $mtrl, $related_mtrls, $colour_taxonomy );
+            }
         }
 
         /**
@@ -1847,6 +2161,80 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 );
                 return;
             }
+
+            if ( ! function_exists( 'wc_get_product' ) || ! class_exists( 'WC_Product_Attribute' ) ) {
+                return;
+            }
+
+            $product = wc_get_product( $product_id );
+            if ( ! $product ) {
+                return;
+            }
+
+            $attribute_key = $colour_taxonomy;
+            $attribute_id  = 0;
+
+            if ( function_exists( 'wc_attribute_taxonomy_name' ) ) {
+                $attribute_key = wc_attribute_taxonomy_name( $this->resolve_colour_attribute_slug() );
+            }
+
+            if ( function_exists( 'wc_attribute_taxonomy_id_by_name' ) ) {
+                $attribute_id = (int) wc_attribute_taxonomy_id_by_name( $this->resolve_colour_attribute_slug() );
+            }
+
+            if ( '' === $attribute_key ) {
+                $attribute_key = $colour_taxonomy;
+            }
+
+            $attributes = $product->get_attributes();
+            $matched_key = null;
+            $existing_options = array();
+
+            foreach ( $attributes as $key => $attribute ) {
+                $name = '';
+                if ( $attribute instanceof WC_Product_Attribute ) {
+                    $name             = $attribute->get_name();
+                    $existing_options = (array) $attribute->get_options();
+                } elseif ( is_array( $attribute ) ) {
+                    $name             = isset( $attribute['name'] ) ? (string) $attribute['name'] : '';
+                    $existing_options = isset( $attribute['options'] ) ? (array) $attribute['options'] : array();
+                }
+
+                if ( $name === $colour_taxonomy || $name === $attribute_key ) {
+                    $matched_key = $key;
+                    break;
+                }
+            }
+
+            $sorted_existing = array_map( 'intval', $existing_options );
+            sort( $sorted_existing );
+
+            $sorted_terms = array_map( 'intval', $term_ids );
+            sort( $sorted_terms );
+
+            if ( $sorted_existing === $sorted_terms && null !== $matched_key ) {
+                $attribute = $attributes[ $matched_key ];
+                if ( $attribute instanceof WC_Product_Attribute && $attribute->get_variation() ) {
+                    return;
+                }
+            }
+
+            $attribute_object = new WC_Product_Attribute();
+            $attribute_object->set_id( $attribute_id );
+            $attribute_object->set_name( $attribute_key );
+            $attribute_object->set_options( $term_ids );
+            $attribute_object->set_visible( true );
+            $attribute_object->set_variation( true );
+            $this->set_attribute_taxonomy_flag( $attribute_object, true );
+
+            if ( null === $matched_key ) {
+                $attributes[ $attribute_key ] = $attribute_object;
+            } else {
+                $attributes[ $matched_key ] = $attribute_object;
+            }
+
+            $product->set_attributes( $attributes );
+            $product->save();
         }
 
         /**
@@ -1879,6 +2267,129 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     )
                 );
                 return;
+            }
+
+            if ( ! function_exists( 'wc_get_product' ) ) {
+                return;
+            }
+
+            $variation_payloads = array();
+            $parent_term_ids    = array();
+
+            foreach ( $related_item_mtrls as $related_mtrl ) {
+                $source_product_id = $this->find_product_id_by_mtrl( $related_mtrl );
+                $source_is_variation = false;
+
+                if ( $source_product_id <= 0 ) {
+                    $variation_id = $this->find_variation_id_by_mtrl( $related_mtrl );
+                    if ( $variation_id > 0 ) {
+                        $source_product_id  = $variation_id;
+                        $source_is_variation = true;
+                    }
+                }
+
+                if ( $source_product_id <= 0 ) {
+                    continue;
+                }
+
+                $source_product = wc_get_product( $source_product_id );
+                if ( ! $source_product ) {
+                    continue;
+                }
+
+                $colour_term_id = $this->find_colour_term_id_for_product( $source_product, $colour_taxonomy );
+                if ( $colour_term_id <= 0 ) {
+                    continue;
+                }
+
+                $parent_term_ids[] = $colour_term_id;
+
+                $sku = method_exists( $source_product, 'get_sku' ) ? (string) $source_product->get_sku() : '';
+
+                $price_value = null;
+                if ( method_exists( $source_product, 'get_regular_price' ) ) {
+                    $price_value = (string) $source_product->get_regular_price();
+                    if ( '' === $price_value && method_exists( $source_product, 'get_price' ) ) {
+                        $price_value = (string) $source_product->get_price();
+                    }
+                    if ( '' === $price_value ) {
+                        $price_value = null;
+                    }
+                }
+
+                $manage_stock = method_exists( $source_product, 'get_manage_stock' ) ? (bool) $source_product->get_manage_stock() : false;
+                $stock_amount = null;
+                if ( $manage_stock && method_exists( $source_product, 'get_stock_quantity' ) ) {
+                    $stock_quantity = $source_product->get_stock_quantity();
+                    if ( null !== $stock_quantity ) {
+                        $stock_amount = function_exists( 'wc_stock_amount' ) ? wc_stock_amount( $stock_quantity ) : (int) $stock_quantity;
+                    }
+                }
+
+                $backorders         = method_exists( $source_product, 'get_backorders' ) ? (string) $source_product->get_backorders() : 'no';
+                $should_backorder   = in_array( $backorders, array( 'notify', 'yes' ), true );
+
+                $source_payload_hash = get_post_meta( $source_product_id, self::META_PAYLOAD_HASH, true );
+                $source_last_sync    = get_post_meta( $source_product_id, self::META_LAST_SYNC, true );
+
+                $variation_payloads[] = array(
+                    'colour_term_id'   => $colour_term_id,
+                    'sku'              => $sku,
+                    'price_value'      => $price_value,
+                    'stock_amount'     => $stock_amount,
+                    'mtrl'             => $related_mtrl,
+                    'backorder'        => $should_backorder,
+                    'meta'             => array(
+                        self::META_PAYLOAD_HASH => $source_payload_hash,
+                        self::META_LAST_SYNC    => $source_last_sync,
+                    ),
+                    'source_id'        => $source_product_id,
+                    'source_is_variation' => $source_is_variation,
+                );
+            }
+
+            $parent_term_ids = array_values( array_unique( array_filter( array_map( 'intval', $parent_term_ids ) ) ) );
+
+            if ( empty( $variation_payloads ) ) {
+                return;
+            }
+
+            $this->ensure_parent_colour_attribute_terms( $product_id, $colour_taxonomy, $parent_term_ids );
+
+            foreach ( $variation_payloads as $variation_payload ) {
+                $variation_id = $this->ensure_colour_variation(
+                    $product_id,
+                    $variation_payload['colour_term_id'],
+                    $colour_taxonomy,
+                    $variation_payload['sku'],
+                    $variation_payload['price_value'],
+                    $variation_payload['stock_amount'],
+                    $variation_payload['mtrl'],
+                    $variation_payload['backorder'],
+                    $variation_payload['meta']
+                );
+
+                if ( $variation_id <= 0 ) {
+                    continue;
+                }
+
+                if ( '' !== $variation_payload['mtrl'] ) {
+                    update_post_meta( $variation_id, self::META_MTRL, $variation_payload['mtrl'] );
+                }
+
+                $meta = $variation_payload['meta'];
+
+                if ( isset( $meta[ self::META_PAYLOAD_HASH ] ) && '' !== $meta[ self::META_PAYLOAD_HASH ] ) {
+                    update_post_meta( $variation_id, self::META_PAYLOAD_HASH, $meta[ self::META_PAYLOAD_HASH ] );
+                }
+
+                if ( isset( $meta[ self::META_LAST_SYNC ] ) && '' !== $meta[ self::META_LAST_SYNC ] ) {
+                    update_post_meta( $variation_id, self::META_LAST_SYNC, $meta[ self::META_LAST_SYNC ] );
+                }
+
+                if ( ! $variation_payload['source_is_variation'] && $variation_payload['source_id'] !== $product_id ) {
+                    $this->maybe_draft_single_product_source( $variation_payload['mtrl'], $product_id );
+                }
             }
         }
 
