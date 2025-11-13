@@ -81,10 +81,21 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
         protected $pages = array();
 
         /**
+         * @var int
+         */
+        protected $total_rows = 0;
+
+        /**
          * @param array<int, array<int, array<string, mixed>>> $pages
          */
         public function __construct( array $pages = array() ) {
             $this->pages = $pages;
+
+            foreach ( $pages as $rows ) {
+                if ( is_array( $rows ) ) {
+                    $this->total_rows += count( $rows );
+                }
+            }
         }
 
         /**
@@ -102,11 +113,11 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             if ( isset( $this->pages[ $page ] ) ) {
                 return array(
                     'rows'  => $this->pages[ $page ],
-                    'total' => count( $this->pages[1] ),
+                    'total' => $this->total_rows,
                 );
             }
 
-            return array( 'rows' => array(), 'total' => count( $this->pages[1] ) );
+            return array( 'rows' => array(), 'total' => $this->total_rows );
         }
     }
 }
@@ -252,6 +263,68 @@ if ( 49 !== (int) $result2['stats']['processed'] ) {
 foreach ( $result2['warnings'] as $warning ) {
     if ( false !== strpos( $warning, 'repeated page payload' ) ) {
         fwrite( STDERR, "Duplicate page warning triggered unexpectedly.\n" );
+        exit( 1 );
+    }
+}
+
+$bulk_pages = array(
+    1 => array(),
+    2 => array(),
+    3 => array(),
+    4 => array(),
+);
+
+for ( $i = 1; $i <= 1000; $i++ ) {
+    $page_index = (int) ceil( $i / 250 );
+    $bulk_pages[ $page_index ][] = array(
+        'id'   => $i,
+        'name' => 'Bulk Product ' . $i,
+    );
+}
+
+$bulk_logger = new Softone_Item_Sync_Logger();
+$bulk_api    = new Softone_API_Client( $bulk_pages );
+$bulk_sync   = new Softone_Item_Sync_Async_Test( $bulk_api, $bulk_logger );
+
+try {
+    $bulk_state = $bulk_sync->begin_async_import();
+} catch ( Exception $exception ) {
+    fwrite( STDERR, 'Failed to initialise bulk async import: ' . $exception->getMessage() . "\n" );
+    exit( 1 );
+}
+
+$iterations  = 0;
+$bulk_result = null;
+
+do {
+    $bulk_result = $bulk_sync->run_async_import_batch( $bulk_state, 25 );
+    $bulk_state  = $bulk_result['state'];
+    $iterations++;
+
+    if ( $iterations > 200 ) {
+        fwrite( STDERR, "Bulk import exceeded iteration guard.\n" );
+        exit( 1 );
+    }
+
+    if ( count( $bulk_state['page_hashes'] ) > Softone_Item_Sync::MAX_STORED_PAGE_HASHES ) {
+        fwrite( STDERR, "Page hash guard exceeded during bulk import.\n" );
+        exit( 1 );
+    }
+} while ( ! $bulk_result['complete'] );
+
+if ( 1000 !== (int) $bulk_result['stats']['processed'] ) {
+    fwrite( STDERR, 'Bulk processed count mismatch: ' . $bulk_result['stats']['processed'] . "\n" );
+    exit( 1 );
+}
+
+if ( ! empty( $bulk_state['page_hashes'] ) ) {
+    fwrite( STDERR, "Page hashes were not cleared after completion.\n" );
+    exit( 1 );
+}
+
+foreach ( $bulk_result['warnings'] as $warning ) {
+    if ( false !== strpos( $warning, 'repeated page payload' ) ) {
+        fwrite( STDERR, "Bulk run triggered duplicate page warning unexpectedly.\n" );
         exit( 1 );
     }
 }

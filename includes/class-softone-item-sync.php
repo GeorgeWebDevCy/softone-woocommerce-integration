@@ -23,16 +23,17 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
      */
     class Softone_Item_Sync {
 
-        const CRON_HOOK          = 'softone_wc_integration_sync_items';
-        const ADMIN_ACTION       = 'softone_wc_integration_run_item_import';
-        const META_MTRL          = '_softone_mtrl_id';
-        const META_LAST_SYNC     = '_softone_last_synced';
-        const META_PAYLOAD_HASH  = '_softone_payload_hash';
-        const META_RELATED_ITEM_MTRL  = '_softone_related_item_mtrl';
+        const CRON_HOOK              = 'softone_wc_integration_sync_items';
+        const ADMIN_ACTION           = 'softone_wc_integration_run_item_import';
+        const META_MTRL              = '_softone_mtrl_id';
+        const META_LAST_SYNC         = '_softone_last_synced';
+        const META_PAYLOAD_HASH      = '_softone_payload_hash';
+        const META_RELATED_ITEM_MTRL = '_softone_related_item_mtrl';
         const META_RELATED_ITEM_MTRLS = '_softone_related_item_mtrls';
-        const OPTION_LAST_RUN    = 'softone_wc_integration_last_item_sync';
-        const LOGGER_SOURCE      = 'softone-item-sync';
-        const DEFAULT_CRON_EVENT = 'hourly';
+        const OPTION_LAST_RUN        = 'softone_wc_integration_last_item_sync';
+        const LOGGER_SOURCE          = 'softone-item-sync';
+        const DEFAULT_CRON_EVENT     = 'hourly';
+        const MAX_STORED_PAGE_HASHES = 5000;
 
         /** @var Softone_API_Client */
         protected $api_client;
@@ -441,6 +442,13 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 }
 
                 $hashes[ $hash ] = true;
+
+                if ( count( $hashes ) > self::MAX_STORED_PAGE_HASHES ) {
+                    $oldest_hash = array_key_first( $hashes );
+                    if ( null !== $oldest_hash && $oldest_hash !== $hash ) {
+                        unset( $hashes[ $oldest_hash ] );
+                    }
+                }
                 $row_count       = count( $rows );
 
                 while ( $index < $row_count && $remaining > 0 ) {
@@ -496,7 +504,6 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $state['page']               = $page;
             $state['index']              = $index;
             $state['stats']              = $stats;
-            $state['page_hashes']        = $hashes;
             $state['cache_stats']        = $aggregate_cache_stats;
             $state['pending_variations']         = $this->pending_colour_variation_syncs;
             $state['pending_single_variations']  = $this->pending_single_product_variations;
@@ -518,7 +525,10 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 $state['pending_single_variations'] = array();
                 $this->pending_colour_variation_syncs     = array();
                 $this->pending_single_product_variations = array();
+                $hashes = array();
             }
+
+            $state['page_hashes'] = $hashes;
 
             $this->force_taxonomy_refresh = $previous_force_taxonomy_refresh;
 
