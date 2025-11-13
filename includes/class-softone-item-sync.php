@@ -1791,10 +1791,26 @@ protected function import_row( array $data, $run_timestamp ) {
          * @return void
          */
         protected function sync_related_item_relationships( $product_id, $mtrl, $related_item_mtrl, array $related_item_mtrls = array(), $received_related_payload = true ) {
-            $product_id         = (int) $product_id;
-            $mtrl               = trim( (string) $mtrl );
-            $related_item_mtrl  = trim( (string) $related_item_mtrl );
-            $related_item_mtrls = array_values( array_filter( array_map( 'strval', $related_item_mtrls ) ) );
+            $product_id        = (int) $product_id;
+            $mtrl              = trim( (string) $mtrl );
+            $related_item_mtrl = trim( (string) $related_item_mtrl );
+
+            if ( '' !== $related_item_mtrl && $related_item_mtrl === $mtrl ) {
+                $related_item_mtrl = '';
+            }
+
+            $sanitized_related_item_mtrls = array();
+            foreach ( $related_item_mtrls as $candidate_mtrl ) {
+                $candidate_mtrl = trim( (string) $candidate_mtrl );
+
+                if ( '' === $candidate_mtrl || $candidate_mtrl === $mtrl ) {
+                    continue;
+                }
+
+                $sanitized_related_item_mtrls[] = $candidate_mtrl;
+            }
+
+            $related_item_mtrls = array_values( array_unique( $sanitized_related_item_mtrls ) );
 
             if ( $product_id <= 0 ) {
                 return;
@@ -1805,10 +1821,10 @@ protected function import_row( array $data, $run_timestamp ) {
             }
 
             $primary_related = '';
-            if ( ! empty( $related_item_mtrls ) ) {
-                $primary_related = (string) reset( $related_item_mtrls );
-            } elseif ( '' !== $related_item_mtrl ) {
+            if ( '' !== $related_item_mtrl ) {
                 $primary_related = $related_item_mtrl;
+            } elseif ( ! empty( $related_item_mtrls ) ) {
+                $primary_related = (string) reset( $related_item_mtrls );
             }
 
             $previous_related_meta = get_post_meta( $product_id, self::META_RELATED_ITEM_MTRL, true );
@@ -1828,7 +1844,18 @@ protected function import_row( array $data, $run_timestamp ) {
                 $existing_related_list = $this->parse_related_item_mtrls( $existing_related_meta );
             }
 
-            $merged_related = array_values( array_unique( array_filter( array_merge( $existing_related_list, $related_item_mtrls ) ) ) );
+            $sanitized_existing_related = array();
+            foreach ( $existing_related_list as $existing_mtrl ) {
+                $existing_mtrl = trim( (string) $existing_mtrl );
+
+                if ( '' === $existing_mtrl || $existing_mtrl === $mtrl ) {
+                    continue;
+                }
+
+                $sanitized_existing_related[] = $existing_mtrl;
+            }
+
+            $merged_related = array_values( array_unique( array_merge( $sanitized_existing_related, $related_item_mtrls ) ) );
 
             if ( empty( $merged_related ) ) {
                 delete_post_meta( $product_id, self::META_RELATED_ITEM_MTRLS );
@@ -1836,7 +1863,7 @@ protected function import_row( array $data, $run_timestamp ) {
                 update_post_meta( $product_id, self::META_RELATED_ITEM_MTRLS, $merged_related );
             }
 
-            if ( '' !== $mtrl && ( ! empty( $related_item_mtrls ) || ! empty( $existing_related_list ) ) ) {
+            if ( '' !== $mtrl && ( ! empty( $related_item_mtrls ) || ! empty( $sanitized_existing_related ) ) ) {
                 $this->sync_child_parent_relationships( $mtrl, $related_item_mtrls );
             }
 

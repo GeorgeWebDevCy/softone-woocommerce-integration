@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.8.77
+Stable tag: 1.8.78
 =======
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -78,6 +78,11 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Sync::schedule_event()`.
 
 == Changelog ==
+
+= 1.8.78 =
+* Prioritise the dedicated `related_item_mtrl` pointer from SoftOne while filtering out self-referential materials to keep parent relationships intact.
+* Ensure colour variation queues aggregate parents, siblings, and descendants so variation creation receives the full related set.
+* Add a regression harness covering mixed `related_item_mtrl` and `related_item_mtrls` payloads to guard the new pointer logic.
 
 = 1.8.77 =
 * Defer colour variation creation until after all single-product imports complete so catalogues stage as simple items first.
