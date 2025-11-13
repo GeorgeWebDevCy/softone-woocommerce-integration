@@ -878,8 +878,39 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
  * @return string created|updated|skipped
  */
 protected function import_row( array $data, $run_timestamp ) {
-    $mtrl         = isset( $data['mtrl'] ) ? (string) $data['mtrl'] : '';
-    $sku_requested = $this->determine_sku( $data );
+    $mtrl                  = isset( $data['mtrl'] ) ? (string) $data['mtrl'] : '';
+    $sku_requested         = $this->determine_sku( $data );
+    $original_product_name = $this->get_value( $data, array( 'varchar02', 'desc', 'description', 'code' ) );
+    $normalized_name       = '';
+    $derived_colour        = '';
+
+    if ( '' !== $original_product_name ) {
+        list( $maybe_normalized_name, $maybe_derived_colour ) = $this->split_product_name_and_colour( $original_product_name );
+        if ( '' === $maybe_normalized_name ) {
+            $maybe_normalized_name = $original_product_name;
+        }
+
+        $normalized_name = $maybe_normalized_name;
+        $derived_colour  = $maybe_derived_colour;
+    }
+
+    $anticipated_colour = $this->normalize_colour_value(
+        trim( $this->get_value( $data, array( 'colour_name', 'color_name', 'colour', 'color' ) ) )
+    );
+
+    if ( '' === $anticipated_colour && '' !== $derived_colour ) {
+        $anticipated_colour = $derived_colour;
+    }
+
+    $colour_value_for_variation = $anticipated_colour;
+
+    $colour_suffix_for_sku = $this->format_colour_for_sku(
+        '' !== $colour_value_for_variation ? $colour_value_for_variation : $derived_colour
+    );
+
+    if ( '' !== $sku_requested && '' !== $colour_suffix_for_sku ) {
+        $sku_requested .= '-' . $colour_suffix_for_sku;
+    }
 
     if ( '' === $mtrl && '' === $sku_requested ) {
         throw new Exception( __( 'Unable to determine a product identifier for the imported row.', 'softone-woocommerce-integration' ) );
@@ -969,25 +1000,16 @@ protected function import_row( array $data, $run_timestamp ) {
     }
 
     // ---------- PRODUCT NAME ----------
-    $name              = $this->get_value( $data, array( 'varchar02','desc', 'description', 'code' ) );
-    $derived_colour     = '';
-    $normalized_name    = '';
     $fallback_metadata  = array();
     $price_value        = null;
     $stock_amount       = null;
     $should_backorder   = false;
     $colour_term_id     = 0;
     $colour_taxonomy    = '';
-    $should_create_colour_variation = false;
+    $should_create_colour_variation = ( '' !== $colour_value_for_variation );
 
-    if ( '' !== $name ) {
-        list( $normalized_name, $derived_colour ) = $this->split_product_name_and_colour( $name );
-        if ( '' === $normalized_name ) {
-            $normalized_name = $name;
-        }
-        if ( '' !== $normalized_name ) {
-            $product->set_name( $normalized_name );
-        }
+    if ( '' !== $normalized_name ) {
+        $product->set_name( $normalized_name );
     }
 
     if ( '' !== $derived_colour ) {
@@ -1015,24 +1037,10 @@ protected function import_row( array $data, $run_timestamp ) {
         $product->set_regular_price( $price_value );
     }
 
-    $anticipated_colour = $this->normalize_colour_value(
-        trim( $this->get_value( $data, array( 'colour_name', 'color_name', 'colour', 'color' ) ) )
-    );
-
-    if ( '' === $anticipated_colour && '' !== $derived_colour ) {
-        $anticipated_colour = $derived_colour;
-    }
-
-    $colour_value_for_variation = $anticipated_colour;
-
-    if ( '' !== $anticipated_colour ) {
-        $should_create_colour_variation = true;
-    }
-
     // ---------- SKU (ensure unique, but if someone else owns it, we UPDATE THAT product) ----------
     $extra_suffixes = array();
-    if ( '' !== $derived_colour && function_exists( 'sanitize_title' ) ) {
-        $extra_suffixes[] = sanitize_title( $derived_colour );
+    if ( '' !== $colour_suffix_for_sku && function_exists( 'sanitize_title' ) ) {
+        $extra_suffixes[] = sanitize_title( $colour_suffix_for_sku );
     }
 
     // If we’re updating a different product but the SKU belongs to another product, switch to that product to avoid duplicates
@@ -3069,8 +3077,36 @@ protected function resolve_colour_attribute_slug() {
             if ( function_exists( 'mb_convert_case' ) ) {
                 return mb_convert_case( $colour, MB_CASE_TITLE, 'UTF-8' );
             }
-        return ucwords( strtolower( $colour ) );
-    }
+            return ucwords( strtolower( $colour ) );
+        }
+
+        /**
+         * Prepare a colour value for inclusion within an SKU suffix.
+         *
+         * Ensures the value is normalised, replaces separators with hyphens,
+         * and strips out characters that WooCommerce may reject in SKUs.
+         *
+         * @param string $colour Colour name.
+         * @return string
+         */
+        protected function format_colour_for_sku( $colour ) {
+            $colour = $this->normalize_colour_value( $colour );
+            if ( '' === $colour ) {
+                return '';
+            }
+
+            $formatted = preg_replace( '/[^\p{L}\p{N}]+/u', '-', $colour );
+            if ( null === $formatted ) {
+                $formatted = $colour;
+            }
+
+            $formatted = preg_replace( '/-+/u', '-', (string) $formatted );
+            if ( null === $formatted ) {
+                $formatted = $colour;
+            }
+
+            return trim( (string) $formatted, '-' );
+        }
 
     /**
      * Normalise simple attribute values (e.g., Size, Brand) and strip placeholders.
