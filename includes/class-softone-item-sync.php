@@ -1206,10 +1206,6 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         );
     }
 
-    if ( empty( $related_variation_candidates ) ) {
-        $should_create_colour_variation = false;
-    }
-
     if ( ! $should_create_colour_variation && '' !== $effective_sku && '' === $product->get_sku() ) {
         $product->set_sku( $effective_sku );
         $sku_adjusted_after_save = true;
