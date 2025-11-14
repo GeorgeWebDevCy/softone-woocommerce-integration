@@ -17,6 +17,12 @@ Welcome! This repository contains a WordPress plugin that bridges a WooCommerce 
 - Avoid introducing new external dependencies unless absolutely necessary; prefer WordPress core utilities.
 - When touching existing classes, mirror the surrounding docblock and hook documentation style.
 - Keep compatibility with PHP 7.4 and WooCommerce 7.5+.
+- Prefer dependency injection and constructor-based wiring over global state when extending service classes under `includes/`.
+- Write focused functions: if a method exceeds ~40 lines, consider extracting helpers to improve readability and reuse.
+- For new hooks or filters, document the expected parameters and usage in a short docblock so downstream implementers can integrate quickly.
+- When interacting with remote APIs, keep a thin wrapper method that can be mocked easily and add inline comments with the relevant SoftOne endpoint names for faster navigation.
+- If adding SQL queries, use `$wpdb->prepare()` and note any required database indices.
+- In tests, prefer deterministic fixtures over live API calls; include a comment referencing the production scenario the fixture represents.
 
 ## Testing expectations
 - Automated test coverage is minimal; when changing synchronisation logic include manual steps or targeted regression scripts under `tests/` if feasible.
