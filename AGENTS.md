@@ -38,6 +38,16 @@ Welcome! This repository contains a WordPress plugin that bridges a WooCommerce 
 - Plugin readme content lives in `README.txt`. Update both the description and changelog when the behaviour changes in a user-visible way.
 - Localisation strings are stored within the code; keep them wrapped in translation helpers for `.po` file generation.
 
+## Minimum Coding Practices (MCPs)
+
+- ✅ All plugin logic must use action/filter hooks and avoid global calls.
+- ✅ Keep functions under 40 lines; split into helpers where needed.
+- ✅ Use centralized logging for sync tasks with module+level+timestamp format.
+- ✅ Add new sync modules under `includes/` with proper hook registration.
+- ✅ Do not bypass WordPress APIs (e.g., use `$wpdb->prepare()` for queries).
+- ✅ Use transient locks for batch operations to prevent overlap.
+- ✅ All UI strings must be translatable (`__()` / `_e()` / `esc_html__()`).
+
 ## Pull request summaries
 - Provide a concise summary focused on behavioural changes and mention any manual/automated testing that supports the update.
 - Call out any follow-up tasks or assumptions that reviewers should be aware of.
