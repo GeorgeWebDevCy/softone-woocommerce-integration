@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.8.90
+Stable tag: 1.8.91
 =======
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -78,6 +78,10 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Sync::schedule_event()`.
 
 == Changelog ==
+
+= 1.8.91 =
+* Feature: Add a dedicated variable product activity log screen with paginated viewing and human-readable failure reasons.
+* Enhancement: Register the variable product log viewer under both the plugin and WooCommerce admin menus for easier access.
 
 = 1.8.90 =
 * Restore colour-based variation creation when the variable product handling filter is enabled, including stock, pricing, and Softone metadata.
