@@ -1,32 +1,32 @@
 <?php
 
 /**
- * The file that defines the core plugin class
- *
- * A class definition that includes attributes and functions used across both the
- * public-facing side of the site and the admin area.
- *
- * @link       https://www.georgenicolaou.me/
- * @since      1.0.0
- *
- * @package    Softone_Woocommerce_Integration
- * @subpackage Softone_Woocommerce_Integration/includes
- */
+	 * The file that defines the core plugin class
+	 *
+	 * A class definition that includes attributes and functions used across both the
+	 * public-facing side of the site and the admin area.
+	 *
+	 * @link       https://www.georgenicolaou.me/
+	 * @since      1.0.0
+	 *
+	 * @package    Softone_Woocommerce_Integration
+	 * @subpackage Softone_Woocommerce_Integration/includes
+	 */
 
 /**
- * The core plugin class.
- *
- * This is used to define internationalization, admin-specific hooks, and
- * public-facing site hooks.
- *
- * Also maintains the unique identifier of this plugin as well as the current
- * version of the plugin.
- *
- * @since      1.0.0
- * @package    Softone_Woocommerce_Integration
- * @subpackage Softone_Woocommerce_Integration/includes
- * @author     George Nicolaou <orionas.elite@gmail.com>
- */
+	 * The core plugin class.
+	 *
+	 * This is used to define internationalization, admin-specific hooks, and
+	 * public-facing site hooks.
+	 *
+	 * Also maintains the unique identifier of this plugin as well as the current
+	 * version of the plugin.
+	 *
+	 * @since      1.0.0
+	 * @package    Softone_Woocommerce_Integration
+	 * @subpackage Softone_Woocommerce_Integration/includes
+	 * @author     George Nicolaou <orionas.elite@gmail.com>
+	 */
 class Softone_Woocommerce_Integration {
 
 	/**
@@ -78,12 +78,19 @@ class Softone_Woocommerce_Integration {
          */
         protected $customer_sync;
 
-        /**
-         * Order synchronisation service instance.
-         *
-         * @var Softone_Order_Sync
-         */
-        protected $order_sync;
+	/**
+	 * Order synchronisation service instance.
+	 *
+	 * @var Softone_Order_Sync
+	 */
+	protected $order_sync;
+
+	/**
+	 * Shared module containing hooks used in both contexts.
+	 *
+	 * @var Softone_Woocommerce_Integration_Shared
+	 */
+	protected $shared_module;
 
         /**
          * Define the core functionality of the plugin.
@@ -95,50 +102,18 @@ class Softone_Woocommerce_Integration {
          * @since    1.0.0
          */
 	public function __construct() {
-                if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
-                        $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
-                } else {
-                        $this->version = '1.8.98';
-                }
+		if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
+			$this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
+		} else {
+			$this->version = '1.9.0';
+		}
 		$this->plugin_name = 'softone-woocommerce-integration';
 
 		$this->load_dependencies();
 		$this->set_locale();
 		$this->define_admin_hooks();
 		$this->define_public_hooks();
-		$this->define_shared_hooks();
 	}
-
-	/**
-	 * Register hooks that run on both the public and admin sides.
-	 *
-	 * @return void
-	 */
-        private function define_shared_hooks() {
-                $this->loader->add_action( 'init', $this, 'maybe_register_brand_taxonomy' );
-                $this->loader->add_filter(
-                        'softone_wc_integration_enable_variable_product_handling',
-                        $this,
-                        'enable_variable_product_handling_from_settings'
-                );
-        }
-
-        /**
-         * Enable variable product handling when toggled in the plugin settings.
-         *
-         * @param bool $enabled Whether variable product handling is currently enabled.
-         *
-         * @return bool
-         */
-        public function enable_variable_product_handling_from_settings( $enabled ) {
-                $setting = softone_wc_integration_get_setting( 'enable_variable_product_handling', 'no' );
-
-                if ( 'yes' === $setting ) {
-                        return true;
-                }
-
-                return (bool) $enabled;
-        }
 
 	/**
 	 * Load the required dependencies for this plugin.
@@ -199,15 +174,20 @@ class Softone_Woocommerce_Integration {
                  */
                 require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-order-sync.php';
 
-                /**
-                 * Helper for dynamically populating navigation menus.
-                 */
-                require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-menu-populator.php';
+		/**
+		 * Helper for dynamically populating navigation menus.
+		 */
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-menu-populator.php';
 
-                /**
-                 * Helper functions for accessing plugin settings.
-                 */
-                require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/softone-woocommerce-integration-settings.php';
+		/**
+		 * Helper functions for accessing plugin settings.
+		 */
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/softone-woocommerce-integration-settings.php';
+
+		/**
+		 * Shared hooks used by both admin and public contexts.
+		 */
+		require_once __DIR__ . '/class-softone-woocommerce-integration-shared.php';
 
 		/**
 		 * The class responsible for defining internationalization functionality
@@ -229,15 +209,17 @@ class Softone_Woocommerce_Integration {
 		require_once __DIR__ . '/class-softone-sku-image-attacher.php';
 
 
-                $this->loader          = new Softone_Woocommerce_Integration_Loader();
-                $this->activity_logger = new Softone_Sync_Activity_Logger();
-                $this->item_sync       = new Softone_Item_Sync( null, null, null, $this->activity_logger );
-                $this->customer_sync   = new Softone_Customer_Sync();
-                $this->order_sync      = new Softone_Order_Sync( null, $this->customer_sync );
+		$this->loader          = new Softone_Woocommerce_Integration_Loader();
+		$this->activity_logger = new Softone_Sync_Activity_Logger();
+		$this->item_sync       = new Softone_Item_Sync( null, null, null, $this->activity_logger );
+		$this->customer_sync   = new Softone_Customer_Sync();
+		$this->order_sync      = new Softone_Order_Sync( null, $this->customer_sync );
+		$this->shared_module   = new Softone_Woocommerce_Integration_Shared();
 
-                $this->item_sync->register_hooks( $this->loader );
-                $this->customer_sync->register_hooks( $this->loader );
-                $this->order_sync->register_hooks( $this->loader );
+		$this->item_sync->register_hooks( $this->loader );
+		$this->customer_sync->register_hooks( $this->loader );
+		$this->order_sync->register_hooks( $this->loader );
+		$this->shared_module->register_hooks( $this->loader );
 
         }
 
@@ -303,69 +285,6 @@ class Softone_Woocommerce_Integration {
 
 	}
 
-	/**
-	 * Ensure the product brand taxonomy is registered.
-	 *
-	 * @return void
-	 */
-	public function maybe_register_brand_taxonomy() {
-		if ( function_exists( 'taxonomy_exists' ) && taxonomy_exists( 'product_brand' ) ) {
-			return;
-		}
-
-		if ( ! function_exists( 'register_taxonomy' ) ) {
-			return;
-		}
-
-		$labels = array(
-			'name'                       => _x( 'Brands', 'taxonomy general name', 'softone-woocommerce-integration' ),
-			'singular_name'              => _x( 'Brand', 'taxonomy singular name', 'softone-woocommerce-integration' ),
-			'search_items'               => __( 'Search Brands', 'softone-woocommerce-integration' ),
-			'all_items'                  => __( 'All Brands', 'softone-woocommerce-integration' ),
-			'parent_item'                => __( 'Parent Brand', 'softone-woocommerce-integration' ),
-			'parent_item_colon'          => __( 'Parent Brand:', 'softone-woocommerce-integration' ),
-			'edit_item'                  => __( 'Edit Brand', 'softone-woocommerce-integration' ),
-			'update_item'                => __( 'Update Brand', 'softone-woocommerce-integration' ),
-			'add_new_item'               => __( 'Add New Brand', 'softone-woocommerce-integration' ),
-			'new_item_name'              => __( 'New Brand Name', 'softone-woocommerce-integration' ),
-			'menu_name'                  => __( 'Brands', 'softone-woocommerce-integration' ),
-		);
-
-               $default_capabilities = array(
-                       'manage_terms' => 'manage_product_terms',
-                       'edit_terms'   => 'edit_product_terms',
-                       'delete_terms' => 'delete_product_terms',
-                       'assign_terms' => 'assign_product_terms',
-               );
-
-               $args = array(
-                       'hierarchical'          => false,
-                       'labels'                => $labels,
-                       'show_ui'               => true,
-                       'show_admin_column'     => true,
-                       'query_var'             => true,
-                       'rewrite'               => array( 'slug' => 'brand' ),
-                       'show_in_rest'          => true,
-                       'show_in_nav_menus'     => true,
-                       'public'                => true,
-                       'show_tagcloud'         => false,
-                       'capabilities'          => $default_capabilities,
-                );
-
-		$objects = apply_filters( 'softone_product_brand_taxonomy_objects', array( 'product' ) );
-		if ( empty( $objects ) ) {
-			$objects = array( 'product' );
-		}
-
-               $args = apply_filters( 'softone_product_brand_taxonomy_args', $args );
-
-               $args['capabilities'] = wp_parse_args(
-                       isset( $args['capabilities'] ) ? $args['capabilities'] : array(),
-                       $default_capabilities
-               );
-
-               register_taxonomy( 'product_brand', $objects, $args );
-       }
 
 	/**
 	 * Run the loader to execute all of the hooks with WordPress.
