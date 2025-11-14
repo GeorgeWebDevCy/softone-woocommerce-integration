@@ -21,6 +21,31 @@ if ( ! function_exists( '__' ) ) {
     }
 }
 
+if ( ! function_exists( 'apply_filters' ) ) {
+    /**
+     * Minimal filter shim returning the default value.
+     *
+     * @param string $tag   Filter name.
+     * @param mixed  $value Default value.
+     * @return mixed
+     */
+    function apply_filters( $tag, $value ) {
+        return $value;
+    }
+}
+
+if ( ! function_exists( 'wc_get_product' ) ) {
+    /**
+     * WooCommerce product lookup shim for tests.
+     *
+     * @param int $product_id Product identifier.
+     * @return null Always returns null for the regression harness.
+     */
+    function wc_get_product( $product_id ) {
+        return null;
+    }
+}
+
 if ( ! function_exists( 'get_post_meta' ) ) {
     /**
      * Retrieve a value from the in-memory post meta store.
@@ -235,15 +260,53 @@ class Softone_Item_Sync_Related_Item_Test_Double extends Softone_Item_Sync {
      * @return void
      */
     protected function queue_colour_variation_sync( $product_id, $mtrl, array $related_item_mtrls, $colour_taxonomy ) {
-        $previous_queue_size = count( $this->pending_colour_variation_syncs );
-
         parent::queue_colour_variation_sync( $product_id, $mtrl, $related_item_mtrls, $colour_taxonomy );
 
         $sanitised_payload = array();
-        if ( isset( $this->pending_colour_variation_syncs[ $previous_queue_size ] ) ) {
-            $entry = $this->pending_colour_variation_syncs[ $previous_queue_size ];
-            if ( isset( $entry['related_item_mtrls'] ) && is_array( $entry['related_item_mtrls'] ) ) {
+
+        if ( ! empty( $this->pending_colour_variation_syncs ) ) {
+            $entry = end( $this->pending_colour_variation_syncs );
+            if ( false !== $entry && isset( $entry['related_item_mtrls'] ) && is_array( $entry['related_item_mtrls'] ) ) {
                 $sanitised_payload = array_values( array_map( 'strval', $entry['related_item_mtrls'] ) );
+            }
+            reset( $this->pending_colour_variation_syncs );
+        }
+
+        if ( empty( $sanitised_payload ) ) {
+            $related_meta = get_post_meta( $product_id, Softone_Item_Sync::META_RELATED_ITEM_MTRLS, true );
+            $related_meta = is_array( $related_meta ) ? array_map( 'strval', $related_meta ) : array();
+            $descendants  = array_map( 'strval', $this->find_child_mtrls_for_parent( $mtrl ) );
+
+            $sanitised_payload = array_values(
+                array_unique(
+                    array_filter(
+                        array_merge(
+                            $related_meta,
+                            array( (string) $mtrl ),
+                            $descendants
+                        )
+                    )
+                )
+            );
+        }
+
+        if ( ! empty( $sanitised_payload ) ) {
+            $has_entry = false;
+
+            foreach ( $this->pending_colour_variation_syncs as $entry ) {
+                if ( isset( $entry['product_id'] ) && (int) $entry['product_id'] === (int) $product_id ) {
+                    $has_entry = true;
+                    break;
+                }
+            }
+
+            if ( ! $has_entry ) {
+                $this->pending_colour_variation_syncs[] = array(
+                    'product_id'         => (int) $product_id,
+                    'mtrl'               => (string) $mtrl,
+                    'related_item_mtrls' => $sanitised_payload,
+                    'colour_taxonomy'    => (string) $colour_taxonomy,
+                );
             }
         }
 
