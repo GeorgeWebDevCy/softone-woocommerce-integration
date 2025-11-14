@@ -2120,6 +2120,68 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $this->pending_single_product_variations[ $hash ] = $payload;
         }
 
+        /**
+         * Ensure the supplied product is stored as a variable product.
+         *
+         * @param int $product_id
+         * @return WC_Product|false
+         */
+        protected function ensure_product_is_variable( $product_id ) {
+            $product_id = (int) $product_id;
+
+            if ( $product_id <= 0 || ! function_exists( 'wc_get_product' ) ) {
+                return false;
+            }
+
+            $product = wc_get_product( $product_id );
+            if ( ! $product ) {
+                return false;
+            }
+
+            if ( 'variable' === $product->get_type() ) {
+                return $product;
+            }
+
+            if ( function_exists( 'wp_set_object_terms' ) ) {
+                wp_set_object_terms( $product_id, 'variable', 'product_type' );
+            }
+
+            $product = wc_get_product( $product_id );
+            if ( ! $product ) {
+                return false;
+            }
+
+            if ( method_exists( $product, 'set_regular_price' ) ) {
+                $product->set_regular_price( '' );
+            }
+
+            if ( method_exists( $product, 'set_sale_price' ) ) {
+                $product->set_sale_price( '' );
+            }
+
+            if ( method_exists( $product, 'set_price' ) ) {
+                $product->set_price( '' );
+            }
+
+            if ( method_exists( $product, 'set_manage_stock' ) ) {
+                $product->set_manage_stock( false );
+            }
+
+            if ( method_exists( $product, 'set_stock_quantity' ) ) {
+                $product->set_stock_quantity( null );
+            }
+
+            if ( method_exists( $product, 'set_backorders' ) ) {
+                $product->set_backorders( 'no' );
+            }
+
+            if ( method_exists( $product, 'save' ) ) {
+                $product->save();
+            }
+
+            return $product;
+        }
+
         /** @return void */
         protected function process_pending_single_product_variations() {
             $queue_size = count( $this->pending_single_product_variations );
@@ -2169,48 +2231,9 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     continue;
                 }
 
-                $product = wc_get_product( $product_id );
+                $product = $this->ensure_product_is_variable( $product_id );
                 if ( ! $product ) {
                     continue;
-                }
-
-                if ( 'variable' !== $product->get_type() ) {
-                    if ( function_exists( 'wp_set_object_terms' ) ) {
-                        wp_set_object_terms( $product_id, 'variable', 'product_type' );
-                    }
-
-                    $product = wc_get_product( $product_id );
-                    if ( ! $product ) {
-                        continue;
-                    }
-
-                    if ( method_exists( $product, 'set_regular_price' ) ) {
-                        $product->set_regular_price( '' );
-                    }
-
-                    if ( method_exists( $product, 'set_sale_price' ) ) {
-                        $product->set_sale_price( '' );
-                    }
-
-                    if ( method_exists( $product, 'set_price' ) ) {
-                        $product->set_price( '' );
-                    }
-
-                    if ( method_exists( $product, 'set_manage_stock' ) ) {
-                        $product->set_manage_stock( false );
-                    }
-
-                    if ( method_exists( $product, 'set_stock_quantity' ) ) {
-                        $product->set_stock_quantity( null );
-                    }
-
-                    if ( method_exists( $product, 'set_backorders' ) ) {
-                        $product->set_backorders( 'no' );
-                    }
-
-                    if ( method_exists( $product, 'save' ) ) {
-                        $product->save();
-                    }
                 }
 
                 $this->ensure_parent_colour_attribute_terms( $product_id, $colour_taxonomy, array( $colour_term_id ) );
@@ -2647,6 +2670,10 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
             if ( empty( $variation_payloads ) ) {
                 $this->ensure_parent_colour_attribute_terms( $product_id, $colour_taxonomy, array() );
+                return;
+            }
+
+            if ( ! $this->ensure_product_is_variable( $product_id ) ) {
                 return;
             }
 
