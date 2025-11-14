@@ -146,7 +146,19 @@ class Softone_Item_Sync_Logger {
 
 require_once dirname( __DIR__ ) . '/includes/class-softone-item-sync.php';
 
+class Softone_Item_Stale_Handler_Stub extends Softone_Item_Stale_Handler {
+    public function __construct() {}
+
+    public function handle( $run_timestamp ) {
+        return 0;
+    }
+}
+
 class Softone_Item_Sync_Async_Test extends Softone_Item_Sync {
+    public function __construct( $api_client = null, $logger = null ) {
+        parent::__construct( $api_client, $logger, null, null, new Softone_Item_Stale_Handler_Stub() );
+    }
+
     /**
      * @var array<int, array<string, mixed>>
      */
@@ -179,14 +191,6 @@ class Softone_Item_Sync_Async_Test extends Softone_Item_Sync {
 
     /** @return void */
     protected function process_pending_colour_variation_syncs() {}
-
-    /**
-     * @param int $run_timestamp
-     * @return int
-     */
-    protected function handle_stale_products( $run_timestamp ) {
-        return 0;
-    }
 
     /**
      * @param string $level

@@ -32,8 +32,9 @@ class Softone_Woocommerce_Integration_Activator {
         public static function activate() {
 
                 require_once plugin_dir_path( __FILE__ ) . 'class-softone-item-sync.php';
+                require_once plugin_dir_path( __FILE__ ) . 'class-softone-item-cron-manager.php';
 
-                Softone_Item_Sync::schedule_event();
+                Softone_Item_Cron_Manager::schedule_event();
 
         }
 

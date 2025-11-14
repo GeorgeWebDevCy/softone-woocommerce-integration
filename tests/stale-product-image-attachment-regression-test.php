@@ -153,6 +153,28 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
 
 require_once __DIR__ . '/../includes/class-softone-item-sync.php';
 
+class Softone_Item_Stale_Handler_Test_Logger {
+
+    /**
+     * @var array<int,array{level:string,message:string,context:array}>
+     */
+    public $logs = array();
+
+    /**
+     * @param string $level
+     * @param string $message
+     * @param array  $context
+     * @return void
+     */
+    public function log( $level, $message, array $context = array() ) {
+        $this->logs[] = array(
+            'level'   => (string) $level,
+            'message' => (string) $message,
+            'context' => $context,
+        );
+    }
+}
+
 if ( ! class_exists( 'Softone_Sku_Image_Attacher' ) ) {
     /**
      * Captures attachment attempts during stale processing.
@@ -282,45 +304,9 @@ class Softone_Test_Product {
     }
 }
 
-/**
- * Test double exposing stale product handling for assertions.
- */
-class Softone_Item_Sync_Stale_Product_Test_Double extends Softone_Item_Sync {
-
-    /**
-     * @var array<int,array{level:string,message:string,context:array}>
-     */
-    public $logs = array();
-
-    public function __construct() {
-        parent::__construct( new Softone_API_Client(), null, null, null );
-    }
-
-    /**
-     * @param int $timestamp
-     * @return int
-     */
-    public function handle_stale_products_public( $timestamp ) {
-        return $this->handle_stale_products( $timestamp );
-    }
-
-    /**
-     * @param string $level
-     * @param string $message
-     * @param array  $context
-     * @return void
-     */
-    protected function log( $level, $message, array $context = array() ) {
-        $this->logs[] = array(
-            'level'   => (string) $level,
-            'message' => (string) $message,
-            'context' => $context,
-        );
-    }
-}
-
 try {
-    $sync = new Softone_Item_Sync_Stale_Product_Test_Double();
+    $logger  = new Softone_Item_Stale_Handler_Test_Logger();
+    $handler = new Softone_Item_Stale_Handler( $logger );
 
     // Scenario: product with SKU triggers attachment.
     $product_id_with_sku = 501;
@@ -335,7 +321,7 @@ try {
 
     Softone_Sku_Image_Attacher::reset();
 
-    $processed_with_sku = $sync->handle_stale_products_public( 123456 );
+    $processed_with_sku = $handler->handle( 123456 );
 
     if ( 1 !== $processed_with_sku ) {
         throw new RuntimeException( 'Expected exactly one stale product to be processed for SKU scenario.' );
@@ -384,7 +370,7 @@ try {
 
     Softone_Sku_Image_Attacher::reset();
 
-    $processed_without_sku = $sync->handle_stale_products_public( 654321 );
+    $processed_without_sku = $handler->handle( 654321 );
 
     if ( 1 !== $processed_without_sku ) {
         throw new RuntimeException( 'Expected exactly one stale product to be processed for no-SKU scenario.' );

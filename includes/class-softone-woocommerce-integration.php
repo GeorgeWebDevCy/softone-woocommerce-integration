@@ -65,6 +65,13 @@ class Softone_Woocommerce_Integration {
         protected $item_sync;
 
         /**
+         * Cron manager responsible for the item sync schedule.
+         *
+         * @var Softone_Item_Cron_Manager
+         */
+        protected $item_cron_manager;
+
+        /**
          * File-based activity logger instance.
          *
          * @var Softone_Sync_Activity_Logger
@@ -165,6 +172,11 @@ class Softone_Woocommerce_Integration {
                 require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-item-sync.php';
 
                 /**
+                 * Coordinates cron scheduling for the item sync workflow.
+                 */
+                require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-item-cron-manager.php';
+
+                /**
                  * Service class for synchronising WooCommerce customers with SoftOne.
                  */
                 require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-customer-sync.php';
@@ -216,15 +228,16 @@ class Softone_Woocommerce_Integration {
 
 		$this->loader          = new Softone_Woocommerce_Integration_Loader();
 		$this->activity_logger = new Softone_Sync_Activity_Logger();
-		$this->item_sync       = new Softone_Item_Sync( null, null, null, $this->activity_logger );
-		$this->customer_sync   = new Softone_Customer_Sync();
-		$this->order_sync      = new Softone_Order_Sync( null, $this->customer_sync );
-		$this->shared_module   = new Softone_Woocommerce_Integration_Shared();
+                $this->item_sync       = new Softone_Item_Sync( null, null, null, $this->activity_logger );
+                $this->item_cron_manager = new Softone_Item_Cron_Manager( $this->item_sync, $this->item_sync->get_logger() );
+                $this->customer_sync   = new Softone_Customer_Sync();
+                $this->order_sync      = new Softone_Order_Sync( null, $this->customer_sync );
+                $this->shared_module   = new Softone_Woocommerce_Integration_Shared();
 
-		$this->item_sync->register_hooks( $this->loader );
-		$this->customer_sync->register_hooks( $this->loader );
-		$this->order_sync->register_hooks( $this->loader );
-		$this->shared_module->register_hooks( $this->loader );
+                $this->item_cron_manager->register_hooks( $this->loader );
+                $this->customer_sync->register_hooks( $this->loader );
+                $this->order_sync->register_hooks( $this->loader );
+                $this->shared_module->register_hooks( $this->loader );
 
         }
 

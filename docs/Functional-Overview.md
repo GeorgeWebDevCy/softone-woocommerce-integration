@@ -9,7 +9,7 @@ This document explains the plugin’s functionality based exclusively on the sou
   - Internationalisation: `includes/class-softone-woocommerce-integration-i18n.php` loads the `softone-woocommerce-integration` textdomain.
   - Admin UI: `admin/class-softone-woocommerce-integration-admin.php` (settings, API tester, logs, import controls).
   - Public UI: `public/class-softone-woocommerce-integration-public.php` (asset enqueues) and menu population via `includes/class-softone-menu-populator.php`.
-  - Services: `includes/class-softone-api-client.php`, `includes/class-softone-item-sync.php`, `includes/class-softone-customer-sync.php`, `includes/class-softone-order-sync.php`, `includes/class-softone-sku-image-attacher.php`, `includes/class-softone-sync-activity-logger.php`, `includes/class-softone-category-sync-logger.php`.
+  - Services: `includes/class-softone-api-client.php`, `includes/class-softone-item-sync.php`, `includes/class-softone-item-cron-manager.php`, `includes/class-softone-item-stale-handler.php`, `includes/class-softone-customer-sync.php`, `includes/class-softone-order-sync.php`, `includes/class-softone-sku-image-attacher.php`, `includes/class-softone-sync-activity-logger.php`, `includes/class-softone-category-sync-logger.php`.
   - Loader: `includes/class-softone-woocommerce-integration-loader.php` registers actions/filters.
 - Brand taxonomy: On `init`, `maybe_register_brand_taxonomy()` ensures a non-hierarchical `product_brand` taxonomy exists (slug `brand`, REST-enabled, nav menu-enabled). Filters: `softone_product_brand_taxonomy_objects`, `softone_product_brand_taxonomy_args`.
 
@@ -68,9 +68,9 @@ This document explains the plugin’s functionality based exclusively on the sou
 
 ## Item Synchronisation
 
-- Class: `includes/class-softone-item-sync.php`.
+- Classes: `includes/class-softone-item-sync.php` (core importer), `includes/class-softone-item-cron-manager.php` (scheduling), `includes/class-softone-item-stale-handler.php` (post-run cleanup).
 - Scheduling:
-  - Cron hook: `softone_wc_integration_sync_items`. Scheduled on `init` if not present; default interval `hourly` (filter `softone_wc_integration_item_sync_interval`).
+  - Cron hook: `softone_wc_integration_sync_items`. Scheduled on `init` by `Softone_Item_Cron_Manager`; default interval `hourly` (filter `softone_wc_integration_item_sync_interval`).
   - Admin action: `softone_wc_integration_run_item_import` for manual triggers.
   - Last run timestamp: option `softone_wc_integration_last_item_sync`.
 - Meta used on products/variations:
@@ -97,7 +97,7 @@ This document explains the plugin’s functionality based exclusively on the sou
     - `backorder_out_of_stock_products = yes`: marks out-of-stock items as backorderable.
   - Images: `Softone_Sku_Image_Attacher::attach_gallery_from_sku($productId, $sku)` auto-sets featured/gallery images based on media filenames that start with the SKU (supports suffixes like `_1`, `-2`, spaces).
 - Stale products handling:
-  - `handle_stale_products($run_timestamp)`: finds products managed by SoftOne that were not updated during this run and either drafts them or marks as out of stock.
+  - `Softone_Item_Stale_Handler::handle($run_timestamp)` finds products managed by SoftOne that were not updated during this run and either drafts them or marks as out of stock.
   - Filters: `softone_wc_integration_stale_item_action` (`draft` or `stock_out`, default `stock_out`), `softone_wc_integration_stale_item_batch_size`.
 - Performance/logging:
   - Caches for terms, attributes, and taxonomy lookups; optional memory limit bump via `softone_wc_integration_item_sync_memory_limit`.
