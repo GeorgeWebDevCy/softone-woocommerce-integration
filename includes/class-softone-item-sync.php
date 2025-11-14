@@ -2747,7 +2747,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 }
 
                 if ( ! $variation_payload['source_is_variation'] && $variation_payload['source_id'] !== $product_id ) {
-                    $this->maybe_draft_single_product_source( $variation_payload['mtrl'], $product_id );
+                    // Disabled to avoid drafting the source single product when variations are generated.
+                    // $this->maybe_draft_single_product_source( $variation_payload['mtrl'], $product_id );
                 }
             }
         }
