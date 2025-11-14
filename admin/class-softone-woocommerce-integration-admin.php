@@ -57,12 +57,19 @@ class Softone_Woocommerce_Integration_Admin {
          */
         private $category_logs_slug = 'softone-woocommerce-integration-category-logs';
 
-/**
- * Sync activity viewer submenu slug.
- *
- * @var string
- */
-private $sync_activity_slug = 'softone-woocommerce-integration-sync-activity';
+        /**
+         * Variable product log submenu slug.
+         *
+         * @var string
+         */
+        private $variable_product_logs_slug = 'softone-woocommerce-integration-variable-product-logs';
+
+        /**
+         * Sync activity viewer submenu slug.
+         *
+         * @var string
+         */
+        private $sync_activity_slug = 'softone-woocommerce-integration-sync-activity';
 
 /**
  * Process trace viewer submenu slug.
@@ -301,28 +308,37 @@ private $item_import_default_batch_size = 25;
                         array( $this, 'render_category_logs_page' )
                 );
 
-add_submenu_page(
-$this->menu_slug,
-__( 'Sync Activity', 'softone-woocommerce-integration' ),
-__( 'Sync Activity', 'softone-woocommerce-integration' ),
-$this->capability,
-$this->sync_activity_slug,
-array( $this, 'render_sync_activity_page' )
-);
+                add_submenu_page(
+                        $this->menu_slug,
+                        __( 'Variable Product Logs', 'softone-woocommerce-integration' ),
+                        __( 'Variable Product Logs', 'softone-woocommerce-integration' ),
+                        $this->capability,
+                        $this->variable_product_logs_slug,
+                        array( $this, 'render_variable_product_logs_page' )
+                );
 
-add_submenu_page(
-$this->menu_slug,
-__( 'Process Trace', 'softone-woocommerce-integration' ),
-__( 'Process Trace', 'softone-woocommerce-integration' ),
-$this->capability,
-$this->process_trace_slug,
-array( $this, 'render_process_trace_page' )
-);
+                add_submenu_page(
+                        $this->menu_slug,
+                        __( 'Sync Activity', 'softone-woocommerce-integration' ),
+                        __( 'Sync Activity', 'softone-woocommerce-integration' ),
+                        $this->capability,
+                        $this->sync_activity_slug,
+                        array( $this, 'render_sync_activity_page' )
+                );
 
-add_submenu_page(
-$this->menu_slug,
-__( 'API Tester', 'softone-woocommerce-integration' ),
-__( 'API Tester', 'softone-woocommerce-integration' ),
+                add_submenu_page(
+                        $this->menu_slug,
+                        __( 'Process Trace', 'softone-woocommerce-integration' ),
+                        __( 'Process Trace', 'softone-woocommerce-integration' ),
+                        $this->capability,
+                        $this->process_trace_slug,
+                        array( $this, 'render_process_trace_page' )
+                );
+
+                add_submenu_page(
+                        $this->menu_slug,
+                        __( 'API Tester', 'softone-woocommerce-integration' ),
+                        __( 'API Tester', 'softone-woocommerce-integration' ),
                         $this->capability,
                         $this->api_tester_slug,
                         array( $this, 'render_api_tester_page' )
@@ -346,23 +362,32 @@ __( 'API Tester', 'softone-woocommerce-integration' ),
                         array( $this, 'render_category_logs_page' )
                 );
 
-add_submenu_page(
-'woocommerce',
-__( 'Sync Activity', 'softone-woocommerce-integration' ),
-__( 'Sync Activity', 'softone-woocommerce-integration' ),
-$this->capability,
-$this->sync_activity_slug,
-array( $this, 'render_sync_activity_page' )
-);
+                add_submenu_page(
+                        'woocommerce',
+                        __( 'Variable Product Logs', 'softone-woocommerce-integration' ),
+                        __( 'Variable Product Logs', 'softone-woocommerce-integration' ),
+                        $this->capability,
+                        $this->variable_product_logs_slug,
+                        array( $this, 'render_variable_product_logs_page' )
+                );
 
-add_submenu_page(
-'woocommerce',
-__( 'Process Trace', 'softone-woocommerce-integration' ),
-__( 'Process Trace', 'softone-woocommerce-integration' ),
-$this->capability,
-$this->process_trace_slug,
-array( $this, 'render_process_trace_page' )
-);
+                add_submenu_page(
+                        'woocommerce',
+                        __( 'Sync Activity', 'softone-woocommerce-integration' ),
+                        __( 'Sync Activity', 'softone-woocommerce-integration' ),
+                        $this->capability,
+                        $this->sync_activity_slug,
+                        array( $this, 'render_sync_activity_page' )
+                );
+
+                add_submenu_page(
+                        'woocommerce',
+                        __( 'Process Trace', 'softone-woocommerce-integration' ),
+                        __( 'Process Trace', 'softone-woocommerce-integration' ),
+                        $this->capability,
+                        $this->process_trace_slug,
+                        array( $this, 'render_process_trace_page' )
+                );
 
         }
 
@@ -1571,36 +1596,83 @@ array(
 
 }
 
-        /**
-         * Prepare entries for front-end consumption by adding formatted fields.
-         *
-         * @param array<int, array<string, mixed>> $entries Raw entries from the logger.
-         *
-         * @return array<int, array<string, mixed>>
-         */
-        private function prepare_activity_entries( array $entries ) {
-                $prepared = array();
+/**
+ * Prepare entries for front-end consumption by adding formatted fields.
+ *
+ * @param array<int, array<string, mixed>> $entries Raw entries from the logger.
+ *
+ * @return array<int, array<string, mixed>>
+ */
+	private function prepare_activity_entries( array $entries ) {
+		$prepared = array();
 
-                foreach ( $entries as $entry ) {
-                        $timestamp = isset( $entry['timestamp'] ) ? (int) $entry['timestamp'] : 0;
-                        $channel   = isset( $entry['channel'] ) ? (string) $entry['channel'] : '';
-                        $action    = isset( $entry['action'] ) ? (string) $entry['action'] : '';
-                        $message   = isset( $entry['message'] ) ? (string) $entry['message'] : '';
-                        $context   = isset( $entry['context'] ) && is_array( $entry['context'] ) ? $entry['context'] : array();
+		foreach ( $entries as $entry ) {
+			$timestamp = isset( $entry['timestamp'] ) ? (int) $entry['timestamp'] : 0;
+			$channel   = isset( $entry['channel'] ) ? (string) $entry['channel'] : '';
+			$action    = isset( $entry['action'] ) ? (string) $entry['action'] : '';
+			$message   = isset( $entry['message'] ) ? (string) $entry['message'] : '';
+			$context   = isset( $entry['context'] ) && is_array( $entry['context'] ) ? $entry['context'] : array();
 
-                        $prepared[] = array(
-                                'timestamp'       => $timestamp,
-                                'time'            => $this->format_activity_time( $timestamp ),
-                                'channel'         => $channel,
-                                'action'          => $action,
-                                'message'         => $message,
-                                'context'         => $context,
-                                'context_display' => $this->format_activity_context( $context ),
-                        );
-                }
+			$prepared[] = array(
+				'timestamp'       => $timestamp,
+				'time'            => $this->format_activity_time( $timestamp ),
+				'channel'         => $channel,
+				'action'          => $action,
+				'message'         => $message,
+				'context'         => $context,
+				'context_display' => $this->format_activity_context( $context ),
+			);
+		}
 
-                return $prepared;
-        }
+		return $prepared;
+	}
+
+/**
+ * Translate a variable product failure reason into a human-readable message.
+ *
+ * @param array<string, mixed> $context Activity context payload.
+ *
+ * @return string
+ */
+	private function describe_variable_product_reason( array $context ) {
+		$reason = isset( $context['reason'] ) ? (string) $context['reason'] : '';
+
+		if ( '' === $reason ) {
+			return '';
+		}
+
+		$messages = array(
+			'invalid_variation_arguments'        => __( 'Invalid variation parameters were supplied.', 'softone-woocommerce-integration' ),
+			'variable_product_handling_disabled' => __( 'Variable product handling is disabled in the plugin settings.', 'softone-woocommerce-integration' ),
+			'missing_wc_variation_support'       => __( 'WooCommerce variation support is unavailable on this site.', 'softone-woocommerce-integration' ),
+			'product_not_found'                  => __( 'The parent product could not be loaded.', 'softone-woocommerce-integration' ),
+			'product_not_variable'               => __( 'The parent product is not marked as variable.', 'softone-woocommerce-integration' ),
+			'term_not_found'                     => __( 'The referenced attribute term could not be found.', 'softone-woocommerce-integration' ),
+			'term_slug_empty'                    => __( 'The attribute term does not have a usable slug.', 'softone-woocommerce-integration' ),
+			'invalid_variation_object'           => __( 'The WooCommerce variation object could not be initialised.', 'softone-woocommerce-integration' ),
+			'failed_to_save_variation'           => __( 'WooCommerce reported an error while saving the variation.', 'softone-woocommerce-integration' ),
+		);
+
+		if ( 'term_not_found' === $reason && ! empty( $context['term_error'] ) ) {
+			return sprintf(
+			__( 'The referenced attribute term could not be found: %s', 'softone-woocommerce-integration' ),
+			(string) $context['term_error']
+			);
+		}
+
+		if ( 'product_not_variable' === $reason && ! empty( $context['product_type'] ) ) {
+			return sprintf(
+			__( 'The parent product is of type “%s” and not variable.', 'softone-woocommerce-integration' ),
+			(string) $context['product_type']
+			);
+		}
+
+		if ( isset( $messages[ $reason ] ) ) {
+			return $messages[ $reason ];
+		}
+
+		return $reason;
+	}
 
         /**
          * Format a sync activity timestamp according to site preferences.
@@ -2082,11 +2154,107 @@ $display_time = __( 'Unknown time', 'softone-woocommerce-integration' );
 }
 
         /**
-         * Render the file-based synchronisation activity viewer.
+         * Render the variable product activity viewer.
          *
          * @return void
          */
-        public function render_sync_activity_page() {
+        public function render_variable_product_logs_page() {
+
+               if ( ! current_user_can( $this->capability ) ) {
+                       return;
+               }
+
+               $error_state = '';
+               $entries     = array();
+
+               if ( $this->activity_logger && method_exists( $this->activity_logger, 'get_entries' ) ) {
+                       $raw_entries = $this->activity_logger->get_entries( $this->sync_activity_limit );
+
+                       foreach ( $raw_entries as $entry ) {
+                               $channel = isset( $entry['channel'] ) ? (string) $entry['channel'] : '';
+
+                               if ( 'variable_products' !== $channel ) {
+                                       continue;
+                               }
+
+                               $entries[] = $entry;
+                       }
+               } else {
+                       $error_state = __( 'The sync activity logger is not available.', 'softone-woocommerce-integration' );
+               }
+
+               $prepared_entries = $this->prepare_activity_entries( $entries );
+
+               $display_entries = array();
+
+               foreach ( $prepared_entries as $entry ) {
+                       $context = isset( $entry['context'] ) && is_array( $entry['context'] ) ? $entry['context'] : array();
+
+                       $display_entries[] = array(
+                               'timestamp'       => isset( $entry['timestamp'] ) ? (int) $entry['timestamp'] : 0,
+                               'time'            => isset( $entry['time'] ) ? (string) $entry['time'] : '',
+                               'action'          => isset( $entry['action'] ) ? (string) $entry['action'] : '',
+                               'message'         => isset( $entry['message'] ) ? (string) $entry['message'] : '',
+                               'context_display' => isset( $entry['context_display'] ) ? (string) $entry['context_display'] : '',
+                               'context'         => $context,
+                               'reason'          => $this->describe_variable_product_reason( $context ),
+                       );
+               }
+
+               $page_size = (int) apply_filters( 'softone_wc_integration_variable_logs_page_size', 20 );
+
+               if ( $page_size <= 0 ) {
+                       $page_size = 20;
+               }
+
+               wp_enqueue_script(
+                       'softone-variable-product-logs',
+                       plugin_dir_url( __FILE__ ) . 'js/softone-variable-product-logs.js',
+                       array(),
+                       $this->version,
+                       true
+               );
+
+               $localised_entries = array();
+
+               foreach ( $display_entries as $entry ) {
+                       $localised_entries[] = array(
+                               'timestamp' => (int) $entry['timestamp'],
+                               'time'      => (string) $entry['time'],
+                               'action'    => (string) $entry['action'],
+                               'message'   => (string) $entry['message'],
+                               'reason'    => (string) $entry['reason'],
+                               'context'   => (string) $entry['context_display'],
+                       );
+               }
+
+		wp_localize_script(
+			'softone-variable-product-logs',
+			'softoneVariableProductLogs',
+			array(
+				'entries'  => $localised_entries,
+				'pageSize' => $page_size,
+				'strings'  => array(
+					'noContext'     => __( 'No additional context provided.', 'softone-woocommerce-integration' ),
+					'pageIndicator' => __( 'Page %1$d of %2$d', 'softone-woocommerce-integration' ),
+					'noEntries'     => __( 'No variable product activity has been recorded yet.', 'softone-woocommerce-integration' ),
+				),
+			)
+		);
+
+               $entries_for_display = $display_entries;
+               $entries_limit       = $this->sync_activity_limit;
+               $page_size_display   = $page_size;
+
+               include plugin_dir_path( __FILE__ ) . 'partials/softone-woocommerce-integration-variable-product-logs.php';
+       }
+
+/**
+ * Render the file-based synchronisation activity viewer.
+ *
+ * @return void
+ */
+public function render_sync_activity_page() {
 
                 if ( ! current_user_can( $this->capability ) ) {
                         return;
