@@ -2154,18 +2154,25 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 WC_Cache_Helper::invalidate_cache_group( 'products' );
             }
 
-            if ( class_exists( 'WC_Product_Variable' ) ) {
-                $product = new WC_Product_Variable( $product_id );
-            } else {
-                $product = wc_get_product( $product_id );
-            }
-            if ( ! $product ) {
-                return false;
-            }
+		if ( class_exists( 'WC_Product_Variable' ) ) {
+			$product = new WC_Product_Variable( $product_id );
+		} else {
+			$product = wc_get_product( $product_id );
+		}
+		if ( ! $product ) {
+			return false;
+		}
 
-            if ( method_exists( $product, 'set_regular_price' ) ) {
-                $product->set_regular_price( '' );
-            }
+		if ( method_exists( $product, 'get_status' ) && method_exists( $product, 'set_status' ) ) {
+			$current_status = $product->get_status();
+			if ( 'publish' !== $current_status ) {
+				$product->set_status( 'publish' );
+			}
+		}
+
+		if ( method_exists( $product, 'set_regular_price' ) ) {
+			$product->set_regular_price( '' );
+		}
 
             if ( method_exists( $product, 'set_sale_price' ) ) {
                 $product->set_sale_price( '' );
