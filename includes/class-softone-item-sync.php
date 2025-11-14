@@ -68,6 +68,9 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         /** @var array<int, array<string, mixed>> */
         protected $pending_single_product_variations = array();
 
+        /** @var array<string, array<int, array<string, mixed>>> */
+        protected $pending_sku_variation_groups = array();
+
         public function __construct( ?Softone_API_Client $api_client = null, $logger = null, $category_logger = null, ?Softone_Sync_Activity_Logger $activity_logger = null ) {
             $this->api_client = $api_client ?: new Softone_API_Client();
             $this->logger     = $logger ?: $this->get_default_logger();
@@ -83,6 +86,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $this->reset_caches();
             $this->pending_colour_variation_syncs     = array();
             $this->pending_single_product_variations = array();
+            $this->pending_sku_variation_groups      = array();
         }
 
         /** @return void */
@@ -154,6 +158,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $this->maybe_adjust_memory_limits();
 
             $this->pending_single_product_variations = array();
+            $this->pending_sku_variation_groups      = array();
 
             $cache_addition_previous_state = null;
             $term_counting_previous_state  = null;
@@ -246,6 +251,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 }
 
                 $this->process_pending_single_product_variations();
+                $this->process_pending_sku_variation_groups();
                 $this->process_pending_colour_variation_syncs();
 
                 $stale_processed = $this->handle_stale_products( $started_at );
@@ -269,6 +275,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 }
                 $this->pending_colour_variation_syncs     = array();
                 $this->pending_single_product_variations = array();
+                $this->pending_sku_variation_groups      = array();
                 $this->force_taxonomy_refresh             = $previous_force_taxonomy_refresh;
             }
         }
@@ -349,6 +356,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 ),
                 'pending_variations'       => array(),
                 'pending_single_variations'=> array(),
+                'pending_sku_groups'       => array(),
                 'page_hashes'              => array(),
                 'cache_stats'              => $this->cache_stats,
                 'total_rows'               => null,
@@ -387,6 +395,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $force_tax_refresh      = isset( $state['force_taxonomy_refresh'] ) ? (bool) $state['force_taxonomy_refresh'] : false;
             $pending_variations     = isset( $state['pending_variations'] ) && is_array( $state['pending_variations'] ) ? $state['pending_variations'] : array();
             $pending_single_variations = isset( $state['pending_single_variations'] ) && is_array( $state['pending_single_variations'] ) ? $state['pending_single_variations'] : array();
+            $pending_sku_groups     = isset( $state['pending_sku_groups'] ) && is_array( $state['pending_sku_groups'] ) ? $state['pending_sku_groups'] : array();
 
             $stats = wp_parse_args(
                 $stats,
@@ -405,6 +414,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $this->force_taxonomy_refresh    = $force_tax_refresh;
             $this->pending_colour_variation_syncs     = $pending_variations;
             $this->pending_single_product_variations = $pending_single_variations;
+            $this->pending_sku_variation_groups      = $pending_sku_groups;
 
             $remaining = $batch_size;
             $complete  = false;
@@ -507,11 +517,13 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $state['cache_stats']        = $aggregate_cache_stats;
             $state['pending_variations']         = $this->pending_colour_variation_syncs;
             $state['pending_single_variations']  = $this->pending_single_product_variations;
+            $state['pending_sku_groups']         = $this->pending_sku_variation_groups;
             $state['total_rows']         = $total_rows;
             $state['complete']           = $complete;
 
             if ( $complete ) {
                 $this->process_pending_single_product_variations();
+                $this->process_pending_sku_variation_groups();
                 $this->process_pending_colour_variation_syncs();
                 $stale_processed = $this->handle_stale_products( $started_at );
 
@@ -523,8 +535,10 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
                 $state['pending_variations']        = array();
                 $state['pending_single_variations'] = array();
+                $state['pending_sku_groups']        = array();
                 $this->pending_colour_variation_syncs     = array();
                 $this->pending_single_product_variations = array();
+                $this->pending_sku_variation_groups      = array();
                 $hashes = array();
             }
 
@@ -1331,6 +1345,25 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
     update_post_meta( $product_id, self::META_PAYLOAD_HASH, $payload_hash );
     if ( is_numeric( $run_timestamp ) ) {
         update_post_meta( $product_id, self::META_LAST_SYNC, (int) $run_timestamp );
+    }
+
+    if ( '' !== $effective_sku && $colour_term_id > 0 && '' !== $colour_taxonomy ) {
+        $this->queue_sku_variation_group_entry(
+            array(
+                'product_id'            => $product_id,
+                'mtrl'                  => $mtrl,
+                'sku'                   => $effective_sku,
+                'colour_term_id'        => $colour_term_id,
+                'colour_taxonomy'       => $colour_taxonomy,
+                'price_value'           => $price_value,
+                'stock_amount'          => $stock_amount,
+                'backorder'             => $should_backorder,
+                'payload_hash'          => $payload_hash,
+                'last_synced'           => is_numeric( $run_timestamp ) ? (int) $run_timestamp : null,
+                'related_item_mtrl'     => $related_item_mtrl_value,
+                'additional_attributes' => $additional_variation_attributes,
+            )
+        );
     }
 
     // ---------- ATTRIBUTE TERMS (taxonomies) ----------
@@ -2253,6 +2286,94 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         }
 
         /**
+         * Queue a SKU grouping payload for deferred variable product processing.
+         *
+         * @param array<string,mixed> $payload
+         * @return void
+         */
+        protected function queue_sku_variation_group_entry( array $payload ) {
+            $sku     = isset( $payload['sku'] ) ? (string) $payload['sku'] : '';
+            $sku_key = strtolower( trim( $sku ) );
+
+            $colour_term_id  = isset( $payload['colour_term_id'] ) ? (int) $payload['colour_term_id'] : 0;
+            $colour_taxonomy = isset( $payload['colour_taxonomy'] ) ? (string) $payload['colour_taxonomy'] : '';
+
+            if ( '' === $sku_key || $colour_term_id <= 0 || '' === $colour_taxonomy ) {
+                return;
+            }
+
+            $product_id = isset( $payload['product_id'] ) ? (int) $payload['product_id'] : 0;
+            if ( $product_id <= 0 ) {
+                return;
+            }
+
+            $normalized_payload = array(
+                'product_id'            => $product_id,
+                'mtrl'                  => isset( $payload['mtrl'] ) ? (string) $payload['mtrl'] : '',
+                'sku'                   => $sku,
+                'colour_term_id'        => $colour_term_id,
+                'colour_taxonomy'       => $colour_taxonomy,
+                'price_value'           => isset( $payload['price_value'] ) && '' !== $payload['price_value'] ? (string) $payload['price_value'] : null,
+                'stock_amount'          => isset( $payload['stock_amount'] ) && null !== $payload['stock_amount'] ? (int) $payload['stock_amount'] : null,
+                'backorder'             => isset( $payload['backorder'] ) ? (bool) $payload['backorder'] : false,
+                'payload_hash'          => isset( $payload['payload_hash'] ) ? (string) $payload['payload_hash'] : '',
+                'last_synced'           => ( isset( $payload['last_synced'] ) && is_numeric( $payload['last_synced'] ) ) ? (int) $payload['last_synced'] : null,
+                'related_item_mtrl'     => isset( $payload['related_item_mtrl'] ) ? (string) $payload['related_item_mtrl'] : '',
+                'related_item_mtrls'    => array(),
+                'additional_attributes' => array(),
+            );
+
+            if ( isset( $payload['related_item_mtrls'] ) && is_array( $payload['related_item_mtrls'] ) ) {
+                $normalized_payload['related_item_mtrls'] = array_values( array_filter( array_map( 'strval', $payload['related_item_mtrls'] ) ) );
+            }
+
+            if ( isset( $payload['additional_attributes'] ) && is_array( $payload['additional_attributes'] ) ) {
+                foreach ( $payload['additional_attributes'] as $attribute_payload ) {
+                    if ( ! is_array( $attribute_payload ) ) {
+                        continue;
+                    }
+
+                    $taxonomy       = isset( $attribute_payload['taxonomy'] ) ? (string) $attribute_payload['taxonomy'] : '';
+                    $term_id        = isset( $attribute_payload['term_id'] ) ? (int) $attribute_payload['term_id'] : 0;
+                    $attribute_slug = isset( $attribute_payload['attribute_slug'] ) ? (string) $attribute_payload['attribute_slug'] : '';
+                    $is_variation   = isset( $attribute_payload['is_variation'] ) ? (bool) $attribute_payload['is_variation'] : true;
+
+                    if ( '' === $taxonomy || $term_id <= 0 ) {
+                        continue;
+                    }
+
+                    $normalized_payload['additional_attributes'][] = array(
+                        'taxonomy'       => $taxonomy,
+                        'term_id'        => $term_id,
+                        'attribute_slug' => $attribute_slug,
+                        'is_variation'   => $is_variation,
+                    );
+                }
+            }
+
+            if ( ! isset( $this->pending_sku_variation_groups[ $sku_key ] ) ) {
+                $this->pending_sku_variation_groups[ $sku_key ] = array();
+            }
+
+            foreach ( $this->pending_sku_variation_groups[ $sku_key ] as $index => $existing ) {
+                $existing_product_id = isset( $existing['product_id'] ) ? (int) $existing['product_id'] : 0;
+                $existing_mtrl       = isset( $existing['mtrl'] ) ? (string) $existing['mtrl'] : '';
+
+                if ( $existing_product_id === $product_id ) {
+                    $this->pending_sku_variation_groups[ $sku_key ][ $index ] = $normalized_payload;
+                    return;
+                }
+
+                if ( '' !== $normalized_payload['mtrl'] && '' !== $existing_mtrl && $existing_mtrl === $normalized_payload['mtrl'] ) {
+                    $this->pending_sku_variation_groups[ $sku_key ][ $index ] = $normalized_payload;
+                    return;
+                }
+            }
+
+            $this->pending_sku_variation_groups[ $sku_key ][] = $normalized_payload;
+        }
+
+        /**
          * Ensure the supplied product is stored as a variable product.
          *
          * @param int $product_id
@@ -2442,6 +2563,310 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     update_post_meta( $variation_id, self::META_MTRL, $mtrl );
                 }
             }
+        }
+
+        /** @return void */
+        protected function process_pending_sku_variation_groups() {
+            if ( empty( $this->pending_sku_variation_groups ) ) {
+                return;
+            }
+
+            $queue_size = 0;
+            foreach ( $this->pending_sku_variation_groups as $group_entries ) {
+                if ( is_array( $group_entries ) ) {
+                    $queue_size += count( $group_entries );
+                }
+            }
+
+            if ( $queue_size > 0 && ! $this->is_variable_product_handling_enabled() ) {
+                $this->log(
+                    'debug',
+                    'Skipping grouped SKU variation processing because variable product handling is disabled.',
+                    array( 'queue_size' => $queue_size )
+                );
+                $this->pending_sku_variation_groups = array();
+                return;
+            }
+
+            if ( ! function_exists( 'wc_get_product' ) ) {
+                $this->pending_sku_variation_groups = array();
+                return;
+            }
+
+            foreach ( $this->pending_sku_variation_groups as $sku_key => $group_entries ) {
+                if ( ! is_array( $group_entries ) ) {
+                    continue;
+                }
+
+                $entries_by_product = array();
+
+                foreach ( $group_entries as $payload ) {
+                    if ( ! is_array( $payload ) ) {
+                        continue;
+                    }
+
+                    $product_id      = isset( $payload['product_id'] ) ? (int) $payload['product_id'] : 0;
+                    $colour_term_id  = isset( $payload['colour_term_id'] ) ? (int) $payload['colour_term_id'] : 0;
+                    $colour_taxonomy = isset( $payload['colour_taxonomy'] ) ? (string) $payload['colour_taxonomy'] : '';
+
+                    if ( $product_id <= 0 || $colour_term_id <= 0 || '' === $colour_taxonomy ) {
+                        continue;
+                    }
+
+                    $entry_data = array(
+                        'product_id'            => $product_id,
+                        'mtrl'                  => isset( $payload['mtrl'] ) ? (string) $payload['mtrl'] : '',
+                        'sku'                   => isset( $payload['sku'] ) ? (string) $payload['sku'] : '',
+                        'colour_term_id'        => $colour_term_id,
+                        'colour_taxonomy'       => $colour_taxonomy,
+                        'price_value'           => isset( $payload['price_value'] ) && '' !== $payload['price_value'] ? (string) $payload['price_value'] : null,
+                        'stock_amount'          => isset( $payload['stock_amount'] ) && null !== $payload['stock_amount'] ? (int) $payload['stock_amount'] : null,
+                        'backorder'             => isset( $payload['backorder'] ) ? (bool) $payload['backorder'] : false,
+                        'payload_hash'          => isset( $payload['payload_hash'] ) ? (string) $payload['payload_hash'] : '',
+                        'last_synced'           => ( isset( $payload['last_synced'] ) && is_numeric( $payload['last_synced'] ) ) ? (int) $payload['last_synced'] : null,
+                        'related_item_mtrl'     => isset( $payload['related_item_mtrl'] ) ? (string) $payload['related_item_mtrl'] : '',
+                        'related_item_mtrls'    => isset( $payload['related_item_mtrls'] ) && is_array( $payload['related_item_mtrls'] ) ? array_values( array_filter( array_map( 'strval', $payload['related_item_mtrls'] ) ) ) : array(),
+                        'additional_attributes' => array(),
+                    );
+
+                    if ( isset( $payload['additional_attributes'] ) && is_array( $payload['additional_attributes'] ) ) {
+                        foreach ( $payload['additional_attributes'] as $attribute_payload ) {
+                            if ( ! is_array( $attribute_payload ) ) {
+                                continue;
+                            }
+
+                            $taxonomy       = isset( $attribute_payload['taxonomy'] ) ? (string) $attribute_payload['taxonomy'] : '';
+                            $term_id        = isset( $attribute_payload['term_id'] ) ? (int) $attribute_payload['term_id'] : 0;
+                            $attribute_slug = isset( $attribute_payload['attribute_slug'] ) ? (string) $attribute_payload['attribute_slug'] : '';
+                            $is_variation   = isset( $attribute_payload['is_variation'] ) ? (bool) $attribute_payload['is_variation'] : true;
+
+                            if ( '' === $taxonomy || $term_id <= 0 ) {
+                                continue;
+                            }
+
+                            $entry_data['additional_attributes'][] = array(
+                                'taxonomy'       => $taxonomy,
+                                'term_id'        => $term_id,
+                                'attribute_slug' => $attribute_slug,
+                                'is_variation'   => $is_variation,
+                            );
+                        }
+                    }
+
+                    $entries_by_product[ $product_id ] = $entry_data;
+                }
+
+                if ( count( $entries_by_product ) < 2 ) {
+                    continue;
+                }
+
+                $entries         = array_values( $entries_by_product );
+                $colour_taxonomy = $entries[0]['colour_taxonomy'];
+
+                $product_ids_for_log = array();
+                $taxonomy_values_log = array();
+
+                if ( function_exists( 'wp_list_pluck' ) ) {
+                    $product_ids_for_log = wp_list_pluck( $entries, 'product_id' );
+                    $taxonomy_values_log = wp_list_pluck( $entries, 'colour_taxonomy' );
+                } else {
+                    foreach ( $entries as $entry ) {
+                        $product_ids_for_log[] = isset( $entry['product_id'] ) ? $entry['product_id'] : 0;
+                        $taxonomy_values_log[] = isset( $entry['colour_taxonomy'] ) ? $entry['colour_taxonomy'] : '';
+                    }
+                }
+
+                $taxonomy_matches = true;
+
+                foreach ( $entries as $entry ) {
+                    if ( $entry['colour_taxonomy'] !== $colour_taxonomy ) {
+                        $taxonomy_matches = false;
+                        break;
+                    }
+                }
+
+                if ( ! $taxonomy_matches ) {
+                    $this->log(
+                        'warning',
+                        'Skipped grouped SKU variation processing due to mismatched colour taxonomies.',
+                        array(
+                            'sku_key'           => $sku_key,
+                            'product_ids'       => $product_ids_for_log,
+                            'colour_taxonomies' => $taxonomy_values_log,
+                        )
+                    );
+                    continue;
+                }
+
+                $colour_term_ids = array();
+                $group_mtrls     = array();
+                $sku_value       = $entries[0]['sku'];
+
+                foreach ( $entries as $entry ) {
+                    $colour_term_ids[] = (int) $entry['colour_term_id'];
+
+                    if ( '' !== $entry['mtrl'] ) {
+                        $group_mtrls[] = $entry['mtrl'];
+                    }
+                }
+
+                $colour_term_ids = array_values( array_unique( array_filter( $colour_term_ids ) ) );
+                $group_mtrls     = array_values( array_unique( array_filter( array_map( 'strval', $group_mtrls ) ) ) );
+
+                if ( empty( $colour_term_ids ) ) {
+                    continue;
+                }
+
+                $primary_entry = null;
+                foreach ( $entries as $entry ) {
+                    $related_pointer = $entry['related_item_mtrl'];
+                    if ( '' === $related_pointer || ( '' !== $entry['mtrl'] && $related_pointer === $entry['mtrl'] ) ) {
+                        $primary_entry = $entry;
+                        break;
+                    }
+                }
+
+                if ( null === $primary_entry ) {
+                    $primary_entry = $entries[0];
+                }
+
+                $primary_mtrl = isset( $primary_entry['mtrl'] ) ? $primary_entry['mtrl'] : '';
+
+                $this->log(
+                    'debug',
+                    'Processing grouped SKU variation entries after import.',
+                    array(
+                        'sku'          => $sku_value,
+                        'product_ids'  => $product_ids_for_log,
+                        'primary_mtrl' => $primary_mtrl,
+                    )
+                );
+
+                foreach ( $entries as $entry ) {
+                    $product_id = $entry['product_id'];
+                    if ( $product_id <= 0 ) {
+                        continue;
+                    }
+
+                    $target_related = '';
+                    if ( '' !== $primary_mtrl && $entry['mtrl'] !== $primary_mtrl ) {
+                        $target_related = $primary_mtrl;
+                    }
+
+                    $other_mtrls = array();
+                    foreach ( $entries as $candidate ) {
+                        if ( $candidate['mtrl'] === $entry['mtrl'] ) {
+                            continue;
+                        }
+
+                        if ( '' !== $candidate['mtrl'] ) {
+                            $other_mtrls[] = $candidate['mtrl'];
+                        }
+                    }
+
+                    $this->sync_related_item_relationships( $product_id, $entry['mtrl'], $target_related, $other_mtrls, true );
+                }
+
+                $parent_products = array();
+
+                foreach ( $entries as $entry ) {
+                    $product = $this->ensure_product_is_variable( $entry['product_id'] );
+                    if ( $product ) {
+                        $parent_products[ $entry['product_id'] ] = $product;
+                    }
+                }
+
+                if ( empty( $parent_products ) ) {
+                    continue;
+                }
+
+                $additional_parent_terms = array();
+
+                foreach ( $entries as $entry ) {
+                    if ( empty( $entry['additional_attributes'] ) || ! is_array( $entry['additional_attributes'] ) ) {
+                        continue;
+                    }
+
+                    foreach ( $entry['additional_attributes'] as $attribute_payload ) {
+                        $taxonomy       = isset( $attribute_payload['taxonomy'] ) ? (string) $attribute_payload['taxonomy'] : '';
+                        $term_id        = isset( $attribute_payload['term_id'] ) ? (int) $attribute_payload['term_id'] : 0;
+                        $attribute_slug = isset( $attribute_payload['attribute_slug'] ) ? (string) $attribute_payload['attribute_slug'] : '';
+                        $is_variation   = isset( $attribute_payload['is_variation'] ) ? (bool) $attribute_payload['is_variation'] : true;
+
+                        if ( '' === $taxonomy || $term_id <= 0 ) {
+                            continue;
+                        }
+
+                        if ( ! isset( $additional_parent_terms[ $taxonomy ] ) ) {
+                            $additional_parent_terms[ $taxonomy ] = array(
+                                'term_ids'       => array(),
+                                'attribute_slug' => $attribute_slug,
+                                'is_variation'   => $is_variation,
+                            );
+                        }
+
+                        $additional_parent_terms[ $taxonomy ]['term_ids'][] = $term_id;
+
+                        if ( '' === $additional_parent_terms[ $taxonomy ]['attribute_slug'] && '' !== $attribute_slug ) {
+                            $additional_parent_terms[ $taxonomy ]['attribute_slug'] = $attribute_slug;
+                        }
+
+                        if ( $is_variation && ! $additional_parent_terms[ $taxonomy ]['is_variation'] ) {
+                            $additional_parent_terms[ $taxonomy ]['is_variation'] = true;
+                        }
+                    }
+                }
+
+                foreach ( $parent_products as $parent_product_id => $parent_product ) {
+                    $this->ensure_parent_colour_attribute_terms( $parent_product_id, $colour_taxonomy, $colour_term_ids );
+
+                    foreach ( $additional_parent_terms as $taxonomy => $term_payload ) {
+                        $term_ids = isset( $term_payload['term_ids'] ) && is_array( $term_payload['term_ids'] )
+                            ? array_values( array_unique( array_filter( array_map( 'intval', $term_payload['term_ids'] ) ) ) )
+                            : array();
+
+                        if ( empty( $term_ids ) ) {
+                            continue;
+                        }
+
+                        $attribute_slug = isset( $term_payload['attribute_slug'] ) ? (string) $term_payload['attribute_slug'] : '';
+                        $is_variation   = isset( $term_payload['is_variation'] ) ? (bool) $term_payload['is_variation'] : true;
+
+                        $this->ensure_parent_attribute_terms( $parent_product_id, $taxonomy, $term_ids, $attribute_slug, $is_variation );
+                    }
+
+                    foreach ( $entries as $entry ) {
+                        $extra_meta = array();
+
+                        if ( '' !== $entry['payload_hash'] ) {
+                            $extra_meta[ self::META_PAYLOAD_HASH ] = $entry['payload_hash'];
+                        }
+
+                        if ( null !== $entry['last_synced'] ) {
+                            $extra_meta[ self::META_LAST_SYNC ] = (int) $entry['last_synced'];
+                        }
+
+                        $variation_id = $this->ensure_colour_variation(
+                            $parent_product_id,
+                            $entry['colour_term_id'],
+                            $colour_taxonomy,
+                            $entry['sku'],
+                            $entry['price_value'],
+                            $entry['stock_amount'],
+                            $entry['mtrl'],
+                            $entry['backorder'],
+                            $extra_meta,
+                            $entry['additional_attributes']
+                        );
+
+                        if ( $variation_id > 0 ) {
+                            $this->maybe_draft_single_product_source( $entry['mtrl'], $parent_product_id );
+                        }
+                    }
+                }
+            }
+
+            $this->pending_sku_variation_groups = array();
         }
 
         /** @return void */
