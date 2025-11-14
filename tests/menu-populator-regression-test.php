@@ -129,6 +129,7 @@ if ( ! function_exists( '__' ) ) {
     }
 }
 
+require_once dirname( __DIR__ ) . '/includes/softone-menu-helpers.php';
 require_once dirname( __DIR__ ) . '/includes/class-softone-menu-populator.php';
 
 /**
@@ -209,7 +210,7 @@ $main_menu_items = array(
 
 $main_args = (object) array(
     'menu' => (object) array(
-        'name' => 'Main Menu',
+        'name' => softone_wc_integration_get_main_menu_name(),
     ),
 );
 

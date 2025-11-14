@@ -174,15 +174,20 @@ class Softone_Woocommerce_Integration {
                  */
                 require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-order-sync.php';
 
-		/**
-		 * Helper for dynamically populating navigation menus.
-		 */
-		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-menu-populator.php';
+                /**
+                 * Shared helpers for working with navigation menus.
+                 */
+                require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/softone-menu-helpers.php';
 
-		/**
-		 * Helper functions for accessing plugin settings.
-		 */
-		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/softone-woocommerce-integration-settings.php';
+                /**
+                 * Helper for dynamically populating navigation menus.
+                 */
+                require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-menu-populator.php';
+
+                /**
+                 * Helper functions for accessing plugin settings.
+                 */
+                require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/softone-woocommerce-integration-settings.php';
 
 		/**
 		 * Shared hooks used by both admin and public contexts.
