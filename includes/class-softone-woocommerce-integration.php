@@ -95,11 +95,11 @@ class Softone_Woocommerce_Integration {
          * @since    1.0.0
          */
 	public function __construct() {
-		if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
-			$this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
-		} else {
-			$this->version = '1.8.97';
-		}
+                if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
+                        $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
+                } else {
+                        $this->version = '1.8.98';
+                }
 		$this->plugin_name = 'softone-woocommerce-integration';
 
 		$this->load_dependencies();
