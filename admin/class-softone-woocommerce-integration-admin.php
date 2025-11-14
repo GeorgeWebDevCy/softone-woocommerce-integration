@@ -139,7 +139,7 @@ private $delete_main_menu_ajax_action = 'softone_wc_integration_delete_main_menu
  *
  * @var string
  */
-private $main_menu_name = 'Main Menu';
+private $main_menu_name = '';
 
 /**
  * Base transient key for storing batched menu deletion state.
@@ -266,6 +266,12 @@ private $item_import_default_batch_size = 25;
                 $this->version     = $version;
                 $this->item_sync   = $item_sync;
                 $this->activity_logger = $activity_logger ?: new Softone_Sync_Activity_Logger();
+
+                if ( function_exists( 'softone_wc_integration_get_main_menu_name' ) ) {
+                        $this->main_menu_name = softone_wc_integration_get_main_menu_name();
+                } else {
+                        $this->main_menu_name = 'Main Menu';
+                }
 
         }
 

@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
         exit;
 }
 
+if ( ! function_exists( 'softone_wc_integration_get_main_menu_name' ) ) {
+        require_once __DIR__ . '/softone-menu-helpers.php';
+}
+
 if ( ! class_exists( 'Softone_Sync_Activity_Logger' ) ) {
         require_once __DIR__ . '/class-softone-sync-activity-logger.php';
 }
@@ -145,7 +149,7 @@ class Softone_Menu_Populator {
          * @return bool
          */
         private function is_main_menu( $args ) {
-                return 'Main Menu' === $this->get_menu_name( $args );
+                return softone_wc_integration_get_main_menu_name() === $this->get_menu_name( $args );
         }
 
         /**

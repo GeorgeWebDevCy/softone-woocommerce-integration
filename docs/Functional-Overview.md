@@ -43,7 +43,7 @@ This document explains the plugin’s functionality based exclusively on the sou
     - “Run Item Import” (delta by default)
     - “Re-sync Categories & Menus” (forces full import and taxonomy refresh)
     - Progress bar and status messages (AJAX action: `softone_wc_integration_item_import`).
-  - “Delete Main Menu” tool: batches deletion of a nav menu named “Main Menu” via AJAX action `softone_wc_integration_delete_main_menu_batch` (also supports non-AJAX post to `softone_wc_integration_delete_main_menu`).
+  - “Delete Main Menu” tool: batches deletion of the nav menu returned by `softone_wc_integration_get_main_menu_name()` (default “Main Menu”) via AJAX action `softone_wc_integration_delete_main_menu_batch` (also supports non-AJAX post to `softone_wc_integration_delete_main_menu`).
 - Category Sync Logs screen: aggregates category-assignment log entries (via Woo logs and the dedicated logger).
 - Sync Activity screen: streams JSON-lines entries from the file-based logger; polls at a configurable interval.
 - API Tester screen: submits ad-hoc payloads to SoftOne; stores recent results per user in transients.
@@ -141,7 +141,7 @@ This document explains the plugin’s functionality based exclusively on the sou
 
 - Class: `includes/class-softone-menu-populator.php`.
 - Hook: filters `wp_nav_menu_objects`.
-- Scope: only acts on the navigation menu named `Main Menu`.
+- Scope: only acts on the navigation menu identified by `softone_wc_integration_get_main_menu_name()` (defaults to `Main Menu`; filterable via `softone_wc_integration_main_menu_name`).
 - Behaviour:
   - Removes prior generated items marked with class `softone-dynamic-menu-item`.
   - Finds existing menu items titled `Brands` and `Products`.
