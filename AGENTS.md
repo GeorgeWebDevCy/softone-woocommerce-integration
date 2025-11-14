@@ -23,6 +23,11 @@ Welcome! This repository contains a WordPress plugin that bridges a WooCommerce 
 - When interacting with remote APIs, keep a thin wrapper method that can be mocked easily and add inline comments with the relevant SoftOne endpoint names for faster navigation.
 - If adding SQL queries, use `$wpdb->prepare()` and note any required database indices.
 - In tests, prefer deterministic fixtures over live API calls; include a comment referencing the production scenario the fixture represents.
+- Organise new functionality into self-contained modules under `admin/`, `includes/`, or `public/` and expose them through clearly named loader classes. Each module should register its hooks within a dedicated `register_hooks()` method so the bootstrap file simply instantiates the module and invokes that method.
+- When adding a feature that spans admin and public contexts, split shared logic into an `includes/` service class and keep UI-specific code in the appropriate directory. Pass the shared service into the UI classes via constructors to avoid duplicate API calls or state.
+- Favour WordPress action/filter hooks over direct function calls between modules. Publish new hooks with meaningful names (e.g., `softone_after_item_sync`) so integrators can extend behaviour without editing core files.
+- Keep plugin settings modular by placing option registration in a dedicated class under `admin/` and referencing options through accessor methods. This maintains a single source of truth and simplifies testing.
+- Before adding a dependency between modules, double-check whether a lightweight interface or trait can express the contract instead. This preserves testability and allows alternative implementations for site-specific customisations.
 
 ## Testing expectations
 - Automated test coverage is minimal; when changing synchronisation logic include manual steps or targeted regression scripts under `tests/` if feasible.
