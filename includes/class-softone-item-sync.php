@@ -17,6 +17,10 @@ if ( ! class_exists( 'Softone_Sync_Activity_Logger' ) ) {
     require_once __DIR__ . '/class-softone-sync-activity-logger.php';
 }
 
+if ( ! class_exists( 'Softone_Item_Stale_Handler' ) ) {
+    require_once __DIR__ . '/class-softone-item-stale-handler.php';
+}
+
 if ( ! class_exists( 'Softone_Item_Sync' ) ) {
     /**
      * Handles importing SoftOne catalogue items into WooCommerce.
@@ -68,7 +72,10 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         /** @var array<int, array<string, mixed>> */
         protected $pending_single_product_variations = array();
 
-        public function __construct( ?Softone_API_Client $api_client = null, $logger = null, $category_logger = null, ?Softone_Sync_Activity_Logger $activity_logger = null ) {
+        /** @var Softone_Item_Stale_Handler */
+        protected $stale_handler;
+
+        public function __construct( ?Softone_API_Client $api_client = null, $logger = null, $category_logger = null, ?Softone_Sync_Activity_Logger $activity_logger = null, ?Softone_Item_Stale_Handler $stale_handler = null ) {
             $this->api_client = $api_client ?: new Softone_API_Client();
             $this->logger     = $logger ?: $this->get_default_logger();
 
@@ -79,63 +86,11 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             $this->activity_logger = $activity_logger;
+            $this->stale_handler   = $stale_handler ?: new Softone_Item_Stale_Handler( $this->logger );
 
             $this->reset_caches();
             $this->pending_colour_variation_syncs     = array();
             $this->pending_single_product_variations = array();
-        }
-
-        /** @return void */
-        public function register_hooks( Softone_Woocommerce_Integration_Loader $loader ) {
-            $loader->add_action( 'init', $this, 'maybe_schedule_cron' );
-            $loader->add_action( self::CRON_HOOK, $this, 'handle_scheduled_sync', 10, 0 );
-        }
-
-        /** @return void */
-        public function maybe_schedule_cron() {
-            self::schedule_event();
-        }
-
-        /** @return void */
-        public static function schedule_event() {
-            if ( wp_next_scheduled( self::CRON_HOOK ) ) {
-                return;
-            }
-
-            $interval = apply_filters( 'softone_wc_integration_item_sync_interval', self::DEFAULT_CRON_EVENT );
-            if ( ! is_string( $interval ) || '' === $interval ) {
-                $interval = self::DEFAULT_CRON_EVENT;
-            }
-
-            wp_schedule_event( time() + MINUTE_IN_SECONDS, $interval, self::CRON_HOOK );
-        }
-
-        /** @return void */
-        public static function clear_scheduled_event() {
-            if ( function_exists( 'wp_clear_scheduled_hook' ) ) {
-                wp_clear_scheduled_hook( self::CRON_HOOK );
-                return;
-            }
-
-            $timestamp = wp_next_scheduled( self::CRON_HOOK );
-
-            while ( false !== $timestamp ) {
-                wp_unschedule_event( $timestamp, self::CRON_HOOK );
-                $timestamp = wp_next_scheduled( self::CRON_HOOK );
-            }
-        }
-
-        /** @return void */
-        public function handle_scheduled_sync() {
-            try {
-                $result = $this->sync();
-                if ( isset( $result['processed'] ) ) {
-                    $timestamp = isset( $result['started_at'] ) ? (int) $result['started_at'] : time();
-                    update_option( self::OPTION_LAST_RUN, $timestamp );
-                }
-            } catch ( Exception $exception ) {
-                $this->log( 'error', $exception->getMessage(), array( 'exception' => $exception ) );
-            }
         }
 
         /**
@@ -248,7 +203,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 $this->process_pending_single_product_variations();
                 $this->process_pending_colour_variation_syncs();
 
-                $stale_processed = $this->handle_stale_products( $started_at );
+                $stale_processed = $this->stale_handler ? $this->stale_handler->handle( $started_at ) : 0;
 
                 if ( $stale_processed > 0 ) {
                     $stats['stale_processed'] = $stale_processed;
@@ -513,7 +468,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             if ( $complete ) {
                 $this->process_pending_single_product_variations();
                 $this->process_pending_colour_variation_syncs();
-                $stale_processed = $this->handle_stale_products( $started_at );
+                $stale_processed = $this->stale_handler ? $this->stale_handler->handle( $started_at ) : 0;
 
                 if ( $stale_processed > 0 ) {
                     $state['stale_processed'] = (int) $stale_processed;
@@ -3333,114 +3288,6 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         }
 
 
-        /** @return int */
-        protected function handle_stale_products( $run_timestamp ) {
-            if ( ! is_numeric( $run_timestamp ) || $run_timestamp <= 0 ) {
-                return 0;
-            }
-
-            $action = apply_filters( 'softone_wc_integration_stale_item_action', 'stock_out' );
-            if ( ! in_array( $action, array( 'draft', 'stock_out' ), true ) ) {
-                $action = 'stock_out';
-            }
-
-            $batch_size = (int) apply_filters( 'softone_wc_integration_stale_item_batch_size', 50 );
-            if ( $batch_size <= 0 ) {
-                $batch_size = 50;
-            }
-
-            $processed = 0;
-
-            do {
-                $query = new WP_Query(
-                    array(
-                        'post_type'      => 'product',
-                        'post_status'    => 'any',
-                        'fields'         => 'ids',
-                        'posts_per_page' => $batch_size,
-                        'orderby'        => 'ID',
-                        'order'          => 'ASC',
-                        'meta_query'     => array(
-                            'relation' => 'AND',
-                            array(
-                                'key'     => self::META_MTRL,
-                                'compare' => 'EXISTS',
-                            ),
-                            array(
-                                'relation' => 'OR',
-                                array(
-                                    'key'     => self::META_LAST_SYNC,
-                                    'compare' => 'NOT EXISTS',
-                                ),
-                                array(
-                                    'key'     => self::META_LAST_SYNC,
-                                    'value'   => (int) $run_timestamp,
-                                    'type'    => 'NUMERIC',
-                                    'compare' => '<',
-                                ),
-                            ),
-                        ),
-                    )
-                );
-
-                if ( ! $query->have_posts() ) {
-                    wp_reset_postdata();
-                    break;
-                }
-
-                foreach ( $query->posts as $product_id ) {
-                    $processed++;
-
-                    $product = wc_get_product( $product_id );
-                    if ( ! $product ) {
-                        $this->log( 'warning', 'Unable to load product while marking as stale.', array( 'product_id' => $product_id ) );
-                        update_post_meta( $product_id, self::META_LAST_SYNC, (int) $run_timestamp );
-                        continue;
-                    }
-
-                    $sku = '';
-                    if ( method_exists( $product, 'get_sku' ) ) {
-                        $sku = (string) $product->get_sku();
-                    }
-
-                    if ( 'draft' === $action ) {
-                        if ( 'draft' !== $product->get_status() ) {
-                            $product->set_status( 'draft' );
-                        }
-                    } else {
-                        if ( 'publish' !== $product->get_status() ) {
-                            $product->set_status( 'publish' );
-                        }
-                        $product->set_stock_status( 'outofstock' );
-                    }
-
-                    $product->save();
-                    if ( '' !== $sku && class_exists( 'Softone_Sku_Image_Attacher' ) ) {
-                        Softone_Sku_Image_Attacher::attach_gallery_from_sku( (int) $product_id, $sku );
-                    }
-                    update_post_meta( $product_id, self::META_LAST_SYNC, (int) $run_timestamp );
-
-                    $this->log( 'info', 'Marked product as stale following Softone sync run.', array( 'product_id' => $product_id, 'action' => $action ) );
-                }
-
-                wp_reset_postdata();
-            } while ( true );
-
-            if ( $processed > 0 ) {
-                $this->log(
-                    'notice',
-                    sprintf( 'Handled %d stale Softone products.', $processed ),
-                    array(
-                        'action'     => $action,
-                        'timestamp'  => $run_timestamp,
-                        'batch_size' => $batch_size,
-                    )
-                );
-            }
-
-            return $processed;
-        }
-
         /** @return string */
         protected function determine_sku( array $data ) {
             $candidates = array( 'sku', 'barcode', 'code' );
@@ -5009,6 +4856,15 @@ protected function resolve_colour_attribute_slug() {
             }
 
             return $payload;
+        }
+
+        /**
+         * Expose the logger used for sync operations.
+         *
+         * @return WC_Logger|Psr\Log\LoggerInterface|null
+         */
+        public function get_logger() {
+            return $this->logger;
         }
 
         /** @return void */

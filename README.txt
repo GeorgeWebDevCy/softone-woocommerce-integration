@@ -75,7 +75,7 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Authentication failures** – Recheck the endpoint URL formatting, confirm that the API user has access to the specified company/branch/module, and verify that firewalls allow outbound connections to the SoftOne server. Use the API tester to validate credentials with a simple `authenticate` request.
 * **Orders not exporting** – Ensure the Default SALDOC Series is configured, confirm that the customer synchronisation completed (look for notes on the order), and inspect the WooCommerce order notes/logs for `[SO-ORD-###]` messages indicating what failed.
 * **No categories appearing in menus** – Confirm that WooCommerce’s product categories exist and that recent item imports completed. The Category Sync Logs screen highlights any taxonomy creation issues.
-* **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Sync::schedule_event()`.
+* **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Cron_Manager::schedule_event()`.
 
 == Changelog ==
 
