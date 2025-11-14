@@ -3398,6 +3398,11 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                         continue;
                     }
 
+                    $sku = '';
+                    if ( method_exists( $product, 'get_sku' ) ) {
+                        $sku = (string) $product->get_sku();
+                    }
+
                     if ( 'draft' === $action ) {
                         if ( 'draft' !== $product->get_status() ) {
                             $product->set_status( 'draft' );
@@ -3410,9 +3415,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     }
 
                     $product->save();
-                    // --- Attach images based on SKU ---
-                    if ( ! empty( $sku ) ) {
-                    Softone_Sku_Image_Attacher::attach_gallery_from_sku( (int) $product_id, (string) $sku );
+                    if ( '' !== $sku && class_exists( 'Softone_Sku_Image_Attacher' ) ) {
+                        Softone_Sku_Image_Attacher::attach_gallery_from_sku( (int) $product_id, $sku );
                     }
                     update_post_meta( $product_id, self::META_LAST_SYNC, (int) $run_timestamp );
 
