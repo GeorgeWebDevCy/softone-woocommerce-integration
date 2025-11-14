@@ -144,10 +144,11 @@ This document explains the plugin’s functionality based exclusively on the sou
 - Scope: only acts on the navigation menu identified by `softone_wc_integration_get_main_menu_name()` (defaults to `Main Menu`; filterable via `softone_wc_integration_main_menu_name`).
 - Behaviour:
   - Removes prior generated items marked with class `softone-dynamic-menu-item`.
-  - Finds existing menu items titled `Brands` and `Products`.
+  - Locates placeholder menu items (defaults to titles `Brands` and `Products`; filterable via `softone_wc_integration_menu_placeholder_titles`).
   - Adds child items under `Brands` for all `product_brand` terms (sorted by name).
   - Adds child items under `Products` for the full `product_cat` tree, excluding WooCommerce’s default “Uncategorized” (children re-parented to top-level).
   - Emits activity log entries when dynamic items are injected.
+  - Placeholder detection can be extended via `softone_wc_integration_menu_placeholder_config` to match menu item classes or metadata, making translations or bespoke placeholders possible without renaming the defaults.
 
 ## Sync Activity Logging
 

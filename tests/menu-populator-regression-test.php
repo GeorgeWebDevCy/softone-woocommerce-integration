@@ -129,6 +129,150 @@ if ( ! function_exists( '__' ) ) {
     }
 }
 
+$GLOBALS['softone_filters']       = array();
+$GLOBALS['softone_nav_menu_meta'] = array();
+
+if ( ! function_exists( 'add_filter' ) ) {
+    /**
+     * Register a filter callback for the test harness.
+     *
+     * @param string   $tag             Filter name.
+     * @param callable $function_to_add Callback.
+     * @param int      $priority        Priority.
+     * @param int      $accepted_args   Accepted args.
+     *
+     * @return bool
+     */
+    function add_filter( $tag, $function_to_add, $priority = 10, $accepted_args = 1 ) {
+        if ( ! isset( $GLOBALS['softone_filters'][ $tag ] ) ) {
+            $GLOBALS['softone_filters'][ $tag ] = array();
+        }
+
+        if ( ! isset( $GLOBALS['softone_filters'][ $tag ][ $priority ] ) ) {
+            $GLOBALS['softone_filters'][ $tag ][ $priority ] = array();
+        }
+
+        $GLOBALS['softone_filters'][ $tag ][ $priority ][] = array(
+            'function'      => $function_to_add,
+            'accepted_args' => (int) $accepted_args,
+        );
+
+        return true;
+    }
+}
+
+if ( ! function_exists( 'apply_filters' ) ) {
+    /**
+     * Execute filter callbacks for the test harness.
+     *
+     * @param string $tag   Filter name.
+     * @param mixed  $value Initial value.
+     *
+     * @return mixed
+     */
+    function apply_filters( $tag, $value ) {
+        $args = func_get_args();
+
+        if ( empty( $GLOBALS['softone_filters'][ $tag ] ) ) {
+            return $value;
+        }
+
+        ksort( $GLOBALS['softone_filters'][ $tag ] );
+
+        foreach ( $GLOBALS['softone_filters'][ $tag ] as $callbacks ) {
+            foreach ( $callbacks as $callback ) {
+                if ( ! is_callable( $callback['function'] ) ) {
+                    continue;
+                }
+
+                $args[1] = $value;
+                $value   = call_user_func_array(
+                    $callback['function'],
+                    array_slice( $args, 1, $callback['accepted_args'] )
+                );
+            }
+        }
+
+        return $value;
+    }
+}
+
+if ( ! function_exists( 'get_post_meta' ) ) {
+    /**
+     * Retrieve mock menu item metadata.
+     *
+     * @param int    $object_id Object ID.
+     * @param string $key       Meta key.
+     * @param bool   $single    Whether to return a single value.
+     *
+     * @return mixed
+     */
+    function get_post_meta( $object_id, $key = '', $single = false ) {
+        $object_id = (int) $object_id;
+
+        if ( $object_id <= 0 || empty( $GLOBALS['softone_nav_menu_meta'][ $object_id ] ) ) {
+            return $single ? '' : array();
+        }
+
+        if ( '' === $key ) {
+            return $GLOBALS['softone_nav_menu_meta'][ $object_id ];
+        }
+
+        if ( ! isset( $GLOBALS['softone_nav_menu_meta'][ $object_id ][ $key ] ) ) {
+            return $single ? '' : array();
+        }
+
+        $value = $GLOBALS['softone_nav_menu_meta'][ $object_id ][ $key ];
+
+        if ( $single ) {
+            if ( is_array( $value ) ) {
+                $first = reset( $value );
+
+                return false === $first ? '' : $first;
+            }
+
+            return $value;
+        }
+
+        if ( is_array( $value ) ) {
+            return $value;
+        }
+
+        return array( $value );
+    }
+}
+
+/**
+ * Reset registered filters for the test harness.
+ */
+function softone_reset_filters() {
+    $GLOBALS['softone_filters'] = array();
+}
+
+/**
+ * Reset mock menu item metadata.
+ */
+function softone_reset_menu_meta() {
+    $GLOBALS['softone_nav_menu_meta'] = array();
+}
+
+/**
+ * Store mock metadata for a nav menu item.
+ *
+ * @param int    $item_id Menu item ID.
+ * @param string $key     Meta key.
+ * @param mixed  $value   Meta value.
+ */
+function softone_set_menu_item_meta( $item_id, $key, $value ) {
+    $item_id = (int) $item_id;
+
+    if ( ! isset( $GLOBALS['softone_nav_menu_meta'][ $item_id ] ) ) {
+        $GLOBALS['softone_nav_menu_meta'][ $item_id ] = array();
+    }
+
+    $GLOBALS['softone_nav_menu_meta'][ $item_id ][ $key ] = $value;
+}
+
 require_once dirname( __DIR__ ) . '/includes/softone-menu-helpers.php';
 require_once dirname( __DIR__ ) . '/includes/class-softone-menu-populator.php';
 
@@ -161,6 +305,76 @@ function softone_create_menu_item( $id, $title, $parent = 0, $order = 0 ) {
     $item->post_type          = 'nav_menu_item';
 
     return $item;
+}
+
+/**
+ * Summarise dynamic menu output for assertions.
+ *
+ * @param array<int, object> $items              Menu items.
+ * @param int                $brand_parent_id    Placeholder ID for brands.
+ * @param int                $product_parent_id  Placeholder ID for products.
+ *
+ * @return array<string, mixed>
+ */
+function softone_summarise_menu_output( array $items, $brand_parent_id, $product_parent_id ) {
+    $summary = array(
+        'brand_children' => array(),
+        'top_categories' => array(),
+        'category_tree'  => array(),
+        'dynamic_count'  => 0,
+    );
+
+    $category_id_to_title = array();
+
+    foreach ( $items as $item ) {
+        $classes = array();
+
+        if ( isset( $item->classes ) ) {
+            if ( is_array( $item->classes ) ) {
+                $classes = $item->classes;
+            } elseif ( is_string( $item->classes ) ) {
+                $classes = array( $item->classes );
+            }
+        }
+
+        $is_dynamic = in_array( 'softone-dynamic-menu-item', $classes, true );
+
+        if ( $is_dynamic ) {
+            $summary['dynamic_count']++;
+        }
+
+        if ( $is_dynamic && (int) $brand_parent_id === (int) $item->menu_item_parent ) {
+            $summary['brand_children'][] = $item->title;
+        }
+
+        if ( isset( $item->object ) && 'product_cat' === $item->object && $is_dynamic ) {
+            if ( ! isset( $summary['category_tree'] ) ) {
+                $summary['category_tree'] = array();
+            }
+
+            $category_id = (int) $item->db_id;
+            $category_id_to_title[ $category_id ] = $item->title;
+
+            if ( (int) $product_parent_id === (int) $item->menu_item_parent ) {
+                $summary['top_categories'][]           = $item->title;
+                $summary['category_tree'][ $item->title ] = array();
+            } else {
+                $parent_id = (int) $item->menu_item_parent;
+
+                if ( isset( $category_id_to_title[ $parent_id ] ) ) {
+                    $parent_title = $category_id_to_title[ $parent_id ];
+
+                    if ( ! isset( $summary['category_tree'][ $parent_title ] ) ) {
+                        $summary['category_tree'][ $parent_title ] = array();
+                    }
+
+                    $summary['category_tree'][ $parent_title ][] = $item->title;
+                }
+            }
+        }
+    }
+
+    return $summary;
 }
 
 /**
@@ -202,6 +416,9 @@ function softone_build_mock_terms() {
 
 softone_build_mock_terms();
 
+softone_reset_filters();
+softone_reset_menu_meta();
+
 $main_menu_items = array(
     softone_create_menu_item( 1, 'Home', 0, 1 ),
     softone_create_menu_item( 2, 'Brands', 0, 2 ),
@@ -218,44 +435,7 @@ $menu_populator = new Softone_Menu_Populator();
 
 $result = $menu_populator->filter_menu_items( $main_menu_items, $main_args );
 
-$brand_children = array();
-$top_level_categories = array();
-$category_tree = array();
-$dynamic_count = 0;
-$category_id_to_title = array();
-
-foreach ( $result as $item ) {
-    $classes = isset( $item->classes ) ? $item->classes : array();
-
-    if ( in_array( 'softone-dynamic-menu-item', $classes, true ) ) {
-        $dynamic_count++;
-    }
-
-    if ( 2 === (int) $item->menu_item_parent && in_array( 'softone-dynamic-menu-item', $classes, true ) ) {
-        $brand_children[] = $item->title;
-    }
-
-    if ( isset( $item->object ) && 'product_cat' === $item->object && in_array( 'softone-dynamic-menu-item', $classes, true ) ) {
-        $category_id_to_title[ (int) $item->db_id ] = $item->title;
-
-        if ( 3 === (int) $item->menu_item_parent ) {
-            $top_level_categories[]           = $item->title;
-            $category_tree[ $item->title ] = array();
-        } else {
-            $parent_id = (int) $item->menu_item_parent;
-
-            if ( isset( $category_id_to_title[ $parent_id ] ) ) {
-                $parent_title = $category_id_to_title[ $parent_id ];
-
-                if ( ! isset( $category_tree[ $parent_title ] ) ) {
-                    $category_tree[ $parent_title ] = array();
-                }
-
-                $category_tree[ $parent_title ][] = $item->title;
-            }
-        }
-    }
-}
+$summary = softone_summarise_menu_output( $result, 2, 3 );
 
 $expected_brand_children = array( 'Alpha', 'Beta', 'Gamma' );
 $expected_top_categories = array( 'Accessories', 'Clothing' );
@@ -263,28 +443,29 @@ $expected_category_tree  = array(
     'Accessories' => array( 'Belts', 'Scarves' ),
     'Clothing'    => array( 'Pants', 'Shirts' ),
 );
+$expected_dynamic_total  = count( $expected_brand_children ) + count( $expected_top_categories ) + array_sum( array_map( 'count', $expected_category_tree ) );
 
-if ( count( $result ) !== count( $main_menu_items ) + count( $expected_brand_children ) + array_sum( array_map( 'count', $expected_category_tree ) ) + count( $expected_top_categories ) ) {
+if ( count( $result ) !== count( $main_menu_items ) + $expected_dynamic_total ) {
     fwrite( STDERR, 'Unexpected number of menu items returned.' . PHP_EOL );
     exit( 1 );
 }
 
-if ( $expected_brand_children !== $brand_children ) {
+if ( $expected_brand_children !== $summary['brand_children'] ) {
     fwrite( STDERR, 'Brand children were not appended in alphabetical order or were missing.' . PHP_EOL );
     exit( 1 );
 }
 
-if ( $expected_top_categories !== $top_level_categories ) {
+if ( $expected_top_categories !== $summary['top_categories'] ) {
     fwrite( STDERR, 'Top-level categories were not appended correctly.' . PHP_EOL );
     exit( 1 );
 }
 
-if ( $expected_category_tree !== $category_tree ) {
+if ( $expected_category_tree !== $summary['category_tree'] ) {
     fwrite( STDERR, 'Category hierarchy was not preserved.' . PHP_EOL );
     exit( 1 );
 }
 
-if ( $dynamic_count !== count( $expected_brand_children ) + count( $expected_top_categories ) + array_sum( array_map( 'count', $expected_category_tree ) ) ) {
+if ( $summary['dynamic_count'] !== $expected_dynamic_total ) {
     fwrite( STDERR, 'Dynamic menu items were not tagged correctly.' . PHP_EOL );
     exit( 1 );
 }
@@ -322,9 +503,7 @@ $GLOBALS['softone_taxonomy_exists']['product_cat']   = true;
 $missing_taxonomy_populator = new Softone_Menu_Populator();
 $missing_result             = $missing_taxonomy_populator->filter_menu_items( $main_menu_items, $main_args );
 
-$missing_top_categories      = array();
-$missing_category_tree       = array();
-$missing_category_id_to_title = array();
+$missing_summary = softone_summarise_menu_output( $missing_result, 2, 3 );
 
 foreach ( $missing_result as $item ) {
     $classes = array();
@@ -341,27 +520,6 @@ foreach ( $missing_result as $item ) {
         fwrite( STDERR, 'Brand menu items were appended despite the taxonomy being unavailable.' . PHP_EOL );
         exit( 1 );
     }
-
-    if ( isset( $item->object ) && 'product_cat' === $item->object && in_array( 'softone-dynamic-menu-item', $classes, true ) ) {
-        $missing_category_id_to_title[ (int) $item->db_id ] = $item->title;
-
-        if ( 3 === (int) $item->menu_item_parent ) {
-            $missing_top_categories[]      = $item->title;
-            $missing_category_tree[ $item->title ] = array();
-        } else {
-            $parent_id = (int) $item->menu_item_parent;
-
-            if ( isset( $missing_category_id_to_title[ $parent_id ] ) ) {
-                $parent_title = $missing_category_id_to_title[ $parent_id ];
-
-                if ( ! isset( $missing_category_tree[ $parent_title ] ) ) {
-                    $missing_category_tree[ $parent_title ] = array();
-                }
-
-                $missing_category_tree[ $parent_title ][] = $item->title;
-            }
-        }
-    }
 }
 
 $expected_category_count = count( $expected_top_categories ) + array_sum( array_map( 'count', $expected_category_tree ) );
@@ -371,15 +529,141 @@ if ( count( $missing_result ) !== count( $main_menu_items ) + $expected_category
     exit( 1 );
 }
 
-if ( $expected_top_categories !== $missing_top_categories ) {
+if ( $expected_top_categories !== $missing_summary['top_categories'] ) {
     fwrite( STDERR, 'Top-level categories were not appended when the brand taxonomy was unavailable.' . PHP_EOL );
     exit( 1 );
 }
 
-if ( $expected_category_tree !== $missing_category_tree ) {
+if ( $expected_category_tree !== $missing_summary['category_tree'] ) {
     fwrite( STDERR, 'Category hierarchy changed when the brand taxonomy was unavailable.' . PHP_EOL );
     exit( 1 );
 }
+
+$GLOBALS['softone_taxonomy_exists']['product_brand'] = true;
+
+softone_reset_filters();
+softone_reset_menu_meta();
+
+add_filter(
+    'softone_wc_integration_menu_placeholder_titles',
+    static function ( $titles ) {
+        $titles['brands']   = array( 'Marcas', 'Nuestras Marcas' );
+        $titles['products'] = array( 'Catálogo', 'Productos' );
+
+        return $titles;
+    }
+);
+
+$translated_menu_items = array(
+    softone_create_menu_item( 10, 'Inicio', 0, 1 ),
+    softone_create_menu_item( 11, 'Marcas', 0, 2 ),
+    softone_create_menu_item( 12, 'Catálogo', 0, 3 ),
+);
+
+$translated_args = (object) array(
+    'menu' => (object) array(
+        'name' => softone_wc_integration_get_main_menu_name(),
+    ),
+);
+
+$translated_populator = new Softone_Menu_Populator();
+$translated_result    = $translated_populator->filter_menu_items( $translated_menu_items, $translated_args );
+$translated_summary   = softone_summarise_menu_output( $translated_result, 11, 12 );
+
+if ( count( $translated_result ) !== count( $translated_menu_items ) + $expected_dynamic_total ) {
+    fwrite( STDERR, 'Translated placeholders did not receive the expected number of dynamic items.' . PHP_EOL );
+    exit( 1 );
+}
+
+if ( $expected_brand_children !== $translated_summary['brand_children'] ) {
+    fwrite( STDERR, 'Translated brand placeholder did not receive the expected children.' . PHP_EOL );
+    exit( 1 );
+}
+
+if ( $expected_top_categories !== $translated_summary['top_categories'] ) {
+    fwrite( STDERR, 'Translated products placeholder did not receive the expected top-level categories.' . PHP_EOL );
+    exit( 1 );
+}
+
+if ( $expected_category_tree !== $translated_summary['category_tree'] ) {
+    fwrite( STDERR, 'Translated placeholders altered the expected category hierarchy.' . PHP_EOL );
+    exit( 1 );
+}
+
+if ( $translated_summary['dynamic_count'] !== $expected_dynamic_total ) {
+    fwrite( STDERR, 'Translated placeholders produced an unexpected number of dynamic menu items.' . PHP_EOL );
+    exit( 1 );
+}
+
+softone_reset_filters();
+softone_reset_menu_meta();
+
+add_filter(
+    'softone_wc_integration_menu_placeholder_config',
+    static function ( $config ) {
+        $config['brands']['titles'] = array();
+        $config['brands']['meta']   = array(
+            array(
+                'key'   => '_softone_placeholder',
+                'value' => array( 'brands' ),
+            ),
+        );
+
+        $config['products']['titles'] = array();
+        $config['products']['meta']   = array(
+            'key'   => '_softone_placeholder',
+            'value' => array( 'products', 'product-tree' ),
+        );
+
+        return $config;
+    }
+);
+
+$meta_menu_items = array(
+    softone_create_menu_item( 20, 'Inicio', 0, 1 ),
+    softone_create_menu_item( 21, 'Colecciones', 0, 2 ),
+    softone_create_menu_item( 22, 'Catálogo Completo', 0, 3 ),
+);
+
+softone_set_menu_item_meta( 21, '_softone_placeholder', 'brands' );
+softone_set_menu_item_meta( 22, '_softone_placeholder', 'product-tree' );
+
+$meta_args       = (object) array(
+    'menu' => (object) array(
+        'name' => softone_wc_integration_get_main_menu_name(),
+    ),
+);
+$meta_populator  = new Softone_Menu_Populator();
+$meta_result     = $meta_populator->filter_menu_items( $meta_menu_items, $meta_args );
+$meta_summary    = softone_summarise_menu_output( $meta_result, 21, 22 );
+
+if ( count( $meta_result ) !== count( $meta_menu_items ) + $expected_dynamic_total ) {
+    fwrite( STDERR, 'Metadata-based placeholders did not receive the expected number of dynamic items.' . PHP_EOL );
+    exit( 1 );
+}
+
+if ( $expected_brand_children !== $meta_summary['brand_children'] ) {
+    fwrite( STDERR, 'Metadata-based brand placeholder did not receive the expected children.' . PHP_EOL );
+    exit( 1 );
+}
+
+if ( $expected_top_categories !== $meta_summary['top_categories'] ) {
+    fwrite( STDERR, 'Metadata-based products placeholder did not receive the expected top-level categories.' . PHP_EOL );
+    exit( 1 );
+}
+
+if ( $expected_category_tree !== $meta_summary['category_tree'] ) {
+    fwrite( STDERR, 'Metadata-based placeholders altered the expected category hierarchy.' . PHP_EOL );
+    exit( 1 );
+}
+
+if ( $meta_summary['dynamic_count'] !== $expected_dynamic_total ) {
+    fwrite( STDERR, 'Metadata-based placeholders produced an unexpected number of dynamic menu items.' . PHP_EOL );
+    exit( 1 );
+}
+
+softone_reset_filters();
+softone_reset_menu_meta();
 
 echo 'Menu population regression checks passed.' . PHP_EOL;
 exit( 0 );

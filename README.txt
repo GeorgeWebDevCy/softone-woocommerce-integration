@@ -23,7 +23,7 @@ Softone WooCommerce Integration keeps your catalogue, shoppers, and sales aligne
 * **Order export** – Sends WooCommerce orders to SoftOne SALDOC documents once orders reach the configured statuses and records the resulting document ID back on the order.
 * **API tester** – Provides an in-dashboard tester with sample payload presets so administrators can validate credentials, run ad-hoc calls, and inspect the raw responses returned by SoftOne.
 * **Category log viewer** – Surfaces category synchronisation entries aggregated from WooCommerce logs to make diagnosing catalogue imports easier.
-* **Menu population helpers** – Optionally extend WooCommerce menu structures to include synced SoftOne product categories, even when the site does not expose brand taxonomies.
+* **Menu population helpers** – Optionally extend WooCommerce menu structures to include synced SoftOne product categories, even when the site does not expose brand taxonomies. Placeholder menu items can be translated or retitled via the `softone_wc_integration_menu_placeholder_titles` filter, or matched via metadata using `softone_wc_integration_menu_placeholder_config`.
 
 = Prerequisites =
 
