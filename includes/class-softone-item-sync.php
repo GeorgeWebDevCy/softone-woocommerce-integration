@@ -2142,7 +2142,23 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 wp_set_object_terms( $product_id, 'variable', 'product_type' );
             }
 
-            $product = wc_get_product( $product_id );
+            if ( function_exists( 'wc_delete_product_transients' ) ) {
+                wc_delete_product_transients( $product_id );
+            }
+
+            if ( function_exists( 'clean_post_cache' ) ) {
+                clean_post_cache( $product_id );
+            }
+
+            if ( class_exists( 'WC_Cache_Helper' ) && method_exists( 'WC_Cache_Helper', 'invalidate_cache_group' ) ) {
+                WC_Cache_Helper::invalidate_cache_group( 'products' );
+            }
+
+            if ( class_exists( 'WC_Product_Variable' ) ) {
+                $product = new WC_Product_Variable( $product_id );
+            } else {
+                $product = wc_get_product( $product_id );
+            }
             if ( ! $product ) {
                 return false;
             }

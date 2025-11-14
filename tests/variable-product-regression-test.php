@@ -126,9 +126,66 @@ if ( ! function_exists( 'get_term' ) ) {
 
 if ( ! function_exists( 'wc_get_product' ) ) {
     function wc_get_product( $product_id ) {
-        global $softone_products;
+        global $softone_products, $softone_product_cache;
 
-        return isset( $softone_products[ $product_id ] ) ? $softone_products[ $product_id ] : null;
+        $product_id = (int) $product_id;
+
+        if ( isset( $softone_product_cache[ $product_id ] ) ) {
+            return $softone_product_cache[ $product_id ];
+        }
+
+        if ( isset( $softone_products[ $product_id ] ) ) {
+            $softone_product_cache[ $product_id ] = clone $softone_products[ $product_id ];
+            return $softone_product_cache[ $product_id ];
+        }
+
+        return null;
+    }
+}
+
+if ( ! function_exists( 'wc_delete_product_transients' ) ) {
+    function wc_delete_product_transients( $product_id = 0 ) {
+        global $softone_product_cache;
+
+        if ( $product_id > 0 ) {
+            unset( $softone_product_cache[ (int) $product_id ] );
+            return;
+        }
+
+        $softone_product_cache = array();
+    }
+}
+
+if ( ! function_exists( 'clean_post_cache' ) ) {
+    function clean_post_cache( $post_id ) {
+        global $softone_product_cache;
+
+        if ( null === $post_id ) {
+            $softone_product_cache = array();
+            return;
+        }
+
+        $post_id = (int) $post_id;
+
+        if ( $post_id > 0 && isset( $softone_product_cache[ $post_id ] ) ) {
+            unset( $softone_product_cache[ $post_id ] );
+        }
+    }
+}
+
+if ( ! class_exists( 'WC_Cache_Helper' ) ) {
+    class WC_Cache_Helper {
+        public static $invalidated_groups = array();
+
+        public static function invalidate_cache_group( $group ) {
+            global $softone_product_cache;
+
+            self::$invalidated_groups[] = (string) $group;
+
+            if ( 'products' === $group ) {
+                $softone_product_cache = array();
+            }
+        }
     }
 }
 
@@ -446,6 +503,15 @@ if ( ! class_exists( 'WC_Product' ) ) {
     }
 }
 
+if ( ! class_exists( 'WC_Product_Variable' ) ) {
+    class WC_Product_Variable extends WC_Product {
+        public function __construct( $id = 0 ) {
+            parent::__construct( $id );
+            $this->set_type( 'variable' );
+        }
+    }
+}
+
 if ( ! class_exists( 'WC_Product_Variation' ) ) {
     class WC_Product_Variation extends WC_Product {
         protected $attributes = array();
@@ -484,6 +550,7 @@ if ( ! class_exists( 'WC_Product_Variation' ) ) {
 
 $softone_post_meta            = array();
 $softone_products             = array();
+$softone_product_cache        = array();
 $softone_products_by_sku       = array();
 $softone_mtrl_products         = array();
 $softone_mtrl_variations       = array();
@@ -767,6 +834,39 @@ if ( $size_options !== array( 21 ) ) {
 $blue_source = wc_get_product( 601 );
 if ( ! $blue_source || 'draft' !== $blue_source->get_status() ) {
     throw new RuntimeException( 'Single-product sources should be drafted after migrating into a variation.' );
+}
+
+$cached_parent = new WC_Product( 701 );
+$cached_parent->set_type( 'simple' );
+$cached_parent->set_sku( 'SKU-CACHED' );
+$cached_parent->set_regular_price( '19.99' );
+$cached_parent->save();
+update_post_meta( 701, Softone_Item_Sync::META_MTRL, 'MTRL-CACHED' );
+
+$primed_simple = wc_get_product( 701 );
+if ( ! $primed_simple || 'simple' !== $primed_simple->get_type() ) {
+    throw new RuntimeException( 'Failed to simulate a cached simple product prior to conversion.' );
+}
+
+$sync->queue_single_variation_public( 701, 11, 'pa_colour', 'SKU-CACHED', '19.99', null, 'MTRL-CACHED', false, array() );
+$sync->process_single_variations_public();
+
+$refreshed_parent = wc_get_product( 701 );
+if ( ! $refreshed_parent || 'variable' !== $refreshed_parent->get_type() ) {
+    throw new RuntimeException( 'Simple product should convert to a variable product after cache invalidation.' );
+}
+
+$cached_variations = isset( $softone_variations_by_parent[ 701 ] ) ? $softone_variations_by_parent[ 701 ] : array();
+if ( count( $cached_variations ) !== 1 ) {
+    throw new RuntimeException( 'Expected a single variation to materialise for the cached product conversion.' );
+}
+
+foreach ( $sync->logs as $log_entry ) {
+    if ( isset( $log_entry['context']['product_id'], $log_entry['context']['reason'] ) ) {
+        if ( 701 === (int) $log_entry['context']['product_id'] && 'product_not_variable' === $log_entry['context']['reason'] ) {
+            throw new RuntimeException( 'ensure_colour_variation should operate on the refreshed variable product object.' );
+        }
+    }
 }
 
 echo 'Variable product colour variation regression test passed.' . PHP_EOL;
