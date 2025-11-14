@@ -1527,29 +1527,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 $attribute_key = 'attribute_' . ltrim( $colour_taxonomy, '_' );
             }
 
-            $variation_id = $this->find_existing_variation_id( $product_id, $sku, $mtrl );
-            $is_new       = $variation_id <= 0;
-
-            if ( $is_new ) {
-                $variation = new WC_Product_Variation();
-                $variation->set_parent_id( $product_id );
-            } else {
-                $variation = wc_get_product( $variation_id );
-                if ( ! $variation ) {
-                    $variation = new WC_Product_Variation( $variation_id );
-                }
-            }
-
-            if ( ! $variation || ! $variation instanceof WC_Product_Variation ) {
-                return $log_variation_failure( 'invalid_variation_object', array( 'variation_id' => $variation_id ) );
-            }
-
-            $attributes = $variation->get_attributes();
-            if ( ! is_array( $attributes ) ) {
-                $attributes = array();
-            }
-
-            $attributes[ $attribute_key ] = $term_slug;
+            $prepared_attribute_values = array();
 
             if ( ! is_array( $additional_attributes ) ) {
                 $additional_attributes = array();
@@ -1598,7 +1576,44 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     continue;
                 }
 
-                $attributes[ $attribute_name ] = $term_value;
+                $prepared_attribute_values[ $attribute_name ] = $term_value;
+            }
+
+            $target_attributes = array( $attribute_key => $term_slug );
+
+            foreach ( $prepared_attribute_values as $prepared_attribute_name => $prepared_attribute_value ) {
+                $target_attributes[ $prepared_attribute_name ] = $prepared_attribute_value;
+            }
+
+            $variation_id = $this->find_existing_variation_by_attributes( $product_id, $target_attributes );
+
+            if ( $variation_id <= 0 ) {
+                $variation_id = $this->find_existing_variation_id( $product_id, $sku, $mtrl );
+            }
+
+            $is_new = $variation_id <= 0;
+
+            if ( $is_new ) {
+                $variation = new WC_Product_Variation();
+                $variation->set_parent_id( $product_id );
+            } else {
+                $variation = wc_get_product( $variation_id );
+                if ( ! $variation ) {
+                    $variation = new WC_Product_Variation( $variation_id );
+                }
+            }
+
+            if ( ! $variation || ! $variation instanceof WC_Product_Variation ) {
+                return $log_variation_failure( 'invalid_variation_object', array( 'variation_id' => $variation_id ) );
+            }
+
+            $attributes = $variation->get_attributes();
+            if ( ! is_array( $attributes ) ) {
+                $attributes = array();
+            }
+
+            foreach ( $target_attributes as $target_attribute_name => $target_attribute_value ) {
+                $attributes[ $target_attribute_name ] = $target_attribute_value;
             }
 
             $variation->set_attributes( $attributes );
@@ -1751,6 +1766,127 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     'mtrl'              => $mtrl,
                 )
             );
+        }
+
+        /**
+         * Locate an existing variation that matches the supplied attributes.
+         *
+         * @param int   $product_id
+         * @param array $attributes
+         * @return int
+         */
+        protected function find_existing_variation_by_attributes( $product_id, array $attributes ) {
+            $product_id = (int) $product_id;
+
+            if ( $product_id <= 0 || empty( $attributes ) ) {
+                return 0;
+            }
+
+            if ( ! function_exists( 'wc_get_product' ) || ! class_exists( 'WC_Product_Variation' ) ) {
+                return 0;
+            }
+
+            $normalized_attributes = array();
+            foreach ( $attributes as $attribute_name => $attribute_value ) {
+                $attribute_name = (string) $attribute_name;
+
+                if ( '' === $attribute_name ) {
+                    continue;
+                }
+
+                if ( is_array( $attribute_value ) ) {
+                    $attribute_value = reset( $attribute_value );
+                }
+
+                $attribute_value = (string) $attribute_value;
+
+                if ( '' === $attribute_value ) {
+                    continue;
+                }
+
+                $normalized_attributes[ $attribute_name ] = $attribute_value;
+            }
+
+            if ( empty( $normalized_attributes ) ) {
+                return 0;
+            }
+
+            $product = wc_get_product( $product_id );
+            if ( ! $product ) {
+                return 0;
+            }
+
+            $child_ids = $product->get_children();
+
+            if ( empty( $child_ids ) ) {
+                return 0;
+            }
+
+            ksort( $normalized_attributes );
+
+            foreach ( $child_ids as $child_id ) {
+                $child_id = (int) $child_id;
+
+                if ( $child_id <= 0 ) {
+                    continue;
+                }
+
+                $variation = wc_get_product( $child_id );
+
+                if ( ! $variation || ! $variation instanceof WC_Product_Variation ) {
+                    continue;
+                }
+
+                $variation_attributes = $variation->get_attributes();
+
+                if ( ! is_array( $variation_attributes ) ) {
+                    $variation_attributes = array();
+                }
+
+                $normalized_variation_attributes = array();
+
+                foreach ( $variation_attributes as $variation_attribute_name => $variation_attribute_value ) {
+                    $variation_attribute_name = (string) $variation_attribute_name;
+
+                    if ( '' === $variation_attribute_name ) {
+                        continue;
+                    }
+
+                    if ( is_array( $variation_attribute_value ) ) {
+                        $variation_attribute_value = reset( $variation_attribute_value );
+                    }
+
+                    $variation_attribute_value = (string) $variation_attribute_value;
+
+                    if ( '' === $variation_attribute_value ) {
+                        continue;
+                    }
+
+                    $normalized_variation_attributes[ $variation_attribute_name ] = $variation_attribute_value;
+                }
+
+                if ( empty( $normalized_variation_attributes ) ) {
+                    continue;
+                }
+
+                ksort( $normalized_variation_attributes );
+
+                if ( $normalized_variation_attributes === $normalized_attributes ) {
+                    $this->log(
+                        'debug',
+                        'Located existing variation via attribute match.',
+                        array(
+                            'product_id'   => $product_id,
+                            'variation_id' => $child_id,
+                            'attributes'   => $normalized_variation_attributes,
+                        )
+                    );
+
+                    return $child_id;
+                }
+            }
+
+            return 0;
         }
 
         /**
