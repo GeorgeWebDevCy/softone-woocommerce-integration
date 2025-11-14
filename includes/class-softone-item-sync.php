@@ -1442,42 +1442,72 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $product_id      = (int) $product_id;
             $colour_term_id  = (int) $colour_term_id;
             $colour_taxonomy = (string) $colour_taxonomy;
+            $sku             = (string) $sku;
+            $mtrl            = (string) $mtrl;
+
+            $base_context = array(
+                'product_id'      => $product_id,
+                'colour_term_id'  => $colour_term_id,
+                'colour_taxonomy' => $colour_taxonomy,
+                'sku'             => $sku,
+                'mtrl'            => $mtrl,
+            );
+
+            $log_variation_failure = function( $reason, array $extra_context = array(), $message = 'Failed to ensure colour variation during Softone sync.', $level = 'warning' ) use ( $base_context ) {
+                $failure_context = array_merge(
+                    $base_context,
+                    array( 'reason' => $reason ),
+                    $extra_context
+                );
+
+                $this->log( $level, $message, $failure_context );
+                $this->log_activity(
+                    'variable_products',
+                    'variation_failure',
+                    __( 'Failed to ensure colour variation during Softone sync.', 'softone-woocommerce-integration' ),
+                    $failure_context
+                );
+
+                return 0;
+            };
 
             if ( $product_id <= 0 || $colour_term_id <= 0 || '' === $colour_taxonomy ) {
-                return 0;
+                return $log_variation_failure( 'invalid_variation_arguments' );
             }
 
             if ( ! $this->is_variable_product_handling_enabled() ) {
-                $this->log(
-                    'debug',
+                return $log_variation_failure(
+                    'variable_product_handling_disabled',
+                    array(),
                     'Skipping colour variation creation because variable product handling is disabled.',
-                    array(
-                        'product_id'      => $product_id,
-                        'colour_term_id'  => $colour_term_id,
-                        'colour_taxonomy' => $colour_taxonomy,
-                        'sku'             => (string) $sku,
-                        'mtrl'            => (string) $mtrl,
-                    )
+                    'debug'
                 );
-                return 0;
             }
 
             if ( ! function_exists( 'wc_get_product' ) || ! class_exists( 'WC_Product_Variation' ) ) {
-                return 0;
+                return $log_variation_failure( 'missing_wc_variation_support' );
             }
 
             $product = wc_get_product( $product_id );
             if ( ! $product ) {
-                return 0;
+                return $log_variation_failure( 'product_not_found' );
             }
 
             if ( 'variable' !== $product->get_type() ) {
-                return 0;
+                return $log_variation_failure(
+                    'product_not_variable',
+                    array( 'product_type' => $product->get_type() )
+                );
             }
 
             $term = get_term( $colour_term_id, $colour_taxonomy );
             if ( ! $term || is_wp_error( $term ) ) {
-                return 0;
+                $error_context = array();
+                if ( is_wp_error( $term ) ) {
+                    $error_context['term_error'] = $term->get_error_message();
+                }
+
+                return $log_variation_failure( 'term_not_found', $error_context );
             }
 
             $term_slug = isset( $term->slug ) ? (string) $term->slug : '';
@@ -1491,7 +1521,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             if ( '' === $term_slug ) {
-                return 0;
+                return $log_variation_failure( 'term_slug_empty' );
             }
 
             $attribute_key = $colour_taxonomy;
@@ -1515,7 +1545,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             if ( ! $variation || ! $variation instanceof WC_Product_Variation ) {
-                return 0;
+                return $log_variation_failure( 'invalid_variation_object', array( 'variation_id' => $variation_id ) );
             }
 
             $attributes = $variation->get_attributes();
@@ -1628,7 +1658,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             $variation_id = (int) $variation_id;
 
             if ( $variation_id <= 0 ) {
-                return 0;
+                return $log_variation_failure( 'failed_to_save_variation' );
             }
 
             if ( '' !== $mtrl ) {
@@ -1655,6 +1685,29 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 }
 
                 update_post_meta( $variation_id, $meta_key, $meta_value );
+            }
+
+            if ( $is_new ) {
+                $success_context = array_merge(
+                    $base_context,
+                    array(
+                        'variation_id' => $variation_id,
+                        'attributes'   => $variation->get_attributes(),
+                    )
+                );
+
+                $this->log(
+                    'info',
+                    'Created colour variation for variable product.',
+                    $success_context
+                );
+
+                $this->log_activity(
+                    'variable_products',
+                    'variation_created',
+                    __( 'Created colour variation for variable product during Softone sync.', 'softone-woocommerce-integration' ),
+                    $success_context
+                );
             }
 
             return $variation_id;
