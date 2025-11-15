@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.10.0
+Stable tag: 1.10.2
 =======
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -78,6 +78,13 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Cron_Manager::schedule_event()`.
 
 == Changelog ==
+
+= 1.10.2 =
+* Version bump and housekeeping.
+
+= 1.10.1 =
+* Tweak: Automatically tick “Show images” for the colour attribute on created/updated WPC Linked Variation groups.
+* Tweak: Use meaningful group titles, e.g. “Linked Variations (Color) – {Product Name}”, instead of timestamps.
 
 = 1.10.0 =
 * Change: Import all products as simple products and disable internal variation handling by default.

@@ -2552,6 +2552,16 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     }
                     $link['attributes'] = $existing_attrs;
 
+                    // Ensure the colour attribute shows images (tick "Show images").
+                    $existing_images = array();
+                    if ( isset( $link['images'] ) && is_array( $link['images'] ) ) {
+                        $existing_images = array_values( array_unique( array_map( 'strval', $link['images'] ) ) );
+                    }
+                    if ( ! in_array( $attribute_key, $existing_images, true ) ) {
+                        $existing_images[] = $attribute_key;
+                    }
+                    $link['images'] = $existing_images;
+
                     update_post_meta( $existing_id, 'wpclv_link', $link );
                     $this->flush_wpclv_transients( $product_ids );
                     return;
@@ -2559,7 +2569,21 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
             }
 
             // Create a new Linked Variation configuration.
-            $title = sprintf( __( 'Linked Variations %s', 'softone-woocommerce-integration' ), current_time( 'mysql' ) );
+            $product_name  = get_the_title( $product_ids[0] );
+            $attr_label    = '';
+            if ( function_exists( 'wc_get_attribute' ) ) {
+                $attr = wc_get_attribute( $attribute_id );
+                if ( $attr && ! is_wp_error( $attr ) ) {
+                    $attr_label = isset( $attr->attribute_label ) && $attr->attribute_label ? $attr->attribute_label : $attr->name;
+                }
+            }
+            if ( '' === $attr_label ) {
+                $attr_label = __( 'Attribute', 'softone-woocommerce-integration' );
+            }
+            if ( '' === $product_name ) {
+                $product_name = sprintf( __( 'Products #%s', 'softone-woocommerce-integration' ), $products_csv );
+            }
+            $title = sprintf( __( 'Linked Variations (%1$s) – %2$s', 'softone-woocommerce-integration' ), $attr_label, $product_name );
             $post_id = wp_insert_post( array(
                 'post_type'   => 'wpclv',
                 'post_status' => 'publish',
@@ -2571,6 +2595,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                     'source'     => 'products',
                     'products'   => $products_csv,
                     'attributes' => array( $attribute_key ),
+                    // Tick "Show images" for the colour attribute.
+                    'images'     => array( $attribute_key ),
                 );
                 update_post_meta( (int) $post_id, 'wpclv_link', $link );
                 $this->flush_wpclv_transients( $product_ids );
