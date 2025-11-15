@@ -1265,6 +1265,11 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         \Softone_Sku_Image_Attacher::attach_gallery_from_sku( (int) $product_id, (string) $sku_for_images );
     }
 
+    // ---------- LINK RELATED PRODUCTS VIA WPC LINKED VARIATION ----------
+    if ( '' !== $colour_taxonomy ) {
+        $this->maybe_link_with_wpclv( (int) $product_id, (array) $all_related_item_mtrls, (string) $colour_taxonomy );
+    }
+
     // ---------- CATEGORY TERMS ----------
     if ( ! empty( $category_ids ) && function_exists( 'taxonomy_exists' ) && taxonomy_exists( 'product_cat' ) && function_exists( 'wp_set_object_terms' ) ) {
         $category_assignment = wp_set_object_terms( $product_id, $category_ids, 'product_cat' );
@@ -2438,6 +2443,182 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
                 }
 
                 $this->sync_related_colour_variations( $product_id, $mtrl, $related_mtrls, $colour_taxonomy );
+            }
+        }
+
+        /**
+         * Link a group of related simple products using WPC Linked Variation.
+         *
+         * @param int               $product_id       Current product ID.
+         * @param array<int,string> $related_item_mtrls Related item MTRL identifiers.
+         * @param string            $colour_taxonomy  Colour taxonomy (e.g. pa_color).
+         * @return void
+         */
+        protected function maybe_link_with_wpclv( $product_id, array $related_item_mtrls, $colour_taxonomy ) {
+            $product_id      = (int) $product_id;
+            $colour_taxonomy = (string) $colour_taxonomy;
+
+            if ( $product_id <= 0 || '' === $colour_taxonomy ) {
+                return;
+            }
+
+            // Only proceed when the Linked Variation post type is available.
+            if ( ! ( function_exists( 'post_type_exists' ) && post_type_exists( 'wpclv' ) ) ) {
+                return;
+            }
+
+            // Resolve the WooCommerce attribute ID from the taxonomy name.
+            $attribute_id = $this->get_attribute_id_from_taxonomy( $colour_taxonomy );
+            if ( $attribute_id <= 0 ) {
+                return;
+            }
+
+            $product_ids = array( $product_id );
+
+            // Map related MTRLs to product IDs.
+            foreach ( array_values( array_unique( array_filter( array_map( 'strval', $related_item_mtrls ) ) ) ) as $mtrl ) {
+                $related_id = $this->find_product_id_by_mtrl( $mtrl );
+                if ( $related_id > 0 && $related_id !== $product_id ) {
+                    $product_ids[] = (int) $related_id;
+                }
+            }
+
+            $product_ids = array_values( array_unique( array_filter( array_map( 'intval', $product_ids ) ) ) );
+
+            // Require at least two products to form a linked group.
+            if ( count( $product_ids ) < 2 ) {
+                return;
+            }
+
+            $this->upsert_wpclv_link_for_products( $product_ids, $attribute_id );
+        }
+
+        /**
+         * Create or update a WPC Linked Variation post for the given products.
+         *
+         * @param array<int,int> $product_ids  Product IDs to link.
+         * @param int            $attribute_id WooCommerce attribute ID to display (e.g. colour).
+         * @return void
+         */
+        protected function upsert_wpclv_link_for_products( array $product_ids, $attribute_id ) {
+            $product_ids  = array_values( array_unique( array_filter( array_map( 'intval', $product_ids ) ) ) );
+            $attribute_id = (int) $attribute_id;
+
+            if ( empty( $product_ids ) || $attribute_id <= 0 ) {
+                return;
+            }
+
+            $products_csv = implode( ',', $product_ids );
+            $attribute_key = 'id:' . $attribute_id;
+
+            // Find an existing link that references any of these products.
+            $existing_id = 0;
+            $links = get_posts( array(
+                'post_type'              => 'wpclv',
+                'post_status'            => 'publish',
+                'posts_per_page'         => 500,
+                'no_found_rows'          => true,
+                'update_post_term_cache' => false,
+                'update_post_meta_cache' => false,
+                'fields'                 => 'ids',
+            ) );
+
+            foreach ( (array) $links as $link_id ) {
+                $link = get_post_meta( $link_id, 'wpclv_link', true );
+                if ( ! is_array( $link ) ) {
+                    continue;
+                }
+
+                $source   = isset( $link['source'] ) ? (string) $link['source'] : '';
+                $products = isset( $link['products'] ) ? (string) $link['products'] : '';
+
+                if ( 'products' !== $source || '' === $products ) {
+                    continue;
+                }
+
+                $ids = array_values( array_unique( array_filter( array_map( 'intval', explode( ',', $products ) ) ) ) );
+                if ( array_intersect( $ids, $product_ids ) ) {
+                    $existing_id = (int) $link_id;
+                    // Merge products and attributes.
+                    $merged_products = array_values( array_unique( array_merge( $ids, $product_ids ) ) );
+                    $link['products']   = implode( ',', $merged_products );
+
+                    $existing_attrs = array();
+                    if ( isset( $link['attributes'] ) && is_array( $link['attributes'] ) ) {
+                        $existing_attrs = array_values( array_unique( array_map( 'strval', $link['attributes'] ) ) );
+                    }
+                    if ( ! in_array( $attribute_key, $existing_attrs, true ) ) {
+                        $existing_attrs[] = $attribute_key;
+                    }
+                    $link['attributes'] = $existing_attrs;
+
+                    update_post_meta( $existing_id, 'wpclv_link', $link );
+                    $this->flush_wpclv_transients( $product_ids );
+                    return;
+                }
+            }
+
+            // Create a new Linked Variation configuration.
+            $title = sprintf( __( 'Linked Variations %s', 'softone-woocommerce-integration' ), current_time( 'mysql' ) );
+            $post_id = wp_insert_post( array(
+                'post_type'   => 'wpclv',
+                'post_status' => 'publish',
+                'post_title'  => $title,
+            ) );
+
+            if ( $post_id && ! is_wp_error( $post_id ) ) {
+                $link = array(
+                    'source'     => 'products',
+                    'products'   => $products_csv,
+                    'attributes' => array( $attribute_key ),
+                );
+                update_post_meta( (int) $post_id, 'wpclv_link', $link );
+                $this->flush_wpclv_transients( $product_ids );
+            }
+        }
+
+        /**
+         * Translate a taxonomy name (e.g. pa_color) to its attribute ID.
+         *
+         * @param string $taxonomy Taxonomy name.
+         * @return int Attribute ID or 0 if not found.
+         */
+        protected function get_attribute_id_from_taxonomy( $taxonomy ) {
+            $taxonomy = (string) $taxonomy;
+            if ( '' === $taxonomy ) {
+                return 0;
+            }
+
+            if ( 0 === strpos( $taxonomy, 'pa_' ) ) {
+                $attribute_name = substr( $taxonomy, 3 );
+            } else {
+                $attribute_name = $taxonomy;
+            }
+
+            if ( ! function_exists( 'wc_get_attribute_taxonomies' ) ) {
+                return 0;
+            }
+
+            foreach ( (array) wc_get_attribute_taxonomies() as $attr ) {
+                if ( isset( $attr->attribute_id, $attr->attribute_name ) && $attr->attribute_name === $attribute_name ) {
+                    return (int) $attr->attribute_id;
+                }
+            }
+
+            return 0;
+        }
+
+        /**
+         * Clear WPC Linked Variation cached transients for a set of products.
+         *
+         * @param array<int,int> $product_ids Product IDs.
+         * @return void
+         */
+        protected function flush_wpclv_transients( array $product_ids ) {
+            foreach ( array_values( array_unique( array_filter( array_map( 'intval', $product_ids ) ) ) ) as $pid ) {
+                if ( function_exists( 'delete_transient' ) ) {
+                    delete_transient( 'wpclv_linked_data_' . $pid );
+                }
             }
         }
 

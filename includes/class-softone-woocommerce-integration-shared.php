@@ -34,10 +34,16 @@ class Softone_Woocommerce_Integration_Shared {
 	public function enable_variable_product_handling_from_settings( $enabled ) {
 		$setting = softone_wc_integration_get_setting( 'enable_variable_product_handling', 'no' );
 
+		// Respect the setting explicitly: 'yes' enables, 'no' disables.
 		if ( 'yes' === $setting ) {
 			return true;
 		}
 
+		if ( 'no' === $setting ) {
+			return false;
+		}
+
+		// Fall back to whatever other filters decided.
 		return (bool) $enabled;
 	}
 
