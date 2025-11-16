@@ -721,8 +721,23 @@ if ( $admin_summary['dynamic_count'] !== $expected_dynamic_total ) {
     exit( 1 );
 }
 
-if ( count( $GLOBALS['softone_wp_setup_calls'] ) !== $expected_dynamic_total ) {
+$setup_call_count = count( $GLOBALS['softone_wp_setup_calls'] );
+
+if ( $setup_call_count !== $expected_dynamic_total ) {
     fwrite( STDERR, 'Admin filter failed to prepare each dynamic item via wp_setup_nav_menu_item().' . PHP_EOL );
+    exit( 1 );
+}
+
+$admin_second_pass  = $admin_populator->filter_admin_menu_items( $admin_menu_items, $admin_menu, array() );
+$admin_second_check = softone_summarise_menu_output( $admin_second_pass, 31, 32 );
+
+if ( $admin_second_check['dynamic_count'] !== $expected_dynamic_total ) {
+    fwrite( STDERR, 'Repeated admin filtering did not produce the expected dynamic menu items.' . PHP_EOL );
+    exit( 1 );
+}
+
+if ( count( $GLOBALS['softone_wp_setup_calls'] ) !== ( $expected_dynamic_total * 2 ) ) {
+    fwrite( STDERR, 'Second admin filter pass failed to prepare each dynamic item via wp_setup_nav_menu_item().' . PHP_EOL );
     exit( 1 );
 }
 

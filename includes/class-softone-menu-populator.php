@@ -169,21 +169,26 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	 *
 	 * @return array<int, WP_Post|object>
 	 */
-	public function filter_admin_menu_items( $items, $menu, $args ) {
-		if ( ! is_admin() ) {
-			return $items;
+		public function filter_admin_menu_items( $items, $menu, $args ) {
+			if ( ! is_admin() ) {
+				return $items;
+			}
+
+			if ( ! is_array( $items ) || empty( $items ) ) {
+				return $items;
+			}
+
+			$normalised_args = $this->normalise_admin_menu_args( $menu, $args );
+			$menu_name       = $this->get_menu_name( $normalised_args );
+
+			if ( '' !== $menu_name ) {
+				$this->reset_processed_menu( $menu_name );
+			}
+
+			$items = $this->filter_menu_items( $items, $normalised_args );
+
+			return $this->prepare_admin_menu_items( $items );
 		}
-
-		if ( ! is_array( $items ) || empty( $items ) ) {
-			return $items;
-		}
-
-		$normalised_args = $this->normalise_admin_menu_args( $menu, $args );
-
-		$items = $this->filter_menu_items( $items, $normalised_args );
-
-		return $this->prepare_admin_menu_items( $items );
-	}
 
 	/**
 	 * Merge admin menu context into a standard wp_nav_menu style argument object.
@@ -362,19 +367,36 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	 *
 	 * @return bool True when the menu has already been processed.
 	 */
-	private function has_processed_menu( $menu_name ) {
-		if ( '' === $menu_name ) {
+		private function has_processed_menu( $menu_name ) {
+			if ( '' === $menu_name ) {
+				return false;
+			}
+
+			if ( isset( $this->processed_menus[ $menu_name ] ) ) {
+				return true;
+			}
+
+			$this->processed_menus[ $menu_name ] = true;
+
 			return false;
 		}
 
-		if ( isset( $this->processed_menus[ $menu_name ] ) ) {
-			return true;
+		/**
+		 * Clear the processed-menu flag to allow another injection pass.
+		 *
+		 * @param string $menu_name Menu name identifier.
+		 *
+		 * @return void
+		 */
+		private function reset_processed_menu( $menu_name ) {
+			if ( '' === $menu_name ) {
+				return;
+			}
+
+			if ( isset( $this->processed_menus[ $menu_name ] ) ) {
+				unset( $this->processed_menus[ $menu_name ] );
+			}
 		}
-
-		$this->processed_menus[ $menu_name ] = true;
-
-		return false;
-	}
 
 	/**
 	 * Locate the placeholder menu item for a given dynamic item group.
