@@ -112,7 +112,7 @@ class Softone_Woocommerce_Integration {
 if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
 $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
 } else {
-$this->version = '1.10.6';
+$this->version = '1.10.7';
 }
 		$this->plugin_name = 'softone-woocommerce-integration';
 
@@ -297,11 +297,9 @@ $this->version = '1.10.6';
 	private function define_public_hooks() {
 
 		$plugin_public = new Softone_Woocommerce_Integration_Public( $this->get_plugin_name(), $this->get_version() );
-		$menu_populator = new Softone_Menu_Populator( $this->activity_logger );
 
 		$this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_styles' );
 		$this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_scripts' );
-		$this->loader->add_filter( 'wp_nav_menu_objects', $menu_populator, 'filter_menu_items', 10, 2 );
 
 	}
 

@@ -161,7 +161,7 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	 }
 
 	/**
-	 * Filter callback that mirrors front-end menu injection inside wp-admin.
+	 * Filter callback that mirrors the dynamic menu injection inside wp-admin so editors can preview Softone entries.
 	 *
 	 * @param array<int, WP_Post|object> $items Menu items retrieved via wp_get_nav_menu_items().
 	 * @param WP_Term|object|null        $menu  Menu object for the current screen.
@@ -169,7 +169,7 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	 *
 	 * @return array<int, WP_Post|object>
 	 */
-		public function filter_admin_menu_items( $items, $menu, $args ) {
+	public function filter_admin_menu_items( $items, $menu, $args ) {
 			if ( ! is_admin() ) {
 				return $items;
 			}
