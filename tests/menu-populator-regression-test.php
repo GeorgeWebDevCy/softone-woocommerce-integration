@@ -129,6 +129,23 @@ if ( ! function_exists( '__' ) ) {
     }
 }
 
+if ( ! function_exists( 'wp_unslash' ) ) {
+    /**
+     * Mimic wp_unslash for test expectations.
+     *
+     * @param mixed $value Value to unslash.
+     *
+     * @return mixed
+     */
+    function wp_unslash( $value ) {
+        if ( is_array( $value ) ) {
+            return array_map( 'wp_unslash', $value );
+        }
+
+        return is_string( $value ) ? stripslashes( $value ) : $value;
+    }
+}
+
 $GLOBALS['softone_filters']           = array();
 $GLOBALS['softone_nav_menu_meta']     = array();
 $GLOBALS['softone_is_admin_context']  = false;
@@ -765,18 +782,30 @@ if ( count( $GLOBALS['softone_wp_setup_calls'] ) !== ( $expected_dynamic_total *
     exit( 1 );
 }
 
-$_SERVER['REQUEST_METHOD'] = 'POST';
-$_POST                    = array( 'save_menu' => 'Save Menu' );
+$menu_save_requests = array(
+    'save_menu_button'      => array( 'save_menu' => 'Save Menu' ),
+    'update-nav-menu'       => array( 'action' => 'update-nav-menu' ),
+    'update-nav_menu'       => array( 'action' => 'update-nav_menu' ),
+    'update-menu-item'      => array( 'action' => ' UPDATE-MENU-ITEM ' ),
+    'delete-menu-item'      => array( 'action' => 'delete-menu-item' ),
+    'wp_ajax_update_nav'    => array( 'action' => 'wp_ajax_update_nav_menu' ),
+    'customizer_action_key' => array( 'customize_menus_action' => 'delete-menu-item' ),
+    'menu_payload_keys'     => array( 'menu-item-db-id' => array( 'new-0' => 0 ) ),
+);
 
-$admin_save_pass = $admin_populator->filter_admin_menu_items( $admin_menu_items, $admin_menu, array() );
-$save_summary    = softone_summarise_menu_output( $admin_save_pass, 31, 32 );
+foreach ( $menu_save_requests as $scenario => $post_data ) {
+    $_SERVER['REQUEST_METHOD'] = 'POST';
+    $_POST                    = $post_data;
 
-if ( $save_summary['dynamic_count'] !== 0 ) {
-    fwrite( STDERR, 'Menu save requests should not inject dynamic items.' . PHP_EOL );
-    exit( 1 );
+    $save_result = $admin_populator->filter_admin_menu_items( $admin_menu_items, $admin_menu, array() );
+
+    if ( $save_result !== $admin_menu_items ) {
+        fwrite( STDERR, 'Menu save request "' . $scenario . '" should not alter menu items.' . PHP_EOL );
+        exit( 1 );
+    }
 }
 
-$_POST                    = array();
+$_POST                     = array();
 $_SERVER['REQUEST_METHOD'] = 'GET';
 
 $GLOBALS['softone_is_admin_context'] = false;
