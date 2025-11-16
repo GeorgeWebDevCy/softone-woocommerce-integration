@@ -1109,11 +1109,11 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	                 return null;
 	         }
 
-	         $item = clone $parent_item;
+		$item = clone $parent_item;
 
-	         $item->ID                 = $this->next_id();
-	         $item->db_id              = $item->ID;
-	         $item->menu_item_parent   = isset( $parent_item->db_id ) ? (int) $parent_item->db_id : ( isset( $parent_item->ID ) ? (int) $parent_item->ID : 0 );
+		$item->ID               = $this->next_id();
+		$item->db_id            = 0;
+		$item->menu_item_parent = $this->resolve_parent_menu_id( $parent_item );
 	         $item->object             = (string) $term->taxonomy;
 	         $item->object_id          = (int) $term->term_id;
 	         $item->type               = 'taxonomy';
@@ -1130,10 +1130,29 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	         $item->menu_order         = (int) $menu_order;
 	         $item->post_parent        = isset( $parent_item->post_parent ) ? (int) $parent_item->post_parent : 0;
 	         $item->post_status        = 'publish';
-	         $item->post_type          = 'nav_menu_item';
+		$item->post_type        = 'nav_menu_item';
 
-	         return $item;
-	 }
+		return $item;
+	}
+
+	/**
+	 * Determine the parent identifier for a generated menu item.
+	 *
+	 * @param WP_Post|object $parent_item Parent menu item reference.
+	 *
+	 * @return int
+	 */
+	private function resolve_parent_menu_id( $parent_item ) {
+		if ( isset( $parent_item->db_id ) && (int) $parent_item->db_id > 0 ) {
+			return (int) $parent_item->db_id;
+		}
+
+		if ( isset( $parent_item->ID ) ) {
+			return (int) $parent_item->ID;
+		}
+
+		return 0;
+	}
 
 	 /**
 	  * Generate a sanitized post name for the new menu item.
