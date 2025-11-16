@@ -765,6 +765,20 @@ if ( count( $GLOBALS['softone_wp_setup_calls'] ) !== ( $expected_dynamic_total *
     exit( 1 );
 }
 
+$_SERVER['REQUEST_METHOD'] = 'POST';
+$_POST                    = array( 'save_menu' => 'Save Menu' );
+
+$admin_save_pass = $admin_populator->filter_admin_menu_items( $admin_menu_items, $admin_menu, array() );
+$save_summary    = softone_summarise_menu_output( $admin_save_pass, 31, 32 );
+
+if ( $save_summary['dynamic_count'] !== 0 ) {
+    fwrite( STDERR, 'Menu save requests should not inject dynamic items.' . PHP_EOL );
+    exit( 1 );
+}
+
+$_POST                    = array();
+$_SERVER['REQUEST_METHOD'] = 'GET';
+
 $GLOBALS['softone_is_admin_context'] = false;
 
 echo 'Menu population regression checks passed.' . PHP_EOL;

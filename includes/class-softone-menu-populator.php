@@ -170,25 +170,29 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	 * @return array<int, WP_Post|object>
 	 */
 	public function filter_admin_menu_items( $items, $menu, $args ) {
-			if ( ! is_admin() ) {
-				return $items;
-			}
-
-			if ( ! is_array( $items ) || empty( $items ) ) {
-				return $items;
-			}
-
-			$normalised_args = $this->normalise_admin_menu_args( $menu, $args );
-			$menu_name       = $this->get_menu_name( $normalised_args );
-
-			if ( '' !== $menu_name ) {
-				$this->reset_processed_menu( $menu_name );
-			}
-
-			$items = $this->filter_menu_items( $items, $normalised_args );
-
-			return $this->prepare_admin_menu_items( $items );
+		if ( ! is_admin() ) {
+			return $items;
 		}
+
+		if ( ! is_array( $items ) || empty( $items ) ) {
+			return $items;
+		}
+
+		if ( $this->is_menu_save_request() ) {
+			return $items;
+		}
+
+		$normalised_args = $this->normalise_admin_menu_args( $menu, $args );
+		$menu_name       = $this->get_menu_name( $normalised_args );
+
+		if ( '' !== $menu_name ) {
+			$this->reset_processed_menu( $menu_name );
+		}
+
+		$items = $this->filter_menu_items( $items, $normalised_args );
+
+		return $this->prepare_admin_menu_items( $items );
+	}
 
 	/**
 	 * Merge admin menu context into a standard wp_nav_menu style argument object.
@@ -309,26 +313,68 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
                 return $filtered;
         }
 
-        /**
-         * Run wp_setup_nav_menu_item() over dynamically injected entries in wp-admin.
-         *
-         * @param array<int, WP_Post|object> $menu_items Menu items.
-         *
-         * @return array<int, WP_Post|object>
-         */
-        private function prepare_admin_menu_items( array $menu_items ) {
-                if ( empty( $menu_items ) || ! function_exists( 'wp_setup_nav_menu_item' ) ) {
-                        return $menu_items;
-                }
+       /**
+        * Run wp_setup_nav_menu_item() over dynamically injected entries in wp-admin.
+        *
+        * @param array<int, WP_Post|object> $menu_items Menu items.
+        *
+        * @return array<int, WP_Post|object>
+        */
+       private function prepare_admin_menu_items( array $menu_items ) {
+               if ( empty( $menu_items ) || ! function_exists( 'wp_setup_nav_menu_item' ) ) {
+                       return $menu_items;
+               }
 
-                foreach ( $menu_items as $index => $item ) {
-                        if ( $this->is_dynamic_menu_item( $item ) ) {
-                                $menu_items[ $index ] = wp_setup_nav_menu_item( $item );
-                        }
-                }
+               foreach ( $menu_items as $index => $item ) {
+                       if ( $this->is_dynamic_menu_item( $item ) ) {
+                               $menu_items[ $index ] = wp_setup_nav_menu_item( $item );
+                       }
+               }
 
-                return $menu_items;
-        }
+               return $menu_items;
+       }
+
+	/**
+	 * Determine whether the current wp-admin request is saving a menu.
+	 *
+	 * @return bool
+	 */
+	private function is_menu_save_request() {
+		if ( empty( $_SERVER['REQUEST_METHOD'] ) ) {
+			return false;
+		}
+
+		if ( 'POST' !== strtoupper( (string) $_SERVER['REQUEST_METHOD'] ) ) {
+			return false;
+		}
+
+		if ( empty( $_POST ) ) {
+			return false;
+		}
+
+		if ( isset( $_POST['save_menu'] ) ) {
+			return true;
+		}
+
+		if ( isset( $_POST['action'] ) ) {
+			$action = $_POST['action'];
+
+			if ( function_exists( 'wp_unslash' ) ) {
+				$action = wp_unslash( $action );
+			}
+
+			if ( is_string( $action ) ) {
+				$action = strtolower( trim( $action ) );
+
+				if ( in_array( $action, array( 'update', 'update-nav_menu' ), true ) ) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
 
 	 /**
 	  * Record menu building activity when a logger is available.
