@@ -272,6 +272,7 @@ class Softone_Woocommerce_Integration {
 
 		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_styles' );
 		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts' );
+		$this->loader->add_action( 'customize_controls_enqueue_scripts', $plugin_admin, 'enqueue_nav_menu_guard_scripts' );
 		$this->loader->add_action( 'admin_menu', $plugin_admin, 'register_menu' );
 		$this->loader->add_action( 'admin_init', $plugin_admin, 'register_settings' );
                 $this->loader->add_action( 'admin_post_softone_wc_integration_api_tester', $plugin_admin, 'handle_api_tester_request' );

@@ -4557,15 +4557,9 @@ array(
 )
 );
 
-if ( 'nav-menus.php' === $hook_suffix ) {
-        wp_enqueue_script(
-                'softone-nav-menu-guard',
-                plugin_dir_url( __FILE__ ) . 'js/softone-nav-menu-guard.js',
-                array(),
-                $this->version,
-                true
-        );
-}
+		if ( 'nav-menus.php' === $hook_suffix ) {
+			$this->enqueue_nav_menu_guard_scripts();
+		}
 
 $current_page = '';
 if ( isset( $_GET['page'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
@@ -4640,6 +4634,22 @@ if ( $current_page === $this->process_trace_slug ) {
 }
 
 }
+
+	/**
+	 * Enqueues the navigation menu guard script wherever menu items may be edited.
+	 *
+	 * @return void
+	 */
+	public function enqueue_nav_menu_guard_scripts() {
+		wp_enqueue_script(
+			'softone-nav-menu-guard',
+			plugin_dir_url( __FILE__ ) . 'js/softone-nav-menu-guard.js',
+			array( 'jquery' ),
+			$this->version,
+			true
+		);
+	}
+
 
 }
 

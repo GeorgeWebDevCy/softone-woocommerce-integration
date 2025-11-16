@@ -6,6 +6,8 @@
 ( function() {
 	'use strict';
 
+	var DYNAMIC_ITEM_SELECTOR = '.menu-item.softone-dynamic-menu-item';
+
 	function disableMenuItemFields( menuItem ) {
 		if ( ! menuItem ) {
 			return;
@@ -20,11 +22,8 @@
 	}
 
 	function disableDynamicMenuItems( scope ) {
-		if ( ! scope || ! scope.querySelectorAll ) {
-			return;
-		}
-
-		var menuItems = scope.querySelectorAll( '.menu-item.softone-dynamic-menu-item' );
+		var context = scope && scope.querySelectorAll ? scope : document;
+		var menuItems = context.querySelectorAll( DYNAMIC_ITEM_SELECTOR );
 
 		if ( ! menuItems.length ) {
 			return;
@@ -35,18 +34,74 @@
 		}
 	}
 
-	function init() {
-		var form = document.getElementById( 'update-nav-menu' );
+	function bindFormSubmissionGuard() {
+		document.addEventListener( 'submit', function( event ) {
+			var target = event && event.target;
 
-		if ( ! form ) {
+			if ( target && target.querySelector ) {
+				disableDynamicMenuItems( target );
+			}
+		}, true );
+	}
+
+	function observeDomChanges() {
+		if ( ! window.MutationObserver ) {
 			return;
 		}
 
-		disableDynamicMenuItems( form );
+		var observer = new window.MutationObserver( function( mutations ) {
+			for ( var i = 0; i < mutations.length; i++ ) {
+				var addedNodes = mutations[ i ].addedNodes;
 
-		form.addEventListener( 'submit', function() {
-			disableDynamicMenuItems( form );
+				for ( var nodeIndex = 0; nodeIndex < addedNodes.length; nodeIndex++ ) {
+					var node = addedNodes[ nodeIndex ];
+
+					if ( ! node || 1 !== node.nodeType ) {
+						continue;
+					}
+
+					if ( node.matches && node.matches( DYNAMIC_ITEM_SELECTOR ) ) {
+						disableMenuItemFields( node );
+					}
+
+					if ( node.querySelectorAll ) {
+						disableDynamicMenuItems( node );
+					}
+				}
+			}
 		} );
+
+		if ( document.body ) {
+			observer.observe( document.body, { childList: true, subtree: true } );
+		}
+	}
+
+	function bindAjaxRefreshHandler() {
+		if ( ! window.jQuery ) {
+			return;
+		}
+
+		window.jQuery( document ).ajaxComplete( function() {
+			disableDynamicMenuItems( document );
+		} );
+	}
+
+	function bindCustomizerEvents() {
+		if ( ! window.wp || ! wp.customize || 'function' !== typeof wp.customize.bind ) {
+			return;
+		}
+
+		wp.customize.bind( 'ready', function() {
+			disableDynamicMenuItems( document );
+		} );
+	}
+
+	function init() {
+		disableDynamicMenuItems( document );
+		bindFormSubmissionGuard();
+		observeDomChanges();
+		bindAjaxRefreshHandler();
+		bindCustomizerEvents();
 	}
 
 	if ( 'loading' === document.readyState ) {
