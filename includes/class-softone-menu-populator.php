@@ -1405,43 +1405,49 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	  *
 	  * @return WP_Post|object|null
 	  */
-	 private function create_menu_item_from_term( $term, $parent_item, $menu_order ) {
-	         if ( ! isset( $term->taxonomy, $term->term_id, $term->name ) ) {
-	                 return null;
-	         }
+	private function create_menu_item_from_term( $term, $parent_item, $menu_order ) {
+		if ( ! isset( $term->taxonomy, $term->term_id, $term->name ) ) {
+			return null;
+		}
 
-	         if ( ! function_exists( 'get_term_link' ) ) {
-	                 return null;
-	         }
+		if ( ! function_exists( 'get_term_link' ) || ! function_exists( 'wp_setup_nav_menu_item' ) ) {
+			return null;
+		}
 
-	         $url = get_term_link( $term );
+		$url = get_term_link( $term );
 
-	         if ( $this->is_wp_error( $url ) || ! is_string( $url ) ) {
-	                 return null;
-	         }
+		if ( $this->is_wp_error( $url ) || ! is_string( $url ) ) {
+			return null;
+		}
 
-		$item = clone $parent_item;
+		$menu_item_parent = $this->resolve_parent_menu_id( $parent_item );
 
-		$item->ID               = $this->next_id();
-		$item->db_id            = 0;
-		$item->menu_item_parent = $this->resolve_parent_menu_id( $parent_item );
-	         $item->object             = (string) $term->taxonomy;
-	         $item->object_id          = (int) $term->term_id;
-	         $item->type               = 'taxonomy';
-	         $item->type_label         = 'Taxonomy';
-	         $item->title              = (string) $term->name;
-	         $item->post_title         = (string) $term->name;
-	         $item->post_name          = $this->generate_post_name( $term );
-	         $item->url                = $url;
-	         $item->classes            = array( 'softone-dynamic-menu-item' );
-	         $item->xfn                = '';
-	         $item->target             = '';
-	         $item->attr_title         = '';
-	         $item->description        = '';
-	         $item->menu_order         = (int) $menu_order;
-	         $item->post_parent        = isset( $parent_item->post_parent ) ? (int) $parent_item->post_parent : 0;
-	         $item->post_status        = 'publish';
-		$item->post_type        = 'nav_menu_item';
+		$item_data = array(
+			'ID'               => $this->next_id(),
+			'db_id'            => 0,
+			'menu_item_parent' => $menu_item_parent,
+			'object'           => (string) $term->taxonomy,
+			'object_id'        => (int) $term->term_id,
+			'type'             => 'taxonomy',
+			'title'            => (string) $term->name,
+			'post_title'       => (string) $term->name,
+			'post_name'        => $this->generate_post_name( $term ),
+			'url'              => $url,
+			'classes'          => array( 'softone-dynamic-menu-item' ),
+			'xfn'              => '',
+			'target'           => '',
+			'attr_title'       => '',
+			'description'      => '',
+			'menu_order'       => (int) $menu_order,
+			'post_parent'      => 0,
+			'post_status'      => 'publish',
+			'post_type'        => 'nav_menu_item',
+		);
+
+		$item = wp_setup_nav_menu_item( (object) $item_data );
+
+		$item->menu_item_parent = (int) $menu_item_parent;
+		$item->menu_order       = (int) $menu_order;
 
 		return $item;
 	}
