@@ -375,27 +375,6 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	}
 
 	/**
-	 * Determine whether the provided menu already received dynamic items this request.
-	 *
-	 * @param string $menu_name Menu name identifier.
-	 *
-	 * @return bool True when the menu has already been processed.
-	 */
-	private function has_processed_menu( $menu_name ) {
-		if ( '' === $menu_name ) {
-			return false;
-		}
-
-		if ( isset( $this->processed_menus[ $menu_name ] ) ) {
-			return true;
-		}
-
-		$this->processed_menus[ $menu_name ] = true;
-
-		return false;
-	}
-
-	/**
 	 * Locate the placeholder menu item for a given dynamic item group.
 	 *
 	 * @param array<int, WP_Post|object> $menu_items Menu items.
@@ -404,70 +383,70 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	 * @return WP_Post|object|null
 	 */
 	private function find_placeholder_item( array $menu_items, $type ) {
-	        $config = $this->get_placeholder_config();
+		$config = $this->get_placeholder_config();
 
-	        if ( empty( $config[ $type ] ) || ! is_array( $config[ $type ] ) ) {
-	                return null;
-	        }
+		if ( empty( $config[ $type ] ) || ! is_array( $config[ $type ] ) ) {
+			return null;
+		}
 
-	        foreach ( $menu_items as $item ) {
-	                if ( $this->matches_placeholder_definition( $item, $config[ $type ] ) ) {
-	                        return $item;
-	                }
-	        }
+		foreach ( $menu_items as $item ) {
+			if ( $this->matches_placeholder_definition( $item, $config[ $type ] ) ) {
+				return $item;
+			}
+		}
 
-	        return null;
+		return null;
 	}
 
-/**
- * Retrieve configuration for locating placeholder menu items.
- *
- * The defaults target menu items titled "Brands" and "Products" to preserve
- * backwards compatibility. Site owners can override these values using the
- * `softone_wc_integration_menu_placeholder_titles` filter, or provide a richer
- * configuration (including CSS classes and menu item meta matching rules) via
- * the `softone_wc_integration_menu_placeholder_config` filter.
- *
- * @return array<string, array<string, mixed>>
- */
+	/**
+	 * Retrieve configuration for locating placeholder menu items.
+	 *
+	 * The defaults target menu items titled "Brands" and "Products" to preserve
+	 * backwards compatibility. Site owners can override these values using the
+	 * `softone_wc_integration_menu_placeholder_titles` filter, or provide a richer
+	 * configuration (including CSS classes and menu item meta matching rules) via
+	 * the `softone_wc_integration_menu_placeholder_config` filter.
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
 	private function get_placeholder_config() {
-	        if ( null !== $this->placeholder_config ) {
-	                return $this->placeholder_config;
-	        }
+		if ( null !== $this->placeholder_config ) {
+			return $this->placeholder_config;
+		}
 
-	        $default_titles = array(
-	                'brands'   => array( 'Brands' ),
-	                'products' => array( 'Products' ),
-	        );
+		$default_titles = array(
+			'brands'   => array( 'Brands' ),
+			'products' => array( 'Products' ),
+		);
 
-	        if ( function_exists( 'apply_filters' ) ) {
-	                $filtered_titles = apply_filters( 'softone_wc_integration_menu_placeholder_titles', $default_titles );
-	                $default_titles  = $this->merge_placeholder_titles( $default_titles, $filtered_titles );
-	        }
+		if ( function_exists( 'apply_filters' ) ) {
+			$filtered_titles = apply_filters( 'softone_wc_integration_menu_placeholder_titles', $default_titles );
+			$default_titles  = $this->merge_placeholder_titles( $default_titles, $filtered_titles );
+		}
 
-	        $config = array(
-	                'brands'   => array(
-	                        'titles'  => $default_titles['brands'],
-	                        'classes' => array(),
-	                        'meta'    => array(),
-	                ),
-	                'products' => array(
-	                        'titles'  => $default_titles['products'],
-	                        'classes' => array(),
-	                        'meta'    => array(),
-	                ),
-	        );
+		$config = array(
+			'brands'   => array(
+				'titles'  => $default_titles['brands'],
+				'classes' => array(),
+				'meta'    => array(),
+			),
+			'products' => array(
+				'titles'  => $default_titles['products'],
+				'classes' => array(),
+				'meta'    => array(),
+			),
+		);
 
-	        if ( function_exists( 'apply_filters' ) ) {
-	                $filtered_config = apply_filters( 'softone_wc_integration_menu_placeholder_config', $config, $default_titles );
-	                if ( is_array( $filtered_config ) ) {
-	                        $config = $this->merge_placeholder_config( $config, $filtered_config );
-	                }
-	        }
+		if ( function_exists( 'apply_filters' ) ) {
+			$filtered_config = apply_filters( 'softone_wc_integration_menu_placeholder_config', $config, $default_titles );
+			if ( is_array( $filtered_config ) ) {
+				$config = $this->merge_placeholder_config( $config, $filtered_config );
+			}
+		}
 
-	        $this->placeholder_config = $config;
+		$this->placeholder_config = $config;
 
-	        return $this->placeholder_config;
+		return $this->placeholder_config;
 	}
 
 	/**
