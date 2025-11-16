@@ -150,6 +150,7 @@ $GLOBALS['softone_filters']           = array();
 $GLOBALS['softone_nav_menu_meta']     = array();
 $GLOBALS['softone_is_admin_context']  = false;
 $GLOBALS['softone_wp_setup_calls']    = array();
+$GLOBALS['softone_wp_update_nav_menu_item_calls'] = array();
 
 if ( ! function_exists( 'add_filter' ) ) {
     /**
@@ -321,6 +322,26 @@ function softone_set_menu_item_meta( $item_id, $key, $value ) {
     }
 
     $GLOBALS['softone_nav_menu_meta'][ $item_id ][ $key ] = $value;
+}
+
+/**
+ * Record that wp_update_nav_menu_item would have been invoked for a menu item.
+ *
+ * @param string|int $menu_item_key Menu item key from the POST payload.
+ */
+function softone_track_nav_menu_save( $menu_item_key ) {
+    if ( ! isset( $GLOBALS['softone_wp_update_nav_menu_item_calls'] ) ) {
+        $GLOBALS['softone_wp_update_nav_menu_item_calls'] = array();
+    }
+
+    $GLOBALS['softone_wp_update_nav_menu_item_calls'][] = (string) $menu_item_key;
+}
+
+/**
+ * Reset the recorded wp_update_nav_menu_item calls.
+ */
+function softone_reset_nav_menu_save_tracker() {
+    $GLOBALS['softone_wp_update_nav_menu_item_calls'] = array();
 }
 
 require_once dirname( __DIR__ ) . '/includes/softone-menu-helpers.php';
@@ -803,6 +824,59 @@ foreach ( $menu_save_requests as $scenario => $post_data ) {
         fwrite( STDERR, 'Menu save request "' . $scenario . '" should not alter menu items.' . PHP_EOL );
         exit( 1 );
     }
+}
+
+// Ensure dynamic placeholder items are stripped before persistence.
+softone_reset_nav_menu_save_tracker();
+
+$_SERVER['REQUEST_METHOD'] = 'POST';
+$_POST                     = array(
+    'menu-item-db-id'     => array(
+        30              => 30,
+        'softone-temp'  => 0,
+    ),
+    'menu-item-title'     => array(
+        30              => 'Home',
+        'softone-temp'  => 'Brands',
+    ),
+    'menu-item-type'      => array(
+        30              => 'custom',
+        'softone-temp'  => 'custom',
+    ),
+    'menu-item-classes'   => array(
+        30              => '',
+        'softone-temp'  => 'softone-dynamic-menu-item menu-item',
+    ),
+    'menu-item-object-id' => array(
+        30              => 0,
+        'softone-temp'  => 0,
+    ),
+);
+
+$admin_populator->guard_menu_save_payload( null, $admin_menu->term_id );
+
+if ( isset( $_POST['menu-item-db-id']['softone-temp'] ) ) {
+    fwrite( STDERR, 'Softone placeholder entries should be removed from menu-item-db-id payloads.' . PHP_EOL );
+    exit( 1 );
+}
+
+if ( isset( $_POST['menu-item-classes']['softone-temp'] ) ) {
+    fwrite( STDERR, 'Softone placeholder entries should be removed from menu-item-classes payloads.' . PHP_EOL );
+    exit( 1 );
+}
+
+foreach ( (array) $_POST['menu-item-db-id'] as $item_key => $db_id ) {
+    softone_track_nav_menu_save( $item_key );
+}
+
+if ( in_array( 'softone-temp', $GLOBALS['softone_wp_update_nav_menu_item_calls'], true ) ) {
+    fwrite( STDERR, 'wp_update_nav_menu_item would have been called for a Softone placeholder.' . PHP_EOL );
+    exit( 1 );
+}
+
+if ( 1 !== count( $GLOBALS['softone_wp_update_nav_menu_item_calls'] ) ) {
+    fwrite( STDERR, 'Unexpected number of menu items would have been persisted.' . PHP_EOL );
+    exit( 1 );
 }
 
 $_POST                     = array();
