@@ -169,20 +169,19 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	 *
 	 * @return array<int, WP_Post|object>
 	 */
-        public function filter_admin_menu_items( $items, $menu, $args ) {
-                if ( ! is_admin() ) {
-                        return $items;
-                }
+	public function filter_admin_menu_items( $items, $menu, $args ) {
+		if ( ! is_admin() ) {
+			return $items;
+		}
 
-                if ( ! is_array( $items ) || empty( $items ) ) {
-                        return $items;
-                }
+		if ( ! is_array( $items ) || empty( $items ) ) {
+			return $items;
+		}
 
-                $normalised_args = $this->normalise_admin_menu_args( $menu, $args );
-                $filtered_items  = $this->filter_menu_items( $items, $normalised_args );
+		$normalised_args = $this->normalise_admin_menu_args( $menu, $args );
 
-                return $this->prepare_admin_menu_items( $filtered_items );
-        }
+		return $this->filter_menu_items( $items, $normalised_args );
+	}
 
 	/**
 	 * Merge admin menu context into a standard wp_nav_menu style argument object.
@@ -353,6 +352,27 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 
                 return in_array( 'softone-dynamic-menu-item', $classes, true );
         }
+
+	/**
+	 * Determine whether the provided menu already received dynamic items this request.
+	 *
+	 * @param string $menu_name Menu name identifier.
+	 *
+	 * @return bool True when the menu has already been processed.
+	 */
+	private function has_processed_menu( $menu_name ) {
+		if ( '' === $menu_name ) {
+			return false;
+		}
+
+		if ( isset( $this->processed_menus[ $menu_name ] ) ) {
+			return true;
+		}
+
+		$this->processed_menus[ $menu_name ] = true;
+
+		return false;
+	}
 
 	/**
 	 * Determine whether the provided menu already received dynamic items this request.
