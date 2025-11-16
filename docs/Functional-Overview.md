@@ -140,7 +140,7 @@ This document explains the plugin’s functionality based exclusively on the sou
 ## Public Menu Population
 
 - Class: `includes/class-softone-menu-populator.php`.
-- Hooks: filters `wp_get_nav_menu_items` inside wp-admin so the Appearance → Menus preview injects Softone entries while editors manage the tree; the storefront now relies on the saved menu structure built during that admin workflow instead of runtime injection.
+- Hooks: filters `wp_get_nav_menu_items` on both the public site and inside wp-admin so the Appearance → Menus preview and the storefront inject Softone entries beneath their placeholders at runtime.
 - Scope: only acts on the navigation menu identified by `softone_wc_integration_get_main_menu_name()` (defaults to `Main Menu`; filterable via `softone_wc_integration_main_menu_name`).
 - Behaviour:
   - Removes prior generated items marked with class `softone-dynamic-menu-item`.

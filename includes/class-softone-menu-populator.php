@@ -182,7 +182,7 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 			return $items;
 		}
 
-		$normalised_args = $this->normalise_admin_menu_args( $menu, $args );
+		$normalised_args = $this->normalise_menu_args( $menu, $args );
 		$menu_name       = $this->get_menu_name( $normalised_args );
 
 		if ( '' !== $menu_name ) {
@@ -195,14 +195,43 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	}
 
 	/**
-	 * Merge admin menu context into a standard wp_nav_menu style argument object.
+	 * Filter callback used on the public site to inject Softone menu entries at runtime.
+	 *
+	 * @param array<int, WP_Post|object>  $items Menu items retrieved via wp_get_nav_menu_items().
+	 * @param WP_Term|object|null         $menu  Menu object selected in wp_nav_menu().
+	 * @param array<string, mixed>|object $args  Arguments passed to wp_get_nav_menu_items().
+	 *
+	 * @return array<int, WP_Post|object>
+	 */
+	public function filter_public_menu_items( $items, $menu, $args ) {
+		if ( is_admin() ) {
+			return $items;
+		}
+
+		if ( ! is_array( $items ) || empty( $items ) ) {
+			return $items;
+		}
+
+		$normalised_args = $this->normalise_menu_args( $menu, $args );
+		$menu_name       = $this->get_menu_name( $normalised_args );
+
+		if ( '' !== $menu_name ) {
+			$this->reset_processed_menu( $menu_name );
+		}
+
+		return $this->filter_menu_items( $items, $normalised_args );
+	}
+
+
+	/**
+	 * Merge menu context into a standard wp_nav_menu style argument object.
 	 *
 	 * @param WP_Term|object|null         $menu Menu term currently being edited.
 	 * @param array<string, mixed>|object $args Original arguments from wp_get_nav_menu_items().
 	 *
 	 * @return array<string, mixed>|object
 	 */
-	private function normalise_admin_menu_args( $menu, $args ) {
+	private function normalise_menu_args( $menu, $args ) {
 		$menu_id = 0;
 
 		if ( is_object( $menu ) && isset( $menu->term_id ) ) {

@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.10.9
+Stable tag: 1.10.10
 =======
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -23,7 +23,7 @@ Softone WooCommerce Integration keeps your catalogue, shoppers, and sales aligne
 * **Order export** – Sends WooCommerce orders to SoftOne SALDOC documents once orders reach the configured statuses and records the resulting document ID back on the order.
 * **API tester** – Provides an in-dashboard tester with sample payload presets so administrators can validate credentials, run ad-hoc calls, and inspect the raw responses returned by SoftOne.
 * **Category log viewer** – Surfaces category synchronisation entries aggregated from WooCommerce logs to make diagnosing catalogue imports easier.
-* **Menu population helpers** – Optionally extend WooCommerce menu structures to include synced SoftOne product categories, even when the site does not expose brand taxonomies. The Appearance → Menus preview injects the virtual Softone category and brand entries beneath the configured placeholders so editors can verify the tree before saving, and the storefront now reads from that persisted menu structure instead of relying on runtime injection. Placeholder menu items can be translated or retitled via the `softone_wc_integration_menu_placeholder_titles` filter, or matched via metadata using `softone_wc_integration_menu_placeholder_config`.
+* **Menu population helpers** – Optionally extend WooCommerce menu structures to include synced SoftOne product categories, even when the site does not expose brand taxonomies. The Appearance → Menus preview and the public storefront both inject the virtual Softone category and brand entries beneath the configured placeholders at runtime via the `wp_get_nav_menu_items` filter so editors can verify the tree before saving and shoppers always see the latest taxonomy structure. Placeholder menu items can be translated or retitled via the `softone_wc_integration_menu_placeholder_titles` filter, or matched via metadata using `softone_wc_integration_menu_placeholder_config`.
 
 = Prerequisites =
 
@@ -75,10 +75,13 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Authentication failures** – Recheck the endpoint URL formatting, confirm that the API user has access to the specified company/branch/module, and verify that firewalls allow outbound connections to the SoftOne server. Use the API tester to validate credentials with a simple `authenticate` request.
 * **Orders not exporting** – Ensure the Default SALDOC Series is configured, confirm that the customer synchronisation completed (look for notes on the order), and inspect the WooCommerce order notes/logs for `[SO-ORD-###]` messages indicating what failed.
 * **No categories appearing in menus** – Confirm that WooCommerce’s product categories exist and that recent item imports completed. The Category Sync Logs screen highlights any taxonomy creation issues.
-* **Verify Softone placeholders** – Visit **Appearance → Menus** and load the configured main menu to confirm the virtual Softone category and brand entries appear beneath their placeholders. The admin preview still injects those unsaved links for verification, while the public menu now reads the saved structure generated during the backend population workflow.
+* **Verify Softone placeholders** – Visit **Appearance → Menus** and load the configured main menu to confirm the virtual Softone category and brand entries appear beneath their placeholders. Both the admin preview and the public menu inject those runtime links under their placeholders, so confirming the tree here mirrors what visitors see on the storefront.
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Cron_Manager::schedule_event()`.
 
 == Changelog ==
+
+= 1.10.10 =
+* Feature: Inject Softone categories and brands on the public storefront at runtime via `wp_get_nav_menu_items` so menu placeholders always expand without saving generated items.
 
 = 1.10.9 =
 * Fix: Skip injecting virtual Softone menu items during menu save requests so WordPress no longer triggers “The given object ID is not that of a menu item.” errors.
