@@ -1233,15 +1233,15 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	                 return $this->category_terms;
 	         }
 
-	         // Pull every category (even empty), ordered by name
-	         $terms = get_terms(
-	                 array(
-	                         'taxonomy'   => 'product_cat',
-	                         'hide_empty' => false,
-	                         'orderby'    => 'name',
-	                         'order'      => 'ASC',
-	                 )
-	         );
+		// Pull every category (even empty) using the WooCommerce menu order
+		$terms = get_terms(
+			array(
+				'taxonomy'   => 'product_cat',
+				'hide_empty' => false,
+				'orderby'    => 'menu_order',
+				'order'      => 'ASC',
+			)
+		);
 
 	         if ( $this->is_wp_error( $terms ) ) {
 	                 $this->category_terms = array();

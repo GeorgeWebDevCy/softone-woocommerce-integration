@@ -67,20 +67,71 @@ if ( ! function_exists( 'get_terms' ) ) {
      *
      * @return array<int, object>
      */
-    function get_terms( $args ) {
-        if ( empty( $args['taxonomy'] ) ) {
-            return array();
-        }
-
-        $taxonomy = (array) $args['taxonomy'];
-        $taxonomy = reset( $taxonomy );
-
-        if ( empty( $GLOBALS['softone_mock_terms'][ $taxonomy ] ) ) {
-            return array();
-        }
-
-        return $GLOBALS['softone_mock_terms'][ $taxonomy ];
+function get_terms( $args ) {
+    if ( empty( $args['taxonomy'] ) ) {
+        return array();
     }
+
+    $taxonomy = (array) $args['taxonomy'];
+    $taxonomy = reset( $taxonomy );
+
+    if ( empty( $GLOBALS['softone_mock_terms'][ $taxonomy ] ) ) {
+        return array();
+    }
+
+    $terms   = $GLOBALS['softone_mock_terms'][ $taxonomy ];
+    $orderby = isset( $args['orderby'] ) ? (string) $args['orderby'] : '';
+
+    if ( $orderby ) {
+        $order = isset( $args['order'] ) ? strtoupper( (string) $args['order'] ) : 'ASC';
+
+        usort(
+            $terms,
+            static function ( $a, $b ) use ( $orderby, $order ) {
+                $value_a = null;
+                $value_b = null;
+
+                switch ( $orderby ) {
+                    case 'menu_order':
+                    case 'term_order':
+                        $value_a = isset( $a->menu_order ) ? (int) $a->menu_order : ( isset( $a->term_order ) ? (int) $a->term_order : 0 );
+                        $value_b = isset( $b->menu_order ) ? (int) $b->menu_order : ( isset( $b->term_order ) ? (int) $b->term_order : 0 );
+                        break;
+                    case 'name':
+                        $value_a = isset( $a->name ) ? (string) $a->name : '';
+                        $value_b = isset( $b->name ) ? (string) $b->name : '';
+
+                        return ( 'DESC' === $order ) ? strcasecmp( $value_b, $value_a ) : strcasecmp( $value_a, $value_b );
+                    default:
+                        return 0;
+                }
+
+                if ( $value_a === $value_b ) {
+                    $id_a = isset( $a->term_id ) ? (int) $a->term_id : 0;
+                    $id_b = isset( $b->term_id ) ? (int) $b->term_id : 0;
+
+                    if ( $id_a === $id_b ) {
+                        return 0;
+                    }
+
+                    if ( 'DESC' === $order ) {
+                        return ( $id_a < $id_b ) ? 1 : -1;
+                    }
+
+                    return ( $id_a < $id_b ) ? -1 : 1;
+                }
+
+                if ( 'DESC' === $order ) {
+                    return ( $value_a < $value_b ) ? 1 : -1;
+                }
+
+                return ( $value_a < $value_b ) ? -1 : 1;
+            }
+        );
+    }
+
+    return $terms;
+}
 }
 
 if ( ! function_exists( 'get_term_link' ) ) {
@@ -493,12 +544,14 @@ function softone_build_mock_terms() {
     $category_terms = array();
 
     foreach ( array(
-        array( 'term_id' => 10, 'name' => 'Accessories', 'slug' => 'accessories', 'parent' => 0 ),
-        array( 'term_id' => 11, 'name' => 'Belts', 'slug' => 'belts', 'parent' => 10 ),
-        array( 'term_id' => 12, 'name' => 'Scarves', 'slug' => 'scarves', 'parent' => 10 ),
-        array( 'term_id' => 20, 'name' => 'Clothing', 'slug' => 'clothing', 'parent' => 0 ),
-        array( 'term_id' => 21, 'name' => 'Pants', 'slug' => 'pants', 'parent' => 20 ),
-        array( 'term_id' => 22, 'name' => 'Shirts', 'slug' => 'shirts', 'parent' => 20 ),
+        array( 'term_id' => 20, 'name' => 'Clothing', 'slug' => 'clothing', 'parent' => 0, 'menu_order' => 1, 'term_order' => 1 ),
+        array( 'term_id' => 21, 'name' => 'Pants', 'slug' => 'pants', 'parent' => 20, 'menu_order' => 2, 'term_order' => 2 ),
+        array( 'term_id' => 23, 'name' => 'Jeans', 'slug' => 'jeans', 'parent' => 21, 'menu_order' => 2, 'term_order' => 2 ),
+        array( 'term_id' => 24, 'name' => 'Chinos', 'slug' => 'chinos', 'parent' => 21, 'menu_order' => 1, 'term_order' => 1 ),
+        array( 'term_id' => 22, 'name' => 'Shirts', 'slug' => 'shirts', 'parent' => 20, 'menu_order' => 1, 'term_order' => 1 ),
+        array( 'term_id' => 10, 'name' => 'Accessories', 'slug' => 'accessories', 'parent' => 0, 'menu_order' => 2, 'term_order' => 2 ),
+        array( 'term_id' => 11, 'name' => 'Scarves', 'slug' => 'scarves', 'parent' => 10, 'menu_order' => 1, 'term_order' => 1 ),
+        array( 'term_id' => 12, 'name' => 'Belts', 'slug' => 'belts', 'parent' => 10, 'menu_order' => 2, 'term_order' => 2 ),
     ) as $data ) {
         $term            = (object) $data;
         $term->taxonomy  = 'product_cat';
@@ -533,10 +586,11 @@ $result = $menu_populator->filter_menu_items( $main_menu_items, $main_args );
 $summary = softone_summarise_menu_output( $result, 2, 3 );
 
 $expected_brand_children = array( 'Alpha', 'Beta', 'Gamma' );
-$expected_top_categories = array( 'Accessories', 'Clothing' );
+$expected_top_categories = array( 'Clothing', 'Accessories' );
 $expected_category_tree  = array(
-    'Accessories' => array( 'Belts', 'Scarves' ),
-    'Clothing'    => array( 'Pants', 'Shirts' ),
+    'Clothing'    => array( 'Shirts', 'Pants' ),
+    'Pants'       => array( 'Chinos', 'Jeans' ),
+    'Accessories' => array( 'Scarves', 'Belts' ),
 );
 $expected_dynamic_total  = count( $expected_brand_children ) + count( $expected_top_categories ) + array_sum( array_map( 'count', $expected_category_tree ) );
 
