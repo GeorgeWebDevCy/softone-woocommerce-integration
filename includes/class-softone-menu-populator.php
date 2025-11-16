@@ -296,13 +296,33 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	 /**
 	  * Determine whether the current menu is the main menu.
 	  *
-	  * @param stdClass|array $args Menu arguments.
-	  *
-	  * @return bool
-	  */
-	 private function is_main_menu( $args ) {
-	         return softone_wc_integration_get_main_menu_name() === $this->get_menu_name( $args );
-	 }
+         * @param stdClass|array $args Menu arguments.
+         *
+         * @return bool
+         */
+	private function is_main_menu( $args ) {
+		$target_name = softone_wc_integration_get_main_menu_name();
+		$menu_name   = $this->get_menu_name( $args );
+
+		if ( '' === $target_name || '' === $menu_name ) {
+			return false;
+		}
+
+		if ( 0 === strcasecmp( $target_name, $menu_name ) ) {
+			return true;
+		}
+
+		if ( function_exists( 'sanitize_title' ) ) {
+			$target_slug = sanitize_title( $target_name );
+			$menu_slug   = sanitize_title( $menu_name );
+
+			if ( '' !== $target_slug && $target_slug === $menu_slug ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
 
 	 /**
 	  * Determine the current menu name based on filter arguments.
