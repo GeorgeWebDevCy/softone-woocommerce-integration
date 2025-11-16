@@ -50,6 +50,13 @@ private $category_terms = null;
  */
 private $placeholder_config = null;
 
+/**
+ * Track menus already processed during the current request.
+ *
+ * @var array<string, bool>
+ */
+private $processed_menus = array();
+
 	 /**
 	  * Counter for generating temporary menu item IDs.
 	  *
@@ -85,9 +92,14 @@ private $placeholder_config = null;
 	                 return $menu_items;
 	         }
 
+	         $menu_name            = $this->get_menu_name( $args );
+
+		if ( '' !== $menu_name && $this->has_processed_menu( $menu_name ) ) {
+			return $menu_items;
+		}
+
 	         $menu_items = $this->strip_dynamic_items( $menu_items );
 
-	         $menu_name            = $this->get_menu_name( $args );
 	         $brand_items_added    = 0;
 	         $category_items_added = 0;
 
@@ -147,6 +159,67 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 
 	         return $menu_items;
 	 }
+
+	/**
+	 * Filter callback that mirrors front-end menu injection inside wp-admin.
+	 *
+	 * @param array<int, WP_Post|object> $items Menu items retrieved via wp_get_nav_menu_items().
+	 * @param WP_Term|object|null        $menu  Menu object for the current screen.
+	 * @param array<string, mixed>|object $args Original arguments passed to wp_get_nav_menu_items().
+	 *
+	 * @return array<int, WP_Post|object>
+	 */
+	public function filter_admin_menu_items( $items, $menu, $args ) {
+		if ( ! is_admin() ) {
+			return $items;
+		}
+
+		if ( ! is_array( $items ) || empty( $items ) ) {
+			return $items;
+		}
+
+		$normalised_args = $this->normalise_admin_menu_args( $menu, $args );
+
+		return $this->filter_menu_items( $items, $normalised_args );
+	}
+
+	/**
+	 * Merge admin menu context into a standard wp_nav_menu style argument object.
+	 *
+	 * @param WP_Term|object|null         $menu Menu term currently being edited.
+	 * @param array<string, mixed>|object $args Original arguments from wp_get_nav_menu_items().
+	 *
+	 * @return array<string, mixed>|object
+	 */
+	private function normalise_admin_menu_args( $menu, $args ) {
+		$menu_id = 0;
+
+		if ( is_object( $menu ) && isset( $menu->term_id ) ) {
+			$menu_id = (int) $menu->term_id;
+		}
+
+		if ( is_array( $args ) ) {
+			$args['menu'] = $menu;
+
+			if ( $menu_id && ! isset( $args['menu_id'] ) ) {
+				$args['menu_id'] = $menu_id;
+			}
+
+			return $args;
+		}
+
+		if ( ! is_object( $args ) ) {
+			$args = new stdClass();
+		}
+
+		$args->menu = $menu;
+
+		if ( $menu_id && ! isset( $args->menu_id ) ) {
+			$args->menu_id = $menu_id;
+		}
+
+		return $args;
+	}
 
 	 /**
 	  * Determine whether the current menu is the main menu.
@@ -245,6 +318,27 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 
 	         $this->activity_logger->log( 'menu_build', $action, $message, $context );
 	 }
+
+	/**
+	 * Determine whether the provided menu already received dynamic items this request.
+	 *
+	 * @param string $menu_name Menu name identifier.
+	 *
+	 * @return bool True when the menu has already been processed.
+	 */
+	private function has_processed_menu( $menu_name ) {
+		if ( '' === $menu_name ) {
+			return false;
+		}
+
+		if ( isset( $this->processed_menus[ $menu_name ] ) ) {
+			return true;
+		}
+
+		$this->processed_menus[ $menu_name ] = true;
+
+		return false;
+	}
 
 	/**
 	 * Locate the placeholder menu item for a given dynamic item group.
