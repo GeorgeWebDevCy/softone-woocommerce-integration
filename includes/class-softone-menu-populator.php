@@ -279,11 +279,11 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	  *
 	  * @return array<int, WP_Post|object>
 	  */
-	 private function strip_dynamic_items( array $menu_items ) {
-	         $filtered = array();
+        private function strip_dynamic_items( array $menu_items ) {
+                $filtered = array();
 
-	         foreach ( $menu_items as $item ) {
-	                 $classes = array();
+                foreach ( $menu_items as $item ) {
+                        $classes = array();
 	                 if ( isset( $item->classes ) ) {
 	                         if ( is_array( $item->classes ) ) {
 	                                 $classes = $item->classes;
@@ -299,8 +299,29 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	                 $filtered[] = $item;
 	         }
 
-	         return $filtered;
-	 }
+                return $filtered;
+        }
+
+        /**
+         * Run wp_setup_nav_menu_item() over dynamically injected entries in wp-admin.
+         *
+         * @param array<int, WP_Post|object> $menu_items Menu items.
+         *
+         * @return array<int, WP_Post|object>
+         */
+        private function prepare_admin_menu_items( array $menu_items ) {
+                if ( empty( $menu_items ) || ! function_exists( 'wp_setup_nav_menu_item' ) ) {
+                        return $menu_items;
+                }
+
+                foreach ( $menu_items as $index => $item ) {
+                        if ( $this->is_dynamic_menu_item( $item ) ) {
+                                $menu_items[ $index ] = wp_setup_nav_menu_item( $item );
+                        }
+                }
+
+                return $menu_items;
+        }
 
 	 /**
 	  * Record menu building activity when a logger is available.
@@ -311,13 +332,47 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	  *
 	  * @return void
 	  */
-	 private function log_activity( $action, $message, array $context = array() ) {
-	         if ( ! $this->activity_logger || ! method_exists( $this->activity_logger, 'log' ) ) {
-	                 return;
-	         }
+        private function log_activity( $action, $message, array $context = array() ) {
+                if ( ! $this->activity_logger || ! method_exists( $this->activity_logger, 'log' ) ) {
+                        return;
+                }
 
-	         $this->activity_logger->log( 'menu_build', $action, $message, $context );
-	 }
+                $this->activity_logger->log( 'menu_build', $action, $message, $context );
+        }
+
+        /**
+         * Determine if the provided menu item was injected dynamically.
+         *
+         * @param WP_Post|object $item Menu item to inspect.
+         *
+         * @return bool
+         */
+        private function is_dynamic_menu_item( $item ) {
+                $classes = $this->extract_menu_item_classes( $item );
+
+                return in_array( 'softone-dynamic-menu-item', $classes, true );
+        }
+
+	/**
+	 * Determine whether the provided menu already received dynamic items this request.
+	 *
+	 * @param string $menu_name Menu name identifier.
+	 *
+	 * @return bool True when the menu has already been processed.
+	 */
+	private function has_processed_menu( $menu_name ) {
+		if ( '' === $menu_name ) {
+			return false;
+		}
+
+		if ( isset( $this->processed_menus[ $menu_name ] ) ) {
+			return true;
+		}
+
+		$this->processed_menus[ $menu_name ] = true;
+
+		return false;
+	}
 
 	/**
 	 * Determine whether the provided menu already received dynamic items this request.

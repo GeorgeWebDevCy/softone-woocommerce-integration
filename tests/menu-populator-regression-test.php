@@ -129,8 +129,10 @@ if ( ! function_exists( '__' ) ) {
     }
 }
 
-$GLOBALS['softone_filters']       = array();
-$GLOBALS['softone_nav_menu_meta'] = array();
+$GLOBALS['softone_filters']           = array();
+$GLOBALS['softone_nav_menu_meta']     = array();
+$GLOBALS['softone_is_admin_context']  = false;
+$GLOBALS['softone_wp_setup_calls']    = array();
 
 if ( ! function_exists( 'add_filter' ) ) {
     /**
@@ -158,6 +160,37 @@ if ( ! function_exists( 'add_filter' ) ) {
         );
 
         return true;
+    }
+}
+
+if ( ! function_exists( 'is_admin' ) ) {
+    /**
+     * Toggle admin context for the test harness.
+     *
+     * @return bool
+     */
+    function is_admin() {
+        return ! empty( $GLOBALS['softone_is_admin_context'] );
+    }
+}
+
+if ( ! function_exists( 'wp_setup_nav_menu_item' ) ) {
+    /**
+     * Record menu items processed via wp_setup_nav_menu_item().
+     *
+     * @param object $menu_item Menu item.
+     *
+     * @return object
+     */
+    function wp_setup_nav_menu_item( $menu_item ) {
+        if ( ! isset( $GLOBALS['softone_wp_setup_calls'] ) ) {
+            $GLOBALS['softone_wp_setup_calls'] = array();
+        }
+
+        $GLOBALS['softone_wp_setup_calls'][] = isset( $menu_item->ID ) ? $menu_item->ID : null;
+        $menu_item->processed_by_setup       = true;
+
+        return $menu_item;
     }
 }
 
@@ -664,6 +697,36 @@ if ( $meta_summary['dynamic_count'] !== $expected_dynamic_total ) {
 
 softone_reset_filters();
 softone_reset_menu_meta();
+
+$GLOBALS['softone_is_admin_context'] = true;
+$GLOBALS['softone_wp_setup_calls']   = array();
+
+$admin_menu_items = array(
+    softone_create_menu_item( 30, 'Home', 0, 1 ),
+    softone_create_menu_item( 31, 'Brands', 0, 2 ),
+    softone_create_menu_item( 32, 'Products', 0, 3 ),
+);
+
+$admin_menu = (object) array(
+    'term_id' => 501,
+    'name'    => softone_wc_integration_get_main_menu_name(),
+);
+
+$admin_populator = new Softone_Menu_Populator();
+$admin_result    = $admin_populator->filter_admin_menu_items( $admin_menu_items, $admin_menu, array() );
+$admin_summary   = softone_summarise_menu_output( $admin_result, 31, 32 );
+
+if ( $admin_summary['dynamic_count'] !== $expected_dynamic_total ) {
+    fwrite( STDERR, 'Admin filter did not append the expected dynamic menu items.' . PHP_EOL );
+    exit( 1 );
+}
+
+if ( count( $GLOBALS['softone_wp_setup_calls'] ) !== $expected_dynamic_total ) {
+    fwrite( STDERR, 'Admin filter failed to prepare each dynamic item via wp_setup_nav_menu_item().' . PHP_EOL );
+    exit( 1 );
+}
+
+$GLOBALS['softone_is_admin_context'] = false;
 
 echo 'Menu population regression checks passed.' . PHP_EOL;
 exit( 0 );
