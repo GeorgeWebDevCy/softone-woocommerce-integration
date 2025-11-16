@@ -341,6 +341,25 @@ function softone_create_menu_item( $id, $title, $parent = 0, $order = 0 ) {
 }
 
 /**
+ * Retrieve the best available identifier for a nav menu item.
+ *
+ * @param object $item Menu item reference.
+ *
+ * @return int
+ */
+function softone_get_menu_item_identifier( $item ) {
+    if ( isset( $item->db_id ) && (int) $item->db_id !== 0 ) {
+        return (int) $item->db_id;
+    }
+
+    if ( isset( $item->ID ) ) {
+        return (int) $item->ID;
+    }
+
+    return 0;
+}
+
+/**
  * Summarise dynamic menu output for assertions.
  *
  * @param array<int, object> $items              Menu items.
@@ -385,7 +404,12 @@ function softone_summarise_menu_output( array $items, $brand_parent_id, $product
                 $summary['category_tree'] = array();
             }
 
-            $category_id = (int) $item->db_id;
+            $category_id = softone_get_menu_item_identifier( $item );
+
+            if ( 0 === $category_id ) {
+                continue;
+            }
+
             $category_id_to_title[ $category_id ] = $item->title;
 
             if ( (int) $product_parent_id === (int) $item->menu_item_parent ) {
