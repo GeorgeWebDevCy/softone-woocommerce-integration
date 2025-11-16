@@ -109,11 +109,11 @@ class Softone_Woocommerce_Integration {
          * @since    1.0.0
          */
 	public function __construct() {
-                if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
-                        $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
-                } else {
-                        $this->version = '1.10.11';
-                }
+if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
+$this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
+} else {
+$this->version = '1.10.12';
+}
 		$this->plugin_name = 'softone-woocommerce-integration';
 
 		$this->load_dependencies();
@@ -284,7 +284,8 @@ class Softone_Woocommerce_Integration {
 		$this->loader->add_action( 'wp_ajax_' . $plugin_admin->get_process_trace_action(), $plugin_admin, 'handle_process_trace_ajax' );
 		$this->loader->add_action( 'wp_ajax_' . $plugin_admin->get_item_import_ajax_action(), $plugin_admin, 'handle_item_import_ajax' );
 		$this->loader->add_action( 'wp_ajax_' . $plugin_admin->get_delete_main_menu_ajax_action(), $plugin_admin, 'handle_delete_main_menu_ajax' );
-		$this->loader->add_filter( 'wp_get_nav_menu_items', $admin_menu_populator, 'filter_admin_menu_items', 10, 3 );
+$this->loader->add_filter( 'wp_get_nav_menu_items', $admin_menu_populator, 'filter_admin_menu_items', 10, 3 );
+$this->loader->add_filter( 'pre_wp_update_nav_menu', $admin_menu_populator, 'guard_menu_save_payload', 10, 2 );
 
 	}
 

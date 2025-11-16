@@ -195,6 +195,38 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	}
 
 	/**
+	 * Strip Softone placeholder menu items out of wp-admin menu save requests.
+	 *
+	 * @param mixed      $result               Short-circuit value for wp_update_nav_menu().
+	 * @param int|string $nav_menu_selected_id Selected menu identifier.
+	 *
+	 * @return mixed
+	 */
+	public function guard_menu_save_payload( $result, $nav_menu_selected_id ) {
+		if ( ! $this->is_menu_save_request() ) {
+			return $result;
+		}
+
+		$skipped_items = $this->remove_dynamic_menu_items_from_post_data();
+
+		if ( empty( $skipped_items ) ) {
+			return $result;
+		}
+
+		$this->log_activity(
+			'skip_dynamic_menu_save',
+			__( 'Skipped saving Softone placeholder menu items.', 'softone-woocommerce-integration' ),
+			array(
+				'menu_id'       => (int) $nav_menu_selected_id,
+				'skipped_count' => count( $skipped_items ),
+				'skipped_keys'  => array_values( $skipped_items ),
+			)
+		);
+
+		return $result;
+	}
+
+	/**
 	 * Filter callback used on the public site to inject Softone menu entries at runtime.
 	 *
 	 * @param array<int, WP_Post|object>  $items Menu items retrieved via wp_get_nav_menu_items().
@@ -474,6 +506,118 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 		}
 
 		return false;
+	}
+
+	/**
+	 * Remove dynamically generated Softone menu items from the POST payload.
+	 *
+	 * @return array<int, string> Keys removed from the payload.
+	 */
+	private function remove_dynamic_menu_items_from_post_data() {
+		if ( empty( $_POST['menu-item-classes'] ) || ! is_array( $_POST['menu-item-classes'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+			return array();
+		}
+
+		$classes = $_POST['menu-item-classes']; // phpcs:ignore WordPress.Security.NonceVerification
+
+		if ( function_exists( 'wp_unslash' ) ) {
+			$classes = wp_unslash( $classes );
+		}
+
+		$removed_keys = array();
+
+		foreach ( $classes as $item_key => $raw_value ) {
+			$item_classes = $this->parse_menu_item_class_value( $raw_value );
+
+			if ( in_array( 'softone-dynamic-menu-item', $item_classes, true ) ) {
+				$this->prune_menu_item_post_data( $item_key );
+				$removed_keys[] = (string) $item_key;
+			}
+		}
+
+		return $removed_keys;
+	}
+
+	/**
+	 * Convert a posted menu item class value into an array of class names.
+	 *
+	 * @param mixed $value Raw class data read from $_POST.
+	 *
+	 * @return array<int, string>
+	 */
+	private function parse_menu_item_class_value( $value ) {
+		if ( is_array( $value ) ) {
+			$value = implode( ' ', $value );
+		}
+
+		if ( ! is_string( $value ) ) {
+			return array();
+		}
+
+		$value = trim( $value );
+
+		if ( '' === $value ) {
+			return array();
+		}
+
+		$parts = preg_split( '/\s+/', $value );
+
+		if ( false === $parts ) {
+			return array();
+		}
+
+		return array_values( array_filter( array_map( 'trim', $parts ) ) );
+	}
+
+	/**
+	 * Remove a menu item from all known nav menu payload arrays.
+	 *
+	 * @param string|int $item_key Identifier used in the menu form arrays.
+	 *
+	 * @return void
+	 */
+	private function prune_menu_item_post_data( $item_key ) {
+		if ( '' === (string) $item_key ) {
+			return;
+		}
+
+		foreach ( $this->get_menu_item_post_payload_keys() as $payload_key ) {
+			if ( empty( $_POST[ $payload_key ] ) || ! is_array( $_POST[ $payload_key ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+				continue;
+			}
+
+			if ( array_key_exists( $item_key, $_POST[ $payload_key ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+				unset( $_POST[ $payload_key ][ $item_key ] ); // phpcs:ignore WordPress.Security.NonceVerification
+
+				if ( empty( $_POST[ $payload_key ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+					unset( $_POST[ $payload_key ] ); // phpcs:ignore WordPress.Security.NonceVerification
+				}
+			}
+		}
+	}
+
+	/**
+	 * Retrieve the known nav menu payload keys used during menu saves.
+	 *
+	 * @return array<int, string>
+	 */
+	private function get_menu_item_post_payload_keys() {
+		return array(
+			'menu-item-db-id',
+			'menu-item-object-id',
+			'menu-item-object',
+			'menu-item-parent-id',
+			'menu-item-position',
+			'menu-item-type',
+			'menu-item-title',
+			'menu-item-url',
+			'menu-item-description',
+			'menu-item-attr-title',
+			'menu-item-target',
+			'menu-item-classes',
+			'menu-item-xfn',
+			'menu-item-status',
+		);
 	}
 
 
