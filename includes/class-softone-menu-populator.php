@@ -50,6 +50,13 @@ private $category_terms = null;
  */
 private $placeholder_config = null;
 
+/**
+ * Track menus already processed during the current request.
+ *
+ * @var array<string, bool>
+ */
+private $processed_menus = array();
+
 	 /**
 	  * Counter for generating temporary menu item IDs.
 	  *
@@ -85,9 +92,14 @@ private $placeholder_config = null;
 	                 return $menu_items;
 	         }
 
+	         $menu_name            = $this->get_menu_name( $args );
+
+		if ( '' !== $menu_name && $this->has_processed_menu( $menu_name ) ) {
+			return $menu_items;
+		}
+
 	         $menu_items = $this->strip_dynamic_items( $menu_items );
 
-	         $menu_name            = $this->get_menu_name( $args );
 	         $brand_items_added    = 0;
 	         $category_items_added = 0;
 
@@ -148,6 +160,68 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	         return $menu_items;
 	 }
 
+	/**
+	 * Filter callback that mirrors front-end menu injection inside wp-admin.
+	 *
+	 * @param array<int, WP_Post|object> $items Menu items retrieved via wp_get_nav_menu_items().
+	 * @param WP_Term|object|null        $menu  Menu object for the current screen.
+	 * @param array<string, mixed>|object $args Original arguments passed to wp_get_nav_menu_items().
+	 *
+	 * @return array<int, WP_Post|object>
+	 */
+        public function filter_admin_menu_items( $items, $menu, $args ) {
+                if ( ! is_admin() ) {
+                        return $items;
+                }
+
+                if ( ! is_array( $items ) || empty( $items ) ) {
+                        return $items;
+                }
+
+                $normalised_args = $this->normalise_admin_menu_args( $menu, $args );
+                $filtered_items  = $this->filter_menu_items( $items, $normalised_args );
+
+                return $this->prepare_admin_menu_items( $filtered_items );
+        }
+
+	/**
+	 * Merge admin menu context into a standard wp_nav_menu style argument object.
+	 *
+	 * @param WP_Term|object|null         $menu Menu term currently being edited.
+	 * @param array<string, mixed>|object $args Original arguments from wp_get_nav_menu_items().
+	 *
+	 * @return array<string, mixed>|object
+	 */
+	private function normalise_admin_menu_args( $menu, $args ) {
+		$menu_id = 0;
+
+		if ( is_object( $menu ) && isset( $menu->term_id ) ) {
+			$menu_id = (int) $menu->term_id;
+		}
+
+		if ( is_array( $args ) ) {
+			$args['menu'] = $menu;
+
+			if ( $menu_id && ! isset( $args['menu_id'] ) ) {
+				$args['menu_id'] = $menu_id;
+			}
+
+			return $args;
+		}
+
+		if ( ! is_object( $args ) ) {
+			$args = new stdClass();
+		}
+
+		$args->menu = $menu;
+
+		if ( $menu_id && ! isset( $args->menu_id ) ) {
+			$args->menu_id = $menu_id;
+		}
+
+		return $args;
+	}
+
 	 /**
 	  * Determine whether the current menu is the main menu.
 	  *
@@ -206,11 +280,11 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	  *
 	  * @return array<int, WP_Post|object>
 	  */
-	 private function strip_dynamic_items( array $menu_items ) {
-	         $filtered = array();
+        private function strip_dynamic_items( array $menu_items ) {
+                $filtered = array();
 
-	         foreach ( $menu_items as $item ) {
-	                 $classes = array();
+                foreach ( $menu_items as $item ) {
+                        $classes = array();
 	                 if ( isset( $item->classes ) ) {
 	                         if ( is_array( $item->classes ) ) {
 	                                 $classes = $item->classes;
@@ -226,8 +300,29 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	                 $filtered[] = $item;
 	         }
 
-	         return $filtered;
-	 }
+                return $filtered;
+        }
+
+        /**
+         * Run wp_setup_nav_menu_item() over dynamically injected entries in wp-admin.
+         *
+         * @param array<int, WP_Post|object> $menu_items Menu items.
+         *
+         * @return array<int, WP_Post|object>
+         */
+        private function prepare_admin_menu_items( array $menu_items ) {
+                if ( empty( $menu_items ) || ! function_exists( 'wp_setup_nav_menu_item' ) ) {
+                        return $menu_items;
+                }
+
+                foreach ( $menu_items as $index => $item ) {
+                        if ( $this->is_dynamic_menu_item( $item ) ) {
+                                $menu_items[ $index ] = wp_setup_nav_menu_item( $item );
+                        }
+                }
+
+                return $menu_items;
+        }
 
 	 /**
 	  * Record menu building activity when a logger is available.
@@ -238,13 +333,47 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 	  *
 	  * @return void
 	  */
-	 private function log_activity( $action, $message, array $context = array() ) {
-	         if ( ! $this->activity_logger || ! method_exists( $this->activity_logger, 'log' ) ) {
-	                 return;
-	         }
+        private function log_activity( $action, $message, array $context = array() ) {
+                if ( ! $this->activity_logger || ! method_exists( $this->activity_logger, 'log' ) ) {
+                        return;
+                }
 
-	         $this->activity_logger->log( 'menu_build', $action, $message, $context );
-	 }
+                $this->activity_logger->log( 'menu_build', $action, $message, $context );
+        }
+
+        /**
+         * Determine if the provided menu item was injected dynamically.
+         *
+         * @param WP_Post|object $item Menu item to inspect.
+         *
+         * @return bool
+         */
+        private function is_dynamic_menu_item( $item ) {
+                $classes = $this->extract_menu_item_classes( $item );
+
+                return in_array( 'softone-dynamic-menu-item', $classes, true );
+        }
+
+	/**
+	 * Determine whether the provided menu already received dynamic items this request.
+	 *
+	 * @param string $menu_name Menu name identifier.
+	 *
+	 * @return bool True when the menu has already been processed.
+	 */
+	private function has_processed_menu( $menu_name ) {
+		if ( '' === $menu_name ) {
+			return false;
+		}
+
+		if ( isset( $this->processed_menus[ $menu_name ] ) ) {
+			return true;
+		}
+
+		$this->processed_menus[ $menu_name ] = true;
+
+		return false;
+	}
 
 	/**
 	 * Locate the placeholder menu item for a given dynamic item group.
