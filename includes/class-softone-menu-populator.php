@@ -180,7 +180,9 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 
 		$normalised_args = $this->normalise_admin_menu_args( $menu, $args );
 
-		return $this->filter_menu_items( $items, $normalised_args );
+		$items = $this->filter_menu_items( $items, $normalised_args );
+
+		return $this->prepare_admin_menu_items( $items );
 	}
 
 	/**
