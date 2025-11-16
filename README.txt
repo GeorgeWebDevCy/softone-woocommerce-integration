@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.10.12
+Stable tag: 1.10.13
 =======
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -79,6 +79,9 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Cron_Manager::schedule_event()`.
 
 == Changelog ==
+
+= 1.10.13 =
+* Fix: Correct the injected Softone menu hierarchy so generated category and brand placeholders nest under the intended parents before saves.
 
 = 1.10.12 =
 * Fix: Guard nav menu saves on the server side so Softone placeholder entries are stripped from the POST payload, logged, and never passed to `wp_update_nav_menu_item`.
