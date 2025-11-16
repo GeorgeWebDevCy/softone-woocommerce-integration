@@ -4557,6 +4557,16 @@ array(
 )
 );
 
+if ( 'nav-menus.php' === $hook_suffix ) {
+        wp_enqueue_script(
+                'softone-nav-menu-guard',
+                plugin_dir_url( __FILE__ ) . 'js/softone-nav-menu-guard.js',
+                array(),
+                $this->version,
+                true
+        );
+}
+
 $current_page = '';
 if ( isset( $_GET['page'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
         $current_page = sanitize_key( wp_unslash( $_GET['page'] ) ); // phpcs:ignore WordPress.Security.NonceVerification
