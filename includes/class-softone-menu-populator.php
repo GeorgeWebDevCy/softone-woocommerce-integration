@@ -377,27 +377,99 @@ $products_menu_item = $this->find_placeholder_item( $menu_items, 'products' );
 			return false;
 		}
 
-		if ( empty( $_POST ) ) {
+		if ( empty( $_POST ) ) { // phpcs:ignore WordPress.Security.NonceVerification
 			return false;
 		}
 
-		if ( isset( $_POST['save_menu'] ) ) {
+		if ( isset( $_POST['save_menu'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
 			return true;
 		}
 
-		if ( isset( $_POST['action'] ) ) {
-			$action = $_POST['action'];
+		$action_keys = array( 'action', 'customize_menus_action' );
 
-			if ( function_exists( 'wp_unslash' ) ) {
-				$action = wp_unslash( $action );
+		foreach ( $action_keys as $action_key ) {
+			$action = $this->normalise_request_action( $action_key );
+
+			if ( $this->is_recognised_menu_action( $action ) ) {
+				return true;
 			}
+		}
 
-			if ( is_string( $action ) ) {
-				$action = strtolower( trim( $action ) );
+		if ( $this->has_posted_menu_payload() ) {
+			return true;
+		}
 
-				if ( in_array( $action, array( 'update', 'update-nav_menu' ), true ) ) {
-					return true;
-				}
+		return false;
+	}
+
+	/**
+	 * Normalise a POSTed action name.
+	 *
+	 * @param string $key Array key to read from $_POST.
+	 *
+	 * @return string
+	 */
+	private function normalise_request_action( $key ) {
+		if ( empty( $key ) || ! isset( $_POST[ $key ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+			return '';
+		}
+
+		$action = $_POST[ $key ]; // phpcs:ignore WordPress.Security.NonceVerification
+
+		if ( function_exists( 'wp_unslash' ) ) {
+			$action = wp_unslash( $action );
+		}
+
+		if ( ! is_string( $action ) ) {
+			return '';
+		}
+
+		return strtolower( trim( $action ) );
+	}
+
+	/**
+	 * Check if an action name matches a known menu-saving operation.
+	 *
+	 * @param string $action Normalised action name.
+	 *
+	 * @return bool
+	 */
+	private function is_recognised_menu_action( $action ) {
+		if ( '' === $action ) {
+			return false;
+		}
+
+		$actions = array(
+			'update',
+			'update-nav_menu',
+			'update-nav-menu',
+			'update-menu-item',
+			'delete-menu-item',
+			'wp_ajax_update_nav_menu',
+		);
+
+		return in_array( $action, $actions, true );
+	}
+
+	/**
+	 * Detect menu payload keys posted by nav-menu editors or the Customizer.
+	 *
+	 * @return bool
+	 */
+	private function has_posted_menu_payload() {
+		$payload_keys = array(
+			'menu-item-db-id',
+			'menu-item-object-id',
+			'menu-item-type',
+			'menu-item-url',
+			'menu-item-title',
+			'menu-item-description',
+			'nav-menu-data',
+		);
+
+		foreach ( $payload_keys as $payload_key ) {
+			if ( isset( $_POST[ $payload_key ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+				return true;
 			}
 		}
 
