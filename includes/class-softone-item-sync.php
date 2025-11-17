@@ -973,10 +973,18 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
     }
 
     // ---------- DESCRIPTIONS ----------
-    $description = $this->get_value(
-        $data,
-        array( 'long_description', 'longdescription', 'cccsocylodes', 'remarks', 'remark', 'notes' )
-    );
+    $description_lines    = array();
+    $description_line_one = $this->get_value( $data, array( 'cccsocyre2' ) );
+    if ( '' !== $description_line_one ) {
+        $description_lines[] = $description_line_one;
+    }
+
+    $description_line_two = $this->get_value( $data, array( 'cccsocylodes' ) );
+    if ( '' !== $description_line_two ) {
+        $description_lines[] = $description_line_two;
+    }
+
+    $description = implode( "\n", $description_lines );
     if ( '' !== $description ) {
         $product->set_description( $description );
     }
