@@ -973,21 +973,21 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
     }
 
     // ---------- DESCRIPTIONS ----------
-    $description_lines = array();
-    $specifications    = $this->get_value( $data, array( 'softone_item_specifications' ) );
+    $description_lines  = array();
+    $long_description   = $this->get_value( $data, array( 'cccsocylodes', 'long_description', 'longdescription' ) );
+    $description_line_1 = $this->get_value( $data, array( 'cccsocyre2' ) );
+    $specifications     = $this->get_value( $data, array( 'softone_item_specifications' ) );
+
+    if ( '' !== $long_description ) {
+        $description_lines[] = $long_description;
+    }
+
+    if ( '' !== $description_line_1 ) {
+        $description_lines[] = $description_line_1;
+    }
 
     if ( '' !== $specifications ) {
         $description_lines[] = $specifications;
-    }
-
-    $description_line_one = $this->get_value( $data, array( 'cccsocyre2' ) );
-    if ( '' !== $description_line_one ) {
-        $description_lines[] = $description_line_one;
-    }
-
-    $description_line_two = $this->get_value( $data, array( 'cccsocylodes' ) );
-    if ( '' !== $description_line_two ) {
-        $description_lines[] = $description_line_two;
     }
 
     $description = implode( "\n", $description_lines );
