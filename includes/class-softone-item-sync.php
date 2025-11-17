@@ -1150,7 +1150,16 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
     }
 
     // ---------- SAVE FIRST ----------
-    $product_id = $product->save();
+    // Disable KSES so HTML isn’t stripped.
+    kses_remove_filters();
+
+    try {
+        $product_id = $product->save();
+    } finally {
+        // Re-enable KSES filtering for the rest of the site.
+        kses_init_filters();
+    }
+
     if ( ! $product_id ) {
         throw new Exception( __( 'Unable to save the WooCommerce product.', 'softone-woocommerce-integration' ) );
     }
@@ -4992,17 +5001,24 @@ protected function resolve_colour_attribute_slug() {
         }
 
         /**
-         * Decode HTML entities so Softone-sourced markup persists in WooCommerce descriptions.
+         * Decode HTML entities and preserve Softone markup.
          *
          * @param string $value Raw value from the Softone payload.
-         * @return string
+         * @return string HTML to store in WooCommerce.
          */
         protected function decode_html_value( $value ) {
             if ( '' === $value ) {
                 return '';
             }
 
-            return html_entity_decode( (string) $value, ENT_QUOTES, 'UTF-8' );
+            // Decode entities (&lt;, &gt;, &amp; etc.) into their actual characters.
+            $html = html_entity_decode( (string) $value, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+
+            // Convert single and double line breaks into paragraphs/br tags.
+            $html = wpautop( $html );
+
+            // Return the HTML as-is – do not call sanitize_text_field() or strip_tags().
+            return $html;
         }
 
         /** @return array */
