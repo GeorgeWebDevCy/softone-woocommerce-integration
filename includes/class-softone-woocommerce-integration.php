@@ -108,20 +108,20 @@ class Softone_Woocommerce_Integration {
          *
          * @since    1.0.0
          */
-			public function __construct() {
-				if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
-					$this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
-				} else {
-$this->version = '1.10.19';
-				}
+        public function __construct() {
+                if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
+                        $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
+                } else {
+                        $this->version = '1.10.20';
+                }
 
-				$this->plugin_name = 'softone-woocommerce-integration';
+                $this->plugin_name = 'softone-woocommerce-integration';
 
-				$this->load_dependencies();
-				$this->set_locale();
-				$this->define_admin_hooks();
-				$this->define_public_hooks();
-			}
+                $this->load_dependencies();
+                $this->set_locale();
+                $this->define_admin_hooks();
+                $this->define_public_hooks();
+        }
 
 	/**
 	 * Load the required dependencies for this plugin.

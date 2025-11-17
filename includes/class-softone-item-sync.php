@@ -1007,12 +1007,12 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
     }
 
     if ( '' !== $description ) {
-        $product->set_description( $description );
+        $product->set_description( $this->decode_html_value( $description ) );
     }
 
     $short_description = $this->get_value( $data, array( 'short_description', 'cccsocyshdes' ) );
     if ( '' !== $short_description ) {
-        $product->set_short_description( $short_description );
+        $product->set_short_description( $this->decode_html_value( $short_description ) );
     }
 
     // ---------- PRICE ----------
@@ -4989,6 +4989,20 @@ protected function resolve_colour_attribute_slug() {
                 }
             }
             return '';
+        }
+
+        /**
+         * Decode HTML entities so Softone-sourced markup persists in WooCommerce descriptions.
+         *
+         * @param string $value Raw value from the Softone payload.
+         * @return string
+         */
+        protected function decode_html_value( $value ) {
+            if ( '' === $value ) {
+                return '';
+            }
+
+            return html_entity_decode( (string) $value, ENT_QUOTES, 'UTF-8' );
         }
 
         /** @return array */
