@@ -985,6 +985,14 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
     }
 
     $description = implode( "\n", $description_lines );
+
+    if ( '' === $description ) {
+        $description = $this->get_value(
+            $data,
+            array( 'description', 'desc', 'item_description' )
+        );
+    }
+
     if ( '' !== $description ) {
         $product->set_description( $description );
     }
