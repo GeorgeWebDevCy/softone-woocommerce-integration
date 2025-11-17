@@ -988,7 +988,7 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
 
     if ( '' !== $specifications ) {
         $description_lines[] = sprintf(
-            '<h4>%s</h4>',
+            '<h2>%s</h2>',
             esc_html__( 'Specifications', 'softone-woocommerce-integration' )
         );
         $description_lines[] = $specifications;
