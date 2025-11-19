@@ -699,30 +699,55 @@ data-softone-menu-delete="1"
          *
          * @return void
          */
-        public function handle_clear_sync_activity() {
+	public function handle_clear_sync_activity() {
 
-                if ( ! current_user_can( $this->capability ) ) {
-                        wp_die( esc_html__( 'You do not have permission to manage this plugin.', 'softone-woocommerce-integration' ) );
-                }
+		if ( ! current_user_can( $this->capability ) ) {
+			wp_die( esc_html__( 'You do not have permission to manage this plugin.', 'softone-woocommerce-integration' ) );
+		}
 
-                check_admin_referer( $this->clear_activity_action );
+		check_admin_referer( $this->clear_activity_action );
 
-                if ( $this->activity_logger && method_exists( $this->activity_logger, 'clear' ) ) {
-                        $this->activity_logger->clear();
-                }
+		$loggers = $this->get_clearable_loggers();
 
-                $redirect = add_query_arg(
-                        array(
-                                'page'    => $this->sync_activity_slug,
-                                'cleared' => 1,
-                        ),
-                        admin_url( 'admin.php' )
-                );
+		foreach ( $loggers as $logger ) {
+			if ( method_exists( $logger, 'clear' ) ) {
+				$logger->clear();
+			}
+		}
 
-                wp_safe_redirect( $redirect );
-                exit;
+		$redirect = add_query_arg(
+			array(
+				'page'    => $this->sync_activity_slug,
+				'cleared' => 1,
+			),
+			admin_url( 'admin.php' )
+		);
 
-        }
+		wp_safe_redirect( $redirect );
+		exit;
+
+	}
+
+	/**
+	 * Retrieve the logger instances that can be cleared from the admin UI.
+	 *
+	 * @return array<int, object>
+	 */
+	private function get_clearable_loggers() {
+
+		$loggers = array();
+
+		if ( $this->activity_logger ) {
+			$loggers[] = $this->activity_logger;
+		}
+
+		if ( $this->order_export_logger && $this->order_export_logger !== $this->activity_logger ) {
+			$loggers[] = $this->order_export_logger;
+		}
+
+		return $loggers;
+	}
+
 
         /**
          * Handle requests to delete the "Main Menu" navigation menu.
@@ -2394,9 +2419,8 @@ public function render_sync_activity_page() {
 <div class="wrap softone-sync-activity">
         <h1><?php esc_html_e( 'Sync Activity', 'softone-woocommerce-integration' ); ?></h1>
         <p class="description"><?php esc_html_e( 'Review the latest product category, attribute, and menu sync operations captured by the plugin.', 'softone-woocommerce-integration' ); ?></p>
-
         <?php if ( $cleared ) : ?>
-        <div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'The sync activity log has been cleared.', 'softone-woocommerce-integration' ); ?></p></div>
+        <div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'The plugin log files have been cleared.', 'softone-woocommerce-integration' ); ?></p></div>
         <?php endif; ?>
 
         <?php if ( '' !== $error_state ) : ?>
@@ -2445,9 +2469,9 @@ public function render_sync_activity_page() {
         <form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" style="margin-top:1.5em;">
                 <?php wp_nonce_field( $this->clear_activity_action ); ?>
                 <input type="hidden" name="action" value="<?php echo esc_attr( $this->clear_activity_action ); ?>" />
-                <?php submit_button( __( 'Delete Sync Activity Log', 'softone-woocommerce-integration' ), 'delete', 'softone_wc_integration_delete_sync_activity', false ); ?>
+                <?php submit_button( __( 'Delete All Plugin Logs', 'softone-woocommerce-integration' ), 'delete', 'softone_wc_integration_delete_sync_activity', false ); ?>
         </form>
-</div>
+        </div>
 <?php
 
         }
