@@ -420,32 +420,37 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 }
             }
 
-            $request_id = uniqid( 'req_', true );
-            
+            $body     = $this->prepare_request_body( $service, $data, $client_id );
+            $response = $this->dispatch_request( $body, $service );
+
+            if ( isset( $response['success'] ) && false === $response['success'] ) {
+                if ( $requires_client_id && $retry_on_authentication && $this->is_authentication_error( $response ) ) {
+                    $this->log_warning( __( '[SO-API-012] SoftOne session appears to have expired. Refreshing credentials.', 'softone-woocommerce-integration' ), array( 'service' => $service ) );
+                    $this->clear_cached_client_id();
+
+                    $client_id = $this->get_client_id( true );
+                    $body      = $this->prepare_request_body( $service, $data, $client_id );
+                    $response  = $this->dispatch_request( $body, $service );
+                }
+            }
+
+            if ( isset( $response['success'] ) && false === $response['success'] ) {
+                $message = $this->extract_error_message( $response );
                 $context = array(
-                    'request_id' => $request_id,
-                    'service'    => $service,
-                    'request'    => $this->redact_sensitive_values( $body ),
-                    'response'   => $this->redact_sensitive_values( $response ),
+                    'service'  => $service,
+                    'request'  => $this->redact_sensitive_values( $body ),
+                    'response' => $this->redact_sensitive_values( $response ),
                 );
-                $this->log_error( sprintf( '[%s] %s', $request_id, $message ), $context );
-                throw new Softone_API_Client_Exception( sprintf( '[%s] %s', $request_id, $message ), 0, null, $context );
+                $this->log_error( $message, $context );
+                throw new Softone_API_Client_Exception( $message, 0, null, $context );
             }
 
             if ( $requires_client_id && ! empty( $response['clientID'] ) ) {
                 $this->cache_client_id( (string) $response['clientID'] );
             }
 
-            $this->log_info( sprintf( '[%s] SoftOne service call successful.', $request_id ), array(
-                'request_id' => $request_id,
-                'service'    => $service,
-                'response'   => $this->redact_sensitive_values( $response ),
-            ) );
-
             return $response;
         }
-
-
 
         /**
          * Retrieve the cached SoftOne client ID, refreshing when required.
@@ -597,14 +602,10 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
          *
          * @return array
          */
-        protected function dispatch_request( array $body, $service, $request_id = '' ) {
+        protected function dispatch_request( array $body, $service ) {
             $endpoint = $this->get_endpoint_url();
 
             $encoded_body = wp_json_encode( $body );
-
-            if ( '' !== $request_id ) {
-                $this->log_info( sprintf( '[%s] [RAW] Request Body: %s', $request_id, $encoded_body ) );
-            }
 
             if ( false === $encoded_body ) {
                 $message = __( '[SO-API-016] Unable to encode SoftOne request payload as JSON.', 'softone-woocommerce-integration' );
@@ -654,10 +655,6 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
 
             $status_code = wp_remote_retrieve_response_code( $response );
             $raw_body    = wp_remote_retrieve_body( $response );
-
-            if ( '' !== $request_id ) {
-                $this->log_info( sprintf( '[%s] [RAW] Response Body: %s', $request_id, $raw_body ) );
-            }
 
             if ( $status_code < 200 || $status_code >= 300 ) {
                 $message = sprintf(

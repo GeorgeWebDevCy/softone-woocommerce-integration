@@ -456,8 +456,8 @@ array(
             }
 
             $header    = array(
-                'SERIES'    => '' !== $series ? (int) $series : null,
-                'TRDR'      => (int) $trdr,
+                'SERIES'    => '' !== $series ? $series : null,
+                'TRDR'      => (string) $trdr,
                 'VARCHAR01' => (string) $order_id,
                 'TRNDATE'   => $this->format_order_date( $order ),
                 'COMMENTS'  => $this->build_order_comments( $order ),
@@ -472,82 +472,13 @@ array(
 
             if ( '' !== $warehouse ) {
                 $payload['MTRDOC'] = array(
-                    array( 'WHOUSE' => (int) $warehouse ),
+                    array( 'WHOUSE' => $warehouse ),
                 );
             }
 
             $payload = apply_filters( 'softone_wc_integration_order_payload', $payload, $order, $trdr, $this );
-            
-            $this->validate_payload( $payload );
 
             return $payload;
-        }
-
-        /**
-         * Validate the SALDOC payload for type correctness.
-         *
-         * @param array $payload The constructed payload.
-         * @return void
-         */
-        protected function validate_payload( $payload ) {
-            if ( ! isset( $payload['SALDOC'][0] ) ) {
-                return;
-            }
-
-            $header = $payload['SALDOC'][0];
-            $issues = array();
-
-            if ( isset( $header['SERIES'] ) && ! is_int( $header['SERIES'] ) ) {
-                $issues[] = sprintf( 'SERIES is %s (expected int)', gettype( $header['SERIES'] ) );
-            }
-            if ( isset( $header['TRDR'] ) && ! is_int( $header['TRDR'] ) ) {
-                $issues[] = sprintf( 'TRDR is %s (expected int)', gettype( $header['TRDR'] ) );
-            }
-
-            if ( isset( $payload['MTRDOC'][0]['WHOUSE'] ) && ! is_int( $payload['MTRDOC'][0]['WHOUSE'] ) ) {
-                $issues[] = sprintf( 'WHOUSE is %s (expected int)', gettype( $payload['MTRDOC'][0]['WHOUSE'] ) );
-            }
-
-            if ( isset( $payload['ITELINES'] ) && is_array( $payload['ITELINES'] ) ) {
-                foreach ( $payload['ITELINES'] as $index => $line ) {
-                    if ( isset( $line['MTRL'] ) && ! is_int( $line['MTRL'] ) ) {
-                        $issues[] = sprintf( 'Item %d MTRL is %s (expected int)', $index, gettype( $line['MTRL'] ) );
-                    }
-                }
-            }
-
-            if ( ! empty( $issues ) ) {
-                $this->log( 'warning', '[SO-VAL-001] Payload validation warnings detected.', array( 'issues' => $issues ) );
-            }
-        }
-
-        /**
-         * Verify that an item exists in SoftOne.
-         *
-         * @param int $mtrl The SoftOne item ID.
-         * @return bool True if exists, false otherwise.
-         */
-        protected function verify_item_exists( $mtrl ) {
-            try {
-                $response = $this->api_client->sql_data( 'getItems', array( 'MTRL' => $mtrl ) );
-                $rows = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
-                
-                foreach ( $rows as $row ) {
-                    if ( isset( $row['MTRL'] ) && (int) $row['MTRL'] === $mtrl ) {
-                        return true;
-                    }
-                }
-            } catch ( Exception $e ) {
-                $this->log( 'warning', 'Failed to verify item existence.', array( 'mtrl' => $mtrl, 'error' => $e->getMessage() ) );
-                // Assume true on error to avoid blocking valid items due to transient API issues? 
-                // Or false? User wants to "see that items are correct". 
-                // If API fails, we can't verify. Let's return false to be safe if we want strictness, 
-                // but maybe true to be lenient. 
-                // Given the user's request, strictness seems preferred.
-                return false;
-            }
-
-            return false;
         }
 
         /**
@@ -638,17 +569,8 @@ array(
                     continue;
                 }
 
-                if ( ! $this->verify_item_exists( (int) $mtrl ) ) {
-                    $this->log( 'error', __( '[SO-ORD-012] Order line skipped because the SoftOne item (MTRL) does not exist.', 'softone-woocommerce-integration' ), array(
-                        'order_id'   => $order->get_id(),
-                        'item_id'    => $item->get_id(),
-                        'mtrl'       => $mtrl,
-                    ) );
-                    continue;
-                }
-
                 $line = array(
-                    'MTRL'     => (int) $mtrl,
+                    'MTRL'     => (string) $mtrl,
                     'QTY1'     => $this->format_quantity( $quantity ),
                     'COMMENTS1'=> $item->get_name(),
                 );
