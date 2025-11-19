@@ -115,14 +115,14 @@ protected $order_export_logger;
          *
          * @since    1.0.0
          */
-	public function __construct() {
-		if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
-			$this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
-		} else {
-			$this->version = '1.10.26';
-		}
+		public function __construct() {
+			if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
+				$this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
+			} else {
+				$this->version = '1.10.27';
+			}
 
-		$this->plugin_name = 'softone-woocommerce-integration';
+			$this->plugin_name = 'softone-woocommerce-integration';
 
 		$this->load_dependencies();
 		$this->set_locale();
