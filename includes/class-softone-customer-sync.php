@@ -31,18 +31,38 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
          *
          * @var WC_Logger|Psr\Log\LoggerInterface|null
          */
-        protected $logger;
+protected $logger;
+
+/**
+ * Logger dedicated to detailed order export traces.
+ *
+ * @var Softone_Sync_Activity_Logger|null
+ */
+protected $order_event_logger;
 
         /**
          * Constructor.
          *
-         * @param Softone_API_Client|null                $api_client Optional API client.
-         * @param WC_Logger|Psr\Log\LoggerInterface|null $logger     Optional logger instance.
-         */
-        public function __construct( ?Softone_API_Client $api_client = null, $logger = null ) {
-            $this->api_client = $api_client ?: new Softone_API_Client();
-            $this->logger     = $logger ?: $this->get_default_logger();
-        }
+ * @param Softone_API_Client|null                $api_client          Optional API client.
+ * @param WC_Logger|Psr\Log\LoggerInterface|null $logger              Optional logger instance.
+ * @param Softone_Sync_Activity_Logger|null       $order_event_logger Optional order export logger.
+ */
+public function __construct( ?Softone_API_Client $api_client = null, $logger = null, ?Softone_Sync_Activity_Logger $order_event_logger = null ) {
+$this->api_client        = $api_client ?: new Softone_API_Client();
+$this->logger            = $logger ?: $this->get_default_logger();
+$this->order_event_logger = $order_event_logger;
+}
+
+/**
+ * Inject the order export logger after construction.
+ *
+ * @param Softone_Sync_Activity_Logger|null $order_event_logger Logger instance.
+ *
+ * @return void
+ */
+public function set_order_event_logger( ?Softone_Sync_Activity_Logger $order_event_logger ) {
+$this->order_event_logger = $order_event_logger;
+}
 
         /**
          * Register WordPress hooks via the loader.
@@ -63,12 +83,13 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
         /**
          * Ensure a WooCommerce customer has an associated SoftOne TRDR identifier.
          *
-         * @param int $customer_id Customer identifier.
+ * @param int   $customer_id Customer identifier.
+ * @param array $context     Optional context metadata (e.g. order identifiers).
          *
          * @return string
          */
-        public function ensure_customer_trdr( $customer_id ) {
-            $customer_id = absint( $customer_id );
+public function ensure_customer_trdr( $customer_id, array $context = array() ) {
+$customer_id = absint( $customer_id );
 
             if ( $customer_id <= 0 ) {
                 return '';
@@ -96,9 +117,9 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
                 return '';
             }
 
-            try {
-                $this->sync_customer( $customer );
-            } catch ( Softone_API_Client_Exception $exception ) {
+try {
+$this->sync_customer( $customer, $context );
+} catch ( Softone_API_Client_Exception $exception ) {
                 $this->log( 'error', $exception->getMessage(), array( 'user_id' => $customer_id, 'exception' => $exception ) );
                 return '';
             }
@@ -221,38 +242,40 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
         /**
          * Synchronise a WooCommerce customer with SoftOne.
          *
-         * @param WC_Customer $customer WooCommerce customer instance.
+ * @param WC_Customer $customer WooCommerce customer instance.
+ * @param array       $context  Optional context metadata.
          *
          * @throws Softone_API_Client_Exception When API requests fail.
          *
          * @return void
          */
-        protected function sync_customer( WC_Customer $customer ) {
+protected function sync_customer( WC_Customer $customer, array $context = array() ) {
             $customer_id = $customer->get_id();
             $existing    = get_user_meta( $customer_id, self::META_TRDR, true );
             $existing    = is_scalar( $existing ) ? (string) $existing : '';
 
-            if ( '' !== $existing ) {
-                $this->update_customer( $customer, $existing );
-                return;
-            }
+if ( '' !== $existing ) {
+$this->update_customer( $customer, $existing, $context );
+return;
+}
 
             $match = $this->locate_existing_customer( $customer );
 
-            if ( ! empty( $match['TRDR'] ) ) {
-                $trdr = (string) $match['TRDR'];
-                update_user_meta( $customer_id, self::META_TRDR, $trdr );
-                $this->update_customer( $customer, $trdr );
-                return;
-            }
+if ( ! empty( $match['TRDR'] ) ) {
+$trdr = (string) $match['TRDR'];
+update_user_meta( $customer_id, self::META_TRDR, $trdr );
+$this->update_customer( $customer, $trdr, $context );
+return;
+}
 
-            $this->create_customer( $customer );
-        }
+$this->create_customer( $customer, $context );
+}
 
         /**
          * Query SoftOne for an existing customer record matching the WooCommerce customer.
          *
-         * @param WC_Customer $customer WooCommerce customer instance.
+ * @param WC_Customer $customer WooCommerce customer instance.
+ * @param array       $context  Optional context metadata.
          *
          * @throws Softone_API_Client_Exception When API requests fail.
          *
@@ -300,14 +323,16 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
          *
          * @return void
          */
-        protected function create_customer( WC_Customer $customer ) {
-            $payload = $this->build_customer_payload( $customer );
+protected function create_customer( WC_Customer $customer, array $context = array() ) {
+$payload = $this->build_customer_payload( $customer );
 
-            if ( empty( $payload['CUSTOMER'] ) ) {
-                return;
-            }
+if ( empty( $payload['CUSTOMER'] ) ) {
+return;
+}
 
-            $response = $this->api_client->set_data( 'CUSTOMER', $payload );
+$this->log_customer_payload( 'customer_payload_create', __( 'Prepared SoftOne customer payload.', 'softone-woocommerce-integration' ), $customer, $payload, $context );
+
+$response = $this->api_client->set_data( 'CUSTOMER', $payload );
 
             if ( empty( $response['id'] ) ) {
                 return;
@@ -320,22 +345,52 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
         /**
          * Update an existing SoftOne customer record.
          *
-         * @param WC_Customer $customer WooCommerce customer instance.
-         * @param string      $trdr     SoftOne customer identifier.
+ * @param WC_Customer $customer WooCommerce customer instance.
+ * @param string      $trdr     SoftOne customer identifier.
+ * @param array       $context  Optional context metadata.
          *
          * @throws Softone_API_Client_Exception When API requests fail.
          *
          * @return void
          */
-        protected function update_customer( WC_Customer $customer, $trdr ) {
-            $payload = $this->build_customer_payload( $customer, $trdr );
+protected function update_customer( WC_Customer $customer, $trdr, array $context = array() ) {
+$payload = $this->build_customer_payload( $customer, $trdr );
 
-            if ( empty( $payload['CUSTOMER'] ) ) {
-                return;
-            }
+if ( empty( $payload['CUSTOMER'] ) ) {
+return;
+}
 
-            $this->api_client->set_data( 'CUSTOMER', $payload );
-        }
+$this->log_customer_payload( 'customer_payload_update', __( 'Prepared SoftOne customer update payload.', 'softone-woocommerce-integration' ), $customer, $payload, $context );
+
+$this->api_client->set_data( 'CUSTOMER', $payload );
+}
+
+/**
+ * Emit a log entry to the order export logger when available.
+ *
+ * @param string      $action   Action key describing the payload.
+ * @param string      $message  Human readable summary.
+ * @param WC_Customer $customer Customer instance.
+ * @param array       $payload  Payload sent to SoftOne.
+ * @param array       $context  Additional context (e.g. order ID).
+ */
+protected function log_customer_payload( $action, $message, WC_Customer $customer, array $payload, array $context = array() ) {
+if ( ! $this->order_event_logger || ! method_exists( $this->order_event_logger, 'log' ) ) {
+return;
+}
+
+$log_context = array(
+'customer_id' => $customer->get_id(),
+'email'       => $customer->get_email(),
+'payload'     => $payload,
+);
+
+foreach ( $context as $key => $value ) {
+$log_context[ $key ] = $value;
+}
+
+$this->order_event_logger->log( 'order_exports', $action, $message, $log_context );
+}
 
         /**
          * Build the payload for SoftOne setData requests.

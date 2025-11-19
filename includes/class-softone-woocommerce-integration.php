@@ -71,12 +71,19 @@ class Softone_Woocommerce_Integration {
          */
         protected $item_cron_manager;
 
-        /**
-         * File-based activity logger instance.
-         *
-         * @var Softone_Sync_Activity_Logger
-         */
-        protected $activity_logger;
+/**
+ * File-based activity logger instance.
+ *
+ * @var Softone_Sync_Activity_Logger
+ */
+protected $activity_logger;
+
+/**
+ * File-based logger dedicated to order export diagnostics.
+ *
+ * @var Softone_Sync_Activity_Logger
+ */
+protected $order_export_logger;
 
         /**
          * Customer synchronisation service instance.
@@ -112,7 +119,7 @@ class Softone_Woocommerce_Integration {
                 if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
                         $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
                 } else {
-                        $this->version = '1.10.24';
+$this->version = '1.10.25';
                 }
 
 		$this->plugin_name = 'softone-woocommerce-integration';
@@ -227,12 +234,13 @@ class Softone_Woocommerce_Integration {
 		require_once __DIR__ . '/class-softone-sku-image-attacher.php';
 
 
-		$this->loader          = new Softone_Woocommerce_Integration_Loader();
-		$this->activity_logger = new Softone_Sync_Activity_Logger();
-                $this->item_sync       = new Softone_Item_Sync( null, null, null, $this->activity_logger );
-                $this->item_cron_manager = new Softone_Item_Cron_Manager( $this->item_sync, $this->item_sync->get_logger() );
-                $this->customer_sync   = new Softone_Customer_Sync();
-                $this->order_sync      = new Softone_Order_Sync( null, $this->customer_sync );
+$this->loader              = new Softone_Woocommerce_Integration_Loader();
+$this->activity_logger     = new Softone_Sync_Activity_Logger();
+$this->order_export_logger = new Softone_Sync_Activity_Logger( 'softone-order-export.log' );
+$this->item_sync           = new Softone_Item_Sync( null, null, null, $this->activity_logger );
+$this->item_cron_manager   = new Softone_Item_Cron_Manager( $this->item_sync, $this->item_sync->get_logger() );
+$this->customer_sync       = new Softone_Customer_Sync( null, null, $this->order_export_logger );
+$this->order_sync          = new Softone_Order_Sync( null, $this->customer_sync, null, $this->order_export_logger );
                 $this->shared_module   = new Softone_Woocommerce_Integration_Shared();
 
                 $this->item_cron_manager->register_hooks( $this->loader );
@@ -266,9 +274,9 @@ class Softone_Woocommerce_Integration {
 	 * @since    1.0.0
 	 * @access   private
 	 */
-	private function define_admin_hooks() {
+private function define_admin_hooks() {
 
-		$plugin_admin        = new Softone_Woocommerce_Integration_Admin( $this->get_plugin_name(), $this->get_version(), $this->item_sync, $this->activity_logger );
+$plugin_admin        = new Softone_Woocommerce_Integration_Admin( $this->get_plugin_name(), $this->get_version(), $this->item_sync, $this->activity_logger, $this->order_export_logger );
 		$admin_menu_populator = new Softone_Menu_Populator( $this->activity_logger );
 
 		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_styles' );

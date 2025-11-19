@@ -40,18 +40,31 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
          */
         protected $logger;
 
-        /**
-         * Constructor.
-         *
-         * @param Softone_API_Client|null   $api_client    Optional API client override.
-         * @param Softone_Customer_Sync|null $customer_sync Optional customer sync service.
-         * @param WC_Logger|Psr\Log\LoggerInterface|null $logger Optional logger instance.
-         */
-        public function __construct( ?Softone_API_Client $api_client = null, ?Softone_Customer_Sync $customer_sync = null, $logger = null ) {
-            $this->api_client    = $api_client ?: new Softone_API_Client();
-            $this->customer_sync = $customer_sync ?: new Softone_Customer_Sync( $this->api_client );
-            $this->logger        = $logger ?: $this->get_default_logger();
-        }
+/**
+ * Logger used for rich order export diagnostics.
+ *
+ * @var Softone_Sync_Activity_Logger|null
+ */
+protected $order_event_logger;
+
+/**
+ * Constructor.
+ *
+ * @param Softone_API_Client|null        $api_client          Optional API client override.
+ * @param Softone_Customer_Sync|null     $customer_sync       Optional customer sync service.
+ * @param WC_Logger|Psr\Log\LoggerInterface|null $logger     Optional logger instance.
+ * @param Softone_Sync_Activity_Logger|null       $order_event_logger Optional order export logger.
+ */
+public function __construct( ?Softone_API_Client $api_client = null, ?Softone_Customer_Sync $customer_sync = null, $logger = null, ?Softone_Sync_Activity_Logger $order_event_logger = null ) {
+$this->api_client        = $api_client ?: new Softone_API_Client();
+$this->order_event_logger = $order_event_logger;
+$this->customer_sync     = $customer_sync ?: new Softone_Customer_Sync( $this->api_client, null, $this->order_event_logger );
+
+if ( $this->customer_sync && method_exists( $this->customer_sync, 'set_order_event_logger' ) ) {
+$this->customer_sync->set_order_event_logger( $this->order_event_logger );
+}
+$this->logger            = $logger ?: $this->get_default_logger();
+}
 
         /**
          * Register WordPress hooks via the loader.
@@ -87,15 +100,33 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
                 return;
             }
 
-            $order = wc_get_order( $order_id );
+$order = wc_get_order( $order_id );
 
-            if ( ! $order ) {
-                return;
-            }
+if ( ! $order ) {
+return;
+}
 
-            if ( $this->is_order_already_exported( $order ) ) {
-                return;
-            }
+$current_status = method_exists( $order, 'get_status' ) ? (string) $order->get_status() : '';
+$order_number   = method_exists( $order, 'get_order_number' ) ? (string) $order->get_order_number() : (string) $order_id;
+
+$this->log_order_event(
+'order_status_triggered',
+sprintf(
+/* translators: 1: order number, 2: status. */
+__( 'Order %1$s triggered SoftOne export via status “%2$s”.', 'softone-woocommerce-integration' ),
+$order_number,
+$current_status
+),
+array(
+'order_id'     => $order_id,
+'order_number' => $order_number,
+'order_status' => $current_status,
+)
+);
+
+if ( $this->is_order_already_exported( $order ) ) {
+return;
+}
 
             try {
                 $trdr = $this->determine_order_trdr( $order );
@@ -114,7 +145,17 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
                 return;
             }
 
-            $payload = $this->build_document_payload( $order, $trdr );
+$payload = $this->build_document_payload( $order, $trdr );
+
+$this->log_order_event(
+'saldoc_payload',
+__( 'Prepared SoftOne SALDOC payload.', 'softone-woocommerce-integration' ),
+array(
+'order_id'     => $order_id,
+'order_number' => $order_number,
+'payload'      => $payload,
+)
+);
 
             if ( empty( $payload['SALDOC'] ) || empty( $payload['ITELINES'] ) ) {
                 $this->log( 'error', __( '[SO-ORD-004] SoftOne order payload is incomplete (missing SALDOC or ITELINES). Document was not created.', 'softone-woocommerce-integration' ), array( 'order_id' => $order_id ) );
@@ -170,17 +211,25 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
          *
          * @return string
          */
-        protected function determine_order_trdr( WC_Order $order ) {
-            $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
+protected function determine_order_trdr( WC_Order $order ) {
+$trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
 
             if ( '' !== $trdr ) {
                 return $trdr;
             }
 
-            $customer_id = method_exists( $order, 'get_customer_id' ) ? absint( $order->get_customer_id() ) : 0;
+$customer_id  = method_exists( $order, 'get_customer_id' ) ? absint( $order->get_customer_id() ) : 0;
+$order_number = method_exists( $order, 'get_order_number' ) ? (string) $order->get_order_number() : (string) $order->get_id();
 
-            if ( $customer_id > 0 ) {
-                $trdr = $this->customer_sync->ensure_customer_trdr( $customer_id );
+if ( $customer_id > 0 ) {
+$trdr = $this->customer_sync->ensure_customer_trdr(
+$customer_id,
+array(
+'order_id'     => $order->get_id(),
+'order_number' => $order_number,
+'source'       => 'order_export',
+)
+);
 
                 if ( '' !== $trdr ) {
                     $order->update_meta_data( self::ORDER_META_TRDR, $trdr );
@@ -334,8 +383,18 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
                 return '';
             }
 
-            $payload  = array( 'CUSTOMER' => array( $record ) );
-            $response = $this->api_client->set_data( 'CUSTOMER', $payload );
+$payload = array( 'CUSTOMER' => array( $record ) );
+
+$this->log_order_event(
+'guest_customer_payload',
+__( 'Prepared SoftOne guest customer payload.', 'softone-woocommerce-integration' ),
+array(
+'order_id' => $order->get_id(),
+'payload'  => $payload,
+)
+);
+
+$response = $this->api_client->set_data( 'CUSTOMER', $payload );
 
             if ( empty( $response['id'] ) ) {
                 return '';
@@ -650,14 +709,29 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
          *
          * @return void
          */
-        protected function persist_order_meta( WC_Order $order ) {
-            if ( method_exists( $order, 'save_meta_data' ) ) {
-                $order->save_meta_data();
-                return;
-            }
+protected function persist_order_meta( WC_Order $order ) {
+if ( method_exists( $order, 'save_meta_data' ) ) {
+$order->save_meta_data();
+return;
+}
 
-            $order->save();
-        }
+$order->save();
+}
+
+/**
+ * Emit an entry to the order export logger when available.
+ *
+ * @param string $action  Action identifier.
+ * @param string $message Summary describing the event.
+ * @param array  $context Additional structured context.
+ */
+protected function log_order_event( $action, $message, array $context = array() ) {
+if ( ! $this->order_event_logger || ! method_exists( $this->order_event_logger, 'log' ) ) {
+return;
+}
+
+$this->order_event_logger->log( 'order_exports', $action, $message, $context );
+}
 
         /**
          * Retrieve the default WooCommerce logger when available.

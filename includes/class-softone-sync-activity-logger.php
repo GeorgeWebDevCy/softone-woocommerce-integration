@@ -25,6 +25,22 @@ if ( ! class_exists( 'Softone_Sync_Activity_Logger' ) ) {
         protected $upload_dir = null;
 
         /**
+         * Target filename inside the plugin log directory.
+         *
+         * @var string
+         */
+        protected $filename = '';
+
+        /**
+         * Constructor.
+         *
+         * @param string $filename Optional log filename override.
+         */
+        public function __construct( $filename = '' ) {
+            $this->filename = $this->normalise_filename( $filename );
+        }
+
+        /**
          * Log an activity entry.
          *
          * @param string               $channel Activity channel (e.g. product_categories).
@@ -254,7 +270,48 @@ if ( ! class_exists( 'Softone_Sync_Activity_Logger' ) ) {
             $separator = defined( 'DIRECTORY_SEPARATOR' ) ? DIRECTORY_SEPARATOR : '/';
             $base_dir  = rtrim( $base_dir, '/\\' ) . $separator . 'softone-sync-logs';
 
-            return rtrim( $base_dir, '/\\' ) . $separator . self::DEFAULT_FILENAME;
+            return rtrim( $base_dir, '/\\' ) . $separator . $this->get_filename();
+        }
+
+        /**
+         * Retrieve the active filename for the logger.
+         *
+         * @return string
+         */
+        protected function get_filename() {
+            if ( '' !== $this->filename ) {
+                return $this->filename;
+            }
+
+            return self::DEFAULT_FILENAME;
+        }
+
+        /**
+         * Normalise the filename to prevent directory traversal.
+         *
+         * @param string $filename Raw filename input.
+         *
+         * @return string
+         */
+        protected function normalise_filename( $filename ) {
+            $filename = (string) $filename;
+            $filename = trim( $filename );
+
+            if ( '' === $filename ) {
+                return self::DEFAULT_FILENAME;
+            }
+
+            if ( function_exists( 'sanitize_file_name' ) ) {
+                $sanitized = sanitize_file_name( $filename );
+            } else {
+                $sanitized = preg_replace( '/[^A-Za-z0-9\-_.]/', '', $filename );
+            }
+
+            if ( '' === $sanitized ) {
+                return self::DEFAULT_FILENAME;
+            }
+
+            return $sanitized;
         }
 
         /**
