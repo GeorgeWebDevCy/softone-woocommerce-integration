@@ -422,13 +422,14 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
 
             $request_id = uniqid( 'req_', true );
             
+            $body     = $this->prepare_request_body( $service, $data, $client_id );
+
             $this->log_info( sprintf( '[%s] Calling SoftOne service: %s', $request_id, $service ), array(
                 'request_id' => $request_id,
                 'service'    => $service,
                 'request'    => $this->redact_sensitive_values( $body ),
             ) );
 
-            $body     = $this->prepare_request_body( $service, $data, $client_id );
             $response = $this->dispatch_request( $body, $service );
 
             if ( isset( $response['success'] ) && false === $response['success'] ) {
