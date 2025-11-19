@@ -665,14 +665,14 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
                 'ADDRESS2'    => $address_2,
                 'CITY'        => $city,
                 'ZIP'         => $postcode,
-                'COUNTRY'     => (int) $softone_country,
-                'AREAS'       => (int) $this->api_client->get_areas(),
-                'SOCURRENCY'  => (int) $this->api_client->get_socurrency(),
-                'TRDCATEGORY' => (int) $this->api_client->get_trdcategory(),
+                'COUNTRY'     => $softone_country,
+                'AREAS'       => $this->api_client->get_areas(),
+                'SOCURRENCY'  => $this->api_client->get_socurrency(),
+                'TRDCATEGORY' => $this->api_client->get_trdcategory(),
             );
 
             if ( null !== $trdr ) {
-                $record['TRDR'] = (int) $trdr;
+                $record['TRDR'] = (string) $trdr;
             }
 
             $record = array_filter( $record, array( $this, 'filter_empty_value' ) );
@@ -685,7 +685,7 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
                 return array();
             }
 
-            $payload = array(
+            return array(
                 'CUSTOMER' => array( $record ),
                 'CUSEXTRA' => array(
                     array(
@@ -693,37 +693,6 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
                     ),
                 ),
             );
-
-            $this->validate_payload( $payload );
-
-            return $payload;
-        }
-
-        /**
-         * Validate the CUSTOMER payload for type correctness.
-         *
-         * @param array $payload The constructed payload.
-         * @return void
-         */
-        protected function validate_payload( $payload ) {
-            if ( ! isset( $payload['CUSTOMER'][0] ) ) {
-                return;
-            }
-
-            $record = $payload['CUSTOMER'][0];
-            $issues = array();
-
-            $int_fields = array( 'COUNTRY', 'AREAS', 'SOCURRENCY', 'TRDCATEGORY', 'TRDR' );
-
-            foreach ( $int_fields as $field ) {
-                if ( isset( $record[ $field ] ) && ! is_int( $record[ $field ] ) ) {
-                    $issues[] = sprintf( '%s is %s (expected int)', $field, gettype( $record[ $field ] ) );
-                }
-            }
-
-            if ( ! empty( $issues ) ) {
-                $this->log( 'warning', '[SO-VAL-002] Customer payload validation warnings detected.', array( 'issues' => $issues ) );
-            }
         }
 
         /**
