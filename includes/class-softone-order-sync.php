@@ -456,8 +456,8 @@ array(
             }
 
             $header    = array(
-                'SERIES'    => '' !== $series ? $series : null,
-                'TRDR'      => (string) $trdr,
+                'SERIES'    => '' !== $series ? (int) $series : null,
+                'TRDR'      => (int) $trdr,
                 'VARCHAR01' => (string) $order_id,
                 'TRNDATE'   => $this->format_order_date( $order ),
                 'COMMENTS'  => $this->build_order_comments( $order ),
@@ -472,7 +472,7 @@ array(
 
             if ( '' !== $warehouse ) {
                 $payload['MTRDOC'] = array(
-                    array( 'WHOUSE' => $warehouse ),
+                    array( 'WHOUSE' => (int) $warehouse ),
                 );
             }
 
@@ -570,7 +570,7 @@ array(
                 }
 
                 $line = array(
-                    'MTRL'     => (string) $mtrl,
+                    'MTRL'     => (int) $mtrl,
                     'QTY1'     => $this->format_quantity( $quantity ),
                     'COMMENTS1'=> $item->get_name(),
                 );
