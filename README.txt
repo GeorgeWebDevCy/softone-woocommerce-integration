@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.10.24
+Stable tag: 1.10.25
 =======
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -79,6 +79,10 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Cron_Manager::schedule_event()`.
 
 == Changelog ==
+
+= 1.10.25 =
+* Feature: Add an Order Export Logs admin screen so store owners can review when WooCommerce orders hit the SoftOne exporter alongside the recorded payloads.
+* Feature: Capture the payloads sent to SoftOne when creating customers (including guest checkouts) and SALDOC documents, making it easier to diagnose why a customer or document was not created.
 
 = 1.10.24 =
 * Fix: Read Softone stock quantities from keys such as `Stock QTY` so WooCommerce inventory matches the ERP payload casing.

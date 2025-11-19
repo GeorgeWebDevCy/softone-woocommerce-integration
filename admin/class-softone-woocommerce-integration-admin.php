@@ -69,7 +69,14 @@ class Softone_Woocommerce_Integration_Admin {
          *
          * @var string
          */
-        private $sync_activity_slug = 'softone-woocommerce-integration-sync-activity';
+private $sync_activity_slug = 'softone-woocommerce-integration-sync-activity';
+
+/**
+ * Order export log submenu slug.
+ *
+ * @var string
+ */
+private $order_export_logs_slug = 'softone-woocommerce-integration-order-export-logs';
 
 /**
  * Process trace viewer submenu slug.
@@ -209,7 +216,14 @@ private $item_import_default_batch_size = 25;
          *
          * @var int
          */
-        private $sync_activity_limit = 200;
+private $sync_activity_limit = 200;
+
+/**
+ * Maximum number of order export log entries to display.
+ *
+ * @var int
+ */
+private $order_export_log_limit = 200;
 
         /**
          * Polling interval (in milliseconds) for the sync activity monitor.
@@ -246,12 +260,19 @@ private $item_import_default_batch_size = 25;
          */
         private $item_sync;
 
-        /**
-         * File-based sync activity logger.
-         *
-         * @var Softone_Sync_Activity_Logger|null
-         */
-        private $activity_logger;
+/**
+ * File-based sync activity logger.
+ *
+ * @var Softone_Sync_Activity_Logger|null
+ */
+private $activity_logger;
+
+/**
+ * Logger used for order export diagnostics.
+ *
+ * @var Softone_Sync_Activity_Logger|null
+ */
+private $order_export_logger;
 
 	/**
 	 * Initialize the class and set its properties.
@@ -260,12 +281,13 @@ private $item_import_default_batch_size = 25;
 	 * @param string $plugin_name The name of this plugin.
 	 * @param string $version     The version of this plugin.
 	 */
-        public function __construct( $plugin_name, $version, Softone_Item_Sync $item_sync, ?Softone_Sync_Activity_Logger $activity_logger = null ) {
+public function __construct( $plugin_name, $version, Softone_Item_Sync $item_sync, ?Softone_Sync_Activity_Logger $activity_logger = null, ?Softone_Sync_Activity_Logger $order_export_logger = null ) {
 
-                $this->plugin_name = $plugin_name;
-                $this->version     = $version;
-                $this->item_sync   = $item_sync;
-                $this->activity_logger = $activity_logger ?: new Softone_Sync_Activity_Logger();
+$this->plugin_name = $plugin_name;
+$this->version     = $version;
+$this->item_sync   = $item_sync;
+$this->activity_logger = $activity_logger ?: new Softone_Sync_Activity_Logger();
+$this->order_export_logger = $order_export_logger ?: new Softone_Sync_Activity_Logger( 'softone-order-export.log' );
 
                 if ( function_exists( 'softone_wc_integration_get_main_menu_name' ) ) {
                         $this->main_menu_name = softone_wc_integration_get_main_menu_name();
@@ -323,14 +345,23 @@ private $item_import_default_batch_size = 25;
                         array( $this, 'render_variable_product_logs_page' )
                 );
 
-                add_submenu_page(
-                        $this->menu_slug,
-                        __( 'Sync Activity', 'softone-woocommerce-integration' ),
-                        __( 'Sync Activity', 'softone-woocommerce-integration' ),
-                        $this->capability,
-                        $this->sync_activity_slug,
-                        array( $this, 'render_sync_activity_page' )
-                );
+add_submenu_page(
+$this->menu_slug,
+__( 'Sync Activity', 'softone-woocommerce-integration' ),
+__( 'Sync Activity', 'softone-woocommerce-integration' ),
+$this->capability,
+$this->sync_activity_slug,
+array( $this, 'render_sync_activity_page' )
+);
+
+add_submenu_page(
+$this->menu_slug,
+__( 'Order Export Logs', 'softone-woocommerce-integration' ),
+__( 'Order Export Logs', 'softone-woocommerce-integration' ),
+$this->capability,
+$this->order_export_logs_slug,
+array( $this, 'render_order_export_logs_page' )
+);
 
                 add_submenu_page(
                         $this->menu_slug,
@@ -377,14 +408,23 @@ private $item_import_default_batch_size = 25;
                         array( $this, 'render_variable_product_logs_page' )
                 );
 
-                add_submenu_page(
-                        'woocommerce',
-                        __( 'Sync Activity', 'softone-woocommerce-integration' ),
-                        __( 'Sync Activity', 'softone-woocommerce-integration' ),
-                        $this->capability,
-                        $this->sync_activity_slug,
-                        array( $this, 'render_sync_activity_page' )
-                );
+add_submenu_page(
+'woocommerce',
+__( 'Sync Activity', 'softone-woocommerce-integration' ),
+__( 'Sync Activity', 'softone-woocommerce-integration' ),
+$this->capability,
+$this->sync_activity_slug,
+array( $this, 'render_sync_activity_page' )
+);
+
+add_submenu_page(
+'woocommerce',
+__( 'Order Export Logs', 'softone-woocommerce-integration' ),
+__( 'Order Export Logs', 'softone-woocommerce-integration' ),
+$this->capability,
+$this->order_export_logs_slug,
+array( $this, 'render_order_export_logs_page' )
+);
 
                 add_submenu_page(
                         'woocommerce',
@@ -2423,8 +2463,43 @@ public function render_sync_activity_page() {
                         return;
                 }
 
-                include plugin_dir_path( __FILE__ ) . 'partials/softone-woocommerce-integration-process-trace.php';
-        }
+include plugin_dir_path( __FILE__ ) . 'partials/softone-woocommerce-integration-process-trace.php';
+}
+
+/**
+ * Render the order export diagnostic log page.
+ */
+public function render_order_export_logs_page() {
+
+if ( ! current_user_can( $this->capability ) ) {
+return;
+}
+
+$entries     = array();
+$metadata    = array();
+$error_state = '';
+$limit       = $this->order_export_log_limit;
+
+if ( $this->order_export_logger && method_exists( $this->order_export_logger, 'get_entries' ) ) {
+$entries = $this->order_export_logger->get_entries( $limit );
+} else {
+$error_state = __( 'The order export logger is not available.', 'softone-woocommerce-integration' );
+}
+
+if ( $this->order_export_logger && method_exists( $this->order_export_logger, 'get_metadata' ) ) {
+$metadata = $this->order_export_logger->get_metadata();
+}
+
+$entries_for_display = $this->prepare_activity_entries( $entries );
+$metadata            = $this->enrich_activity_metadata( $metadata );
+
+$order_export_entries = $entries_for_display;
+$order_export_metadata = $metadata;
+$order_export_error    = $error_state;
+$order_export_limit    = $limit;
+
+include plugin_dir_path( __FILE__ ) . 'partials/softone-woocommerce-integration-order-export-logs.php';
+}
 
         /**
         * Retrieve category synchronisation log entries from WooCommerce logs.
