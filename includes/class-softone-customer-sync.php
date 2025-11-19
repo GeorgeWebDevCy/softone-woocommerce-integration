@@ -665,14 +665,14 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
                 'ADDRESS2'    => $address_2,
                 'CITY'        => $city,
                 'ZIP'         => $postcode,
-                'COUNTRY'     => $softone_country,
-                'AREAS'       => $this->api_client->get_areas(),
-                'SOCURRENCY'  => $this->api_client->get_socurrency(),
-                'TRDCATEGORY' => $this->api_client->get_trdcategory(),
+                'COUNTRY'     => (int) $softone_country,
+                'AREAS'       => (int) $this->api_client->get_areas(),
+                'SOCURRENCY'  => (int) $this->api_client->get_socurrency(),
+                'TRDCATEGORY' => (int) $this->api_client->get_trdcategory(),
             );
 
             if ( null !== $trdr ) {
-                $record['TRDR'] = (string) $trdr;
+                $record['TRDR'] = (int) $trdr;
             }
 
             $record = array_filter( $record, array( $this, 'filter_empty_value' ) );
