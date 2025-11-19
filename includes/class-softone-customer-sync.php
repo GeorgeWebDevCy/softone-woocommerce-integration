@@ -117,10 +117,13 @@ $customer_id = absint( $customer_id );
                 return '';
             }
 
-try {
-$this->sync_customer( $customer, $context );
-} catch ( Softone_API_Client_Exception $exception ) {
+            try {
+                $this->sync_customer( $customer, $context );
+            } catch ( Softone_API_Client_Exception $exception ) {
+                $error_message = sprintf( /* translators: %s: error message */ __( 'SoftOne customer sync failed: %s', 'softone-woocommerce-integration' ), $exception->getMessage() );
+
                 $this->log( 'error', $exception->getMessage(), array( 'user_id' => $customer_id, 'exception' => $exception ) );
+                $this->log_customer_sync_exception( $error_message, $customer_id, $context );
                 return '';
             }
 
@@ -365,32 +368,67 @@ $this->log_customer_payload( 'customer_payload_update', __( 'Prepared SoftOne cu
 $this->api_client->set_data( 'CUSTOMER', $payload );
 }
 
-/**
- * Emit a log entry to the order export logger when available.
- *
- * @param string      $action   Action key describing the payload.
- * @param string      $message  Human readable summary.
- * @param WC_Customer $customer Customer instance.
- * @param array       $payload  Payload sent to SoftOne.
- * @param array       $context  Additional context (e.g. order ID).
- */
-protected function log_customer_payload( $action, $message, WC_Customer $customer, array $payload, array $context = array() ) {
-if ( ! $this->order_event_logger || ! method_exists( $this->order_event_logger, 'log' ) ) {
-return;
-}
+        /**
+         * Emit a log entry to the order export logger when available.
+         *
+         * @param string      $action   Action key describing the payload.
+         * @param string      $message  Human readable summary.
+         * @param WC_Customer $customer Customer instance.
+         * @param array       $payload  Payload sent to SoftOne.
+         * @param array       $context  Additional context (e.g. order ID).
+         */
+        protected function log_customer_payload( $action, $message, WC_Customer $customer, array $payload, array $context = array() ) {
+            if ( ! $this->order_event_logger || ! method_exists( $this->order_event_logger, 'log' ) ) {
+                return;
+            }
 
-$log_context = array(
-'customer_id' => $customer->get_id(),
-'email'       => $customer->get_email(),
-'payload'     => $payload,
-);
+            $log_context = array(
+                'customer_id' => $customer->get_id(),
+                'email'       => $customer->get_email(),
+                'payload'     => $payload,
+            );
 
-foreach ( $context as $key => $value ) {
-$log_context[ $key ] = $value;
-}
+            foreach ( $context as $key => $value ) {
+                $log_context[ $key ] = $value;
+            }
 
-$this->order_event_logger->log( 'order_exports', $action, $message, $log_context );
-}
+            $this->order_event_logger->log( 'order_exports', $action, $message, $log_context );
+        }
+
+        /**
+         * Log a customer synchronisation exception into the order export activity channel.
+         *
+         * @param string $message     Error message to display.
+         * @param int    $customer_id Customer identifier related to the failure.
+         * @param array  $context     Additional context (e.g. order_id, order_number).
+         */
+        protected function log_customer_sync_exception( $message, $customer_id, array $context = array() ) {
+            if ( ! $this->order_event_logger || ! method_exists( $this->order_event_logger, 'log' ) ) {
+                return;
+            }
+
+            $log_context = array(
+                'customer_id' => absint( $customer_id ),
+            );
+
+            if ( isset( $context['order_id'] ) ) {
+                $log_context['order_id'] = absint( $context['order_id'] );
+            }
+
+            if ( isset( $context['order_number'] ) && '' !== (string) $context['order_number'] ) {
+                $log_context['order_number'] = (string) $context['order_number'];
+            }
+
+            foreach ( $context as $key => $value ) {
+                if ( isset( $log_context[ $key ] ) ) {
+                    continue;
+                }
+
+                $log_context[ $key ] = $value;
+            }
+
+            $this->order_event_logger->log( 'order_exports', 'customer_sync_failed', $message, $log_context );
+        }
 
         /**
          * Build the payload for SoftOne setData requests.
