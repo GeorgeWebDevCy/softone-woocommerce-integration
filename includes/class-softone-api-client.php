@@ -1214,7 +1214,16 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 return false;
             }
 
-            $indicators = array( 'clientid', 'client id', 'expired', 'session', 'authenticate', 'authenticat', 'not valid' );
+            $indicators = array(
+                'clientid',
+                'client id',
+                'expired',
+                'session',
+                'authenticate',
+                'authenticat',
+                'not valid',
+                'operation aborted',
+            );
 
             foreach ( $indicators as $indicator ) {
                 if ( false !== strpos( $message, $indicator ) ) {
