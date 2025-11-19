@@ -120,10 +120,21 @@ $customer_id = absint( $customer_id );
             try {
                 $this->sync_customer( $customer, $context );
             } catch ( Softone_API_Client_Exception $exception ) {
-                $error_message = sprintf( /* translators: %s: error message */ __( 'SoftOne customer sync failed: %s', 'softone-woocommerce-integration' ), $exception->getMessage() );
+                $error_message     = sprintf( /* translators: %s: error message */ __( 'SoftOne customer sync failed: %s', 'softone-woocommerce-integration' ), $exception->getMessage() );
+                $exception_context = $exception->get_context();
+                $exception_context = is_array( $exception_context ) ? $exception_context : array();
 
-                $this->log( 'error', $exception->getMessage(), array( 'user_id' => $customer_id, 'exception' => $exception ) );
-                $this->log_customer_sync_exception( $error_message, $customer_id, $context );
+                $log_context = array(
+                    'user_id'   => $customer_id,
+                    'exception' => $exception,
+                );
+
+                if ( ! empty( $exception_context ) ) {
+                    $log_context = array_merge( $log_context, $exception_context );
+                }
+
+                $this->log( 'error', $exception->getMessage(), $log_context );
+                $this->log_customer_sync_exception( $error_message, $customer_id, array_merge( $context, $exception_context ) );
                 return '';
             }
 
@@ -238,7 +249,19 @@ $customer_id = absint( $customer_id );
             try {
                 $this->sync_customer( $customer );
             } catch ( Softone_API_Client_Exception $exception ) {
-                $this->log( 'error', $exception->getMessage(), array( 'user_id' => $customer_id, 'exception' => $exception ) );
+                $exception_context = $exception->get_context();
+                $exception_context = is_array( $exception_context ) ? $exception_context : array();
+
+                $log_context = array(
+                    'user_id'   => $customer_id,
+                    'exception' => $exception,
+                );
+
+                if ( ! empty( $exception_context ) ) {
+                    $log_context = array_merge( $log_context, $exception_context );
+                }
+
+                $this->log( 'error', $exception->getMessage(), $log_context );
             }
         }
 
@@ -400,7 +423,7 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
          *
          * @param string $message     Error message to display.
          * @param int    $customer_id Customer identifier related to the failure.
-         * @param array  $context     Additional context (e.g. order_id, order_number).
+         * @param array  $context     Additional context (e.g. order_id, order_number, SoftOne service payloads).
          */
         protected function log_customer_sync_exception( $message, $customer_id, array $context = array() ) {
             if ( ! $this->order_event_logger || ! method_exists( $this->order_event_logger, 'log' ) ) {
