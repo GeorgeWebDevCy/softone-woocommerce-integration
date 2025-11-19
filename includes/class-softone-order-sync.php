@@ -660,11 +660,20 @@ array(
 
                     return $response;
                 } catch ( Softone_API_Client_Exception $exception ) {
-                    $this->log( 'error', $exception->getMessage(), array(
+                    $exception_context = method_exists( $exception, 'get_context' ) ? $exception->get_context() : array();
+                    $exception_context = is_array( $exception_context ) ? $exception_context : array();
+
+                    $log_context = array(
                         'order_id'  => $order->get_id(),
                         'attempt'   => $attempt,
                         'exception' => $exception,
-                    ) );
+                    );
+
+                    if ( ! empty( $exception_context ) ) {
+                        $log_context = array_merge( $log_context, $exception_context );
+                    }
+
+                    $this->log( 'error', $exception->getMessage(), $log_context );
                     $this->add_order_note( $order, sprintf( /* translators: 1: attempt, 2: error message */ __( '[SO-ORD-008] SoftOne order export attempt %1$d failed: %2$s', 'softone-woocommerce-integration' ), $attempt, $exception->getMessage() ) );
                     $last_response = array();
                     $last_error_message = $exception->getMessage();
@@ -682,7 +691,7 @@ array(
                             array(
                                 'attempt' => $attempt,
                                 'error'   => $exception->getMessage(),
-                            )
+                            ) + $exception_context
                         )
                     );
                 }
