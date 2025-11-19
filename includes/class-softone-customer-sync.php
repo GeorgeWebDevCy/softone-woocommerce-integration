@@ -151,6 +151,14 @@ delete_user_meta( $customer_id, self::META_TRDR );
                     $log_context = array_merge( $log_context, $exception_context );
                 }
 
+                if ( $this->is_duplicate_customer_code_error( $exception ) ) {
+                    $trdr = $this->resolve_duplicate_customer_reference( $customer, $log_context );
+
+                    if ( '' !== $trdr ) {
+                        return $trdr;
+                    }
+                }
+
                 $this->log( 'error', $exception->getMessage(), $log_context );
                 $this->log_customer_sync_exception( $error_message, $customer_id, array_merge( $context, $exception_context ) );
                 return '';
@@ -501,6 +509,61 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
             }
 
             $this->order_event_logger->log( 'order_exports', 'customer_sync_failed', $message, $log_context );
+        }
+
+        /**
+         * Determine if a SoftOne error message indicates a duplicate customer code.
+         *
+         * @param Softone_API_Client_Exception $exception API exception instance.
+         *
+         * @return bool
+         */
+        protected function is_duplicate_customer_code_error( Softone_API_Client_Exception $exception ) {
+            $message = $exception->getMessage();
+
+            return false !== stripos( $message, 'Ο κωδικός υπάρχει ήδη' );
+        }
+
+        /**
+         * Attempt to reuse an existing SoftOne customer reference after a duplicate code error.
+         *
+         * @param WC_Customer $customer    WooCommerce customer instance.
+         * @param array       $log_context Context used for logging.
+         *
+         * @return string
+         */
+        protected function resolve_duplicate_customer_reference( WC_Customer $customer, array $log_context = array() ) {
+            try {
+                $match = $this->locate_existing_customer( $customer );
+            } catch ( Softone_API_Client_Exception $exception ) {
+                $this->log( 'error', $exception->getMessage(), array_merge(
+                    array(
+                        'user_id'   => $customer->get_id(),
+                        'exception' => $exception,
+                    ),
+                    $log_context
+                ) );
+
+                return '';
+            }
+
+            $trdr = isset( $match['TRDR'] ) ? (string) $match['TRDR'] : '';
+
+            if ( '' === $trdr ) {
+                return '';
+            }
+
+            update_user_meta( $customer->get_id(), self::META_TRDR, $trdr );
+
+            $this->log( 'warning', __( 'Reused existing SoftOne customer after duplicate code error.', 'softone-woocommerce-integration' ), array_merge(
+                array(
+                    'user_id' => $customer->get_id(),
+                    'trdr'    => $trdr,
+                ),
+                $log_context
+            ) );
+
+            return $trdr;
         }
 
         /**
