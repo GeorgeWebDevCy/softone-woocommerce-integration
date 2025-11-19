@@ -193,8 +193,8 @@ if ( empty( $client->captured_payload ) || $client->captured_payload['password']
     exit( 1 );
 }
 
-if ( ! isset( $client->captured_payload['appId'] ) ) {
-    fwrite( STDERR, "Login payload did not include the configured appId value.\n" );
+if ( ! isset( $client->captured_payload['AppID'] ) ) {
+    fwrite( STDERR, "Login payload did not include the configured AppID value.\n" );
     exit( 1 );
 }
 
@@ -227,8 +227,8 @@ if ( empty( $client_with_spaces->captured_payload ) || $client_with_spaces->capt
     exit( 1 );
 }
 
-if ( '0' !== $client->captured_payload['appId'] ) {
-    fwrite( STDERR, "Login payload did not preserve an appId configured as '0'.\n" );
+if ( '0' !== $client->captured_payload['AppID'] ) {
+    fwrite( STDERR, "Login payload did not preserve an AppID configured as '0'.\n" );
     exit( 1 );
 }
 
@@ -244,13 +244,13 @@ $padded_settings = $admin->sanitize_settings(
 $padded_client = new Softone_API_Client_Login_Test( $padded_settings );
 $padded_client->login();
 
-if ( empty( $padded_client->captured_payload ) || ! isset( $padded_client->captured_payload['appId'] ) ) {
-    fwrite( STDERR, "Login payload with padded appId did not include the expected value.\n" );
+if ( empty( $padded_client->captured_payload ) || ! isset( $padded_client->captured_payload['AppID'] ) ) {
+    fwrite( STDERR, "Login payload with padded AppID did not include the expected value.\n" );
     exit( 1 );
 }
 
-if ( '0010' !== $padded_client->captured_payload['appId'] ) {
-    fwrite( STDERR, "Login payload did not preserve leading zeros in appId.\n" );
+if ( '0010' !== $padded_client->captured_payload['AppID'] ) {
+    fwrite( STDERR, "Login payload did not preserve leading zeros in AppID.\n" );
     exit( 1 );
 }
 

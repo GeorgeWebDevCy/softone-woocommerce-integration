@@ -282,7 +282,7 @@ foreach ( array( 'company', 'branch', 'module', 'refid' ) as $field ) {
     }
 }
 
-if ( ! isset( $login_payload['appId'] ) || '9000' !== (string) $login_payload['appId'] ) {
+if ( ! isset( $login_payload['AppID'] ) || '9000' !== (string) $login_payload['AppID'] ) {
     fwrite( STDERR, "Login payload is missing the App ID.\n" );
     exit( 1 );
 }
@@ -313,7 +313,7 @@ foreach ( array( 'company' => '555', 'branch' => '666', 'module' => '777', 'refi
     }
 }
 
-if ( isset( $authenticate_payload['appId'] ) ) {
+if ( isset( $authenticate_payload['AppID'] ) ) {
     fwrite( STDERR, "Authenticate payload must not include the App ID.\n" );
     exit( 1 );
 }
@@ -342,7 +342,7 @@ if ( isset( $sql_payload['clientID'] ) ) {
     exit( 1 );
 }
 
-if ( ! isset( $sql_payload['appId'] ) || '9000' !== (string) $sql_payload['appId'] ) {
+if ( ! isset( $sql_payload['AppID'] ) || '9000' !== (string) $sql_payload['AppID'] ) {
     fwrite( STDERR, "SqlData payload is missing the App ID.\n" );
     exit( 1 );
 }

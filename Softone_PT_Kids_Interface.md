@@ -49,7 +49,7 @@ The login call must always be the first call. It returns a `clientID` used for t
   "service": "login",
   "username": "[REDACTED_USER]",
   "password": "[REDACTED_PASS]",
-  "appId": 1000
+  "AppID": 1000
 }
 ```
 
@@ -79,7 +79,7 @@ The login call must always be the first call. It returns a `clientID` used for t
   "sn": "[REDACTED_SN]",
   "off": false,
   "pin": false,
-  "appid": "1000"
+  "AppID": "1000"
 }
 ```
 
@@ -90,7 +90,7 @@ The login call must always be the first call. It returns a `clientID` used for t
 - `ver`: SoftOne server version string.  
 - `sn`: Server serial number (**redacted**).  
 - `off`/`pin`: Flags related to offline/pin requirements (if any).  
-- `appid`: Application identifier used in calls.
+- `AppID`: Application identifier used in calls.
 
 ---
 
@@ -153,7 +153,7 @@ Returns the details of a **single** customer (as per the PDF example) using a st
 {
   "service": "SqlData",
   "clientid": "[REDACTED_CLIENT_ID]",
-  "appId": 1000,
+  "AppID": 1000,
   "SqlName": "getCustomers"
 }
 ```
@@ -198,7 +198,7 @@ Returns inventory/items via a stored SQL name (with optional parameters like `pM
 {
   "service": "SqlData",
   "clientid": "[REDACTED_CLIENT_ID]",
-  "appId": 1000,
+  "AppID": 1000,
   "SqlName": "getItems",
   "pMins": 99999
 }
@@ -280,7 +280,7 @@ Use `setData` to insert/modify records for native or custom objects. Only includ
 {
   "service": "setData",
   "clientID": "[REDACTED_CLIENT_ID]",
-  "appID": 1000,
+  "AppID": 1000,
   "object": "CUSTOMER",
   "data": {
     "CUSTOMER": [
@@ -326,7 +326,7 @@ Use `setData` to insert/modify records for native or custom objects. Only includ
 {
   "service": "setData",
   "clientID": "[REDACTED_CLIENT_ID]",
-  "appID": 1000,
+  "AppID": 1000,
   "object": "SALDOC",
   "data": {
     "SALDOC": [
@@ -384,7 +384,7 @@ Use `setData` to insert/modify records for native or custom objects. Only includ
 - **sn**: Server serial number (**redacted**).  
 - **off**: Offline mode flag.  
 - **pin**: Whether a pin is required.  
-- **appid**: Echo of app id used.
+- **AppID**: Echo of AppID used.
 
 ### Authenticate (`service: "authenticate"`)
 - **success**, **clientID**: As above (clientID may change).  

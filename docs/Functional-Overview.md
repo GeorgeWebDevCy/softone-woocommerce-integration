@@ -54,9 +54,9 @@ This document explains the plugin’s functionality based exclusively on the sou
 - Class: `includes/class-softone-api-client.php`.
 - Responsibilities: wraps `wp_remote_post()` to call SoftOne services, handles login/auth/authenticated calls, request/response plumbing, and client ID caching.
 - Key methods:
-  - `login()`: POST `username`, `password`, optional `appId`; stores handshake values; requires both credentials.
+  - `login()`: POST `username`, `password`, optional `AppID`; stores handshake values; requires both credentials.
   - `authenticate($clientID)`: POST handshake fields; returns a new/validated client ID.
-  - `sql_data($sqlName, $arguments = [], $extra = [])`: calls `SqlData` with `SqlName`, optional `params` and `appId`.
+  - `sql_data($sqlName, $arguments = [], $extra = [])`: calls `SqlData` with `SqlName`, optional `params` and `AppID`.
   - `set_data($object, $data, $extra = [])`: calls `setData` with a payload like `{ OBJECT: [...], ... }`.
   - Internal client ID lifecycle: caches in transient `softone_woocommerce_integration_client_id` and persists metadata in option `softone_woocommerce_integration_client_meta`. TTL derived from responses (`EXPTIME`, `expires_in`, etc.) with fallback to `client_id_ttl`.
 - Filters:
