@@ -199,7 +199,7 @@ if ( ! function_exists( 'softone_wc_integration_get_password' ) ) {
 
 if ( ! function_exists( 'softone_wc_integration_get_app_id' ) ) {
     /**
-     * Retrieve the SoftOne application identifier (appId).
+     * Retrieve the SoftOne application identifier (AppID).
      *
      * Some SoftOne environments require the application identifier to be provided with
      * each request. By surfacing the value via a dedicated helper we keep consumers from

@@ -261,7 +261,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             );
 
             if ( null !== $this->app_id && '' !== $this->app_id ) {
-                $payload['appId'] = $this->normalize_app_id( $this->app_id );
+                $payload['AppID'] = $this->normalize_app_id( $this->app_id );
             }
 
             /**
@@ -345,8 +345,8 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 $extra
             );
 
-            if ( null !== $this->app_id && '' !== $this->app_id && ! isset( $payload['appId'] ) ) {
-                $payload['appId'] = $this->normalize_app_id( $this->app_id );
+            if ( null !== $this->app_id && '' !== $this->app_id && ! isset( $payload['AppID'] ) ) {
+                $payload['AppID'] = $this->normalize_app_id( $this->app_id );
             }
 
             if ( ! empty( $arguments ) ) {
@@ -382,8 +382,8 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 $extra
             );
 
-            if ( null !== $this->app_id && '' !== $this->app_id && ! isset( $payload['appId'] ) ) {
-                $payload['appId'] = $this->normalize_app_id( $this->app_id );
+            if ( null !== $this->app_id && '' !== $this->app_id && ! isset( $payload['AppID'] ) ) {
+                $payload['AppID'] = $this->normalize_app_id( $this->app_id );
             }
 
             return $this->call_service( 'setData', $payload );
