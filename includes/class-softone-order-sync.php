@@ -131,16 +131,38 @@ return;
             try {
                 $trdr = $this->determine_order_trdr( $order );
             } catch ( Softone_API_Client_Exception $exception ) {
+                $error_message = sprintf( /* translators: %s: error message */ __( '[SO-ORD-001] SoftOne customer sync failed: %s', 'softone-woocommerce-integration' ), $exception->getMessage() );
+
                 $this->log( 'error', $exception->getMessage(), array(
                     'order_id'  => $order_id,
                     'exception' => $exception,
                 ) );
-                $this->add_order_note( $order, sprintf( /* translators: %s: error message */ __( '[SO-ORD-001] SoftOne customer sync failed: %s', 'softone-woocommerce-integration' ), $exception->getMessage() ) );
+
+                $this->log_order_event(
+                    'customer_sync_failed',
+                    $error_message,
+                    $this->build_order_event_context( $order, array(
+                        'order_id'     => $order_id,
+                        'order_number' => $order_number,
+                        'error'        => $exception->getMessage(),
+                    ) )
+                );
+
+                $this->add_order_note( $order, $error_message );
                 return;
             }
 
             if ( '' === $trdr ) {
                 $this->log( 'error', __( '[SO-ORD-002] Unable to determine SoftOne customer (TRDR) for order.', 'softone-woocommerce-integration' ), array( 'order_id' => $order_id ) );
+                $this->log_order_event(
+                    'customer_sync_missing_trdr',
+                    __( '[SO-ORD-002] Unable to determine SoftOne customer (TRDR) for order.', 'softone-woocommerce-integration' ),
+                    $this->build_order_event_context( $order, array(
+                        'order_id'     => $order_id,
+                        'order_number' => $order_number,
+                        'error'        => 'missing_trdr',
+                    ) )
+                );
                 $this->add_order_note( $order, __( '[SO-ORD-003] SoftOne order export skipped because a customer record could not be located.', 'softone-woocommerce-integration' ) );
                 return;
             }
@@ -718,20 +740,67 @@ return;
 $order->save();
 }
 
-/**
- * Emit an entry to the order export logger when available.
- *
- * @param string $action  Action identifier.
- * @param string $message Summary describing the event.
- * @param array  $context Additional structured context.
- */
-protected function log_order_event( $action, $message, array $context = array() ) {
-if ( ! $this->order_event_logger || ! method_exists( $this->order_event_logger, 'log' ) ) {
-return;
-}
+    /**
+     * Build the default context payload for order export log entries.
+     *
+     * @param WC_Order $order   WooCommerce order instance.
+     * @param array    $context Baseline context supplied by the caller.
+     *
+     * @return array
+     */
+    protected function build_order_event_context( WC_Order $order, array $context = array() ) {
+        if ( ! isset( $context['order_id'] ) ) {
+            $context['order_id'] = $order->get_id();
+        }
 
-$this->order_event_logger->log( 'order_exports', $action, $message, $context );
-}
+        if ( ! isset( $context['order_number'] ) ) {
+            $context['order_number'] = method_exists( $order, 'get_order_number' ) ? (string) $order->get_order_number() : (string) $order->get_id();
+        }
+
+        if ( method_exists( $order, 'get_customer_id' ) ) {
+            $customer_id = absint( $order->get_customer_id() );
+
+            if ( $customer_id > 0 ) {
+                $context['customer_id'] = $customer_id;
+            }
+        }
+
+        if ( method_exists( $order, 'get_billing_email' ) ) {
+            $email = (string) $order->get_billing_email();
+
+            if ( '' !== $email ) {
+                $context['email'] = $email;
+            }
+        }
+
+        if ( method_exists( $order, 'get_billing_first_name' ) && method_exists( $order, 'get_billing_last_name' ) ) {
+            $name = trim( implode( ' ', array_filter( array(
+                (string) $order->get_billing_first_name(),
+                (string) $order->get_billing_last_name(),
+            ) ) ) );
+
+            if ( '' !== $name ) {
+                $context['customer_name'] = $name;
+            }
+        }
+
+        return $context;
+    }
+
+    /**
+     * Emit an entry to the order export logger when available.
+     *
+     * @param string $action  Action identifier.
+     * @param string $message Summary describing the event.
+     * @param array  $context Additional structured context.
+     */
+    protected function log_order_event( $action, $message, array $context = array() ) {
+        if ( ! $this->order_event_logger || ! method_exists( $this->order_event_logger, 'log' ) ) {
+            return;
+        }
+
+        $this->order_event_logger->log( 'order_exports', $action, $message, $context );
+    }
 
         /**
          * Retrieve the default WooCommerce logger when available.
