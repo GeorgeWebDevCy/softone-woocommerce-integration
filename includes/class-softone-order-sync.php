@@ -618,9 +618,10 @@ $response = $this->api_client->set_data( 'CUSTOMER', $payload );
          * @return array
          */
         protected function transmit_document_with_retry( WC_Order $order, array $payload ) {
-            $attempts      = (int) apply_filters( 'softone_wc_integration_order_sync_max_attempts', 3, $order, $payload, $this );
-            $attempts      = max( 1, $attempts );
-            $last_response = array();
+            $attempts           = (int) apply_filters( 'softone_wc_integration_order_sync_max_attempts', 3, $order, $payload, $this );
+            $attempts           = max( 1, $attempts );
+            $last_response      = array();
+            $last_error_message = '';
 
             for ( $attempt = 1; $attempt <= $attempts; $attempt++ ) {
                 try {
@@ -632,6 +633,24 @@ $response = $this->api_client->set_data( 'CUSTOMER', $payload );
                         'response' => $response,
                     ) );
 
+                    $document_id = isset( $response['id'] ) ? (string) $response['id'] : '';
+                    $this->log_order_event(
+                        'saldoc_attempt_succeeded',
+                        sprintf(
+                            /* translators: 1: attempt count, 2: document identifier. */
+                            __( 'SoftOne SALDOC request succeeded on attempt %1$d (document %2$s).', 'softone-woocommerce-integration' ),
+                            $attempt,
+                            '' !== $document_id ? $document_id : __( 'unknown', 'softone-woocommerce-integration' )
+                        ),
+                        $this->build_order_event_context(
+                            $order,
+                            array(
+                                'attempt'     => $attempt,
+                                'document_id' => $document_id,
+                            )
+                        )
+                    );
+
                     return $response;
                 } catch ( Softone_API_Client_Exception $exception ) {
                     $this->log( 'error', $exception->getMessage(), array(
@@ -641,6 +660,24 @@ $response = $this->api_client->set_data( 'CUSTOMER', $payload );
                     ) );
                     $this->add_order_note( $order, sprintf( /* translators: 1: attempt, 2: error message */ __( '[SO-ORD-008] SoftOne order export attempt %1$d failed: %2$s', 'softone-woocommerce-integration' ), $attempt, $exception->getMessage() ) );
                     $last_response = array();
+                    $last_error_message = $exception->getMessage();
+
+                    $this->log_order_event(
+                        'saldoc_attempt_failed',
+                        sprintf(
+                            /* translators: 1: attempt, 2: error message. */
+                            __( 'SoftOne SALDOC request attempt %1$d failed: %2$s', 'softone-woocommerce-integration' ),
+                            $attempt,
+                            $exception->getMessage()
+                        ),
+                        $this->build_order_event_context(
+                            $order,
+                            array(
+                                'attempt' => $attempt,
+                                'error'   => $exception->getMessage(),
+                            )
+                        )
+                    );
                 }
 
                 if ( $attempt < $attempts ) {
@@ -650,6 +687,31 @@ $response = $this->api_client->set_data( 'CUSTOMER', $payload );
                         sleep( $delay );
                     }
                 }
+            }
+
+            if ( empty( $last_response ) ) {
+                $message = __( 'SoftOne SALDOC export failed after all retry attempts.', 'softone-woocommerce-integration' );
+
+                if ( '' !== $last_error_message ) {
+                    $message = sprintf(
+                        /* translators: 1: base message, 2: error message. */
+                        __( '%1$s Last error: %2$s', 'softone-woocommerce-integration' ),
+                        $message,
+                        $last_error_message
+                    );
+                }
+
+                $this->log_order_event(
+                    'saldoc_failed',
+                    $message,
+                    $this->build_order_event_context(
+                        $order,
+                        array(
+                            'attempts' => $attempts,
+                            'error'    => $last_error_message,
+                        )
+                    )
+                );
             }
 
             return $last_response;
