@@ -551,6 +551,11 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
 
             return array(
                 'CUSTOMER' => array( $record ),
+                'CUSEXTRA' => array(
+                    array(
+                        'BOOL01' => '1', // SoftOne requires BOOL01=1 to expose WooCommerce customers in downstream apps.
+                    ),
+                ),
             );
         }
 

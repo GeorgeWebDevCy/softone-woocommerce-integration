@@ -405,18 +405,25 @@ array(
                 return '';
             }
 
-$payload = array( 'CUSTOMER' => array( $record ) );
+            $payload = array(
+                'CUSTOMER' => array( $record ),
+                'CUSEXTRA' => array(
+                    array(
+                        'BOOL01' => '1', // SoftOne requires BOOL01=1 to expose WooCommerce customers in downstream apps.
+                    ),
+                ),
+            );
 
-$this->log_order_event(
-'guest_customer_payload',
-__( 'Prepared SoftOne guest customer payload.', 'softone-woocommerce-integration' ),
-array(
-'order_id' => $order->get_id(),
-'payload'  => $payload,
-)
-);
+            $this->log_order_event(
+                'guest_customer_payload',
+                __( 'Prepared SoftOne guest customer payload.', 'softone-woocommerce-integration' ),
+                array(
+                    'order_id' => $order->get_id(),
+                    'payload'  => $payload,
+                )
+            );
 
-$response = $this->api_client->set_data( 'CUSTOMER', $payload );
+            $response = $this->api_client->set_data( 'CUSTOMER', $payload );
 
             if ( empty( $response['id'] ) ) {
                 return '';
