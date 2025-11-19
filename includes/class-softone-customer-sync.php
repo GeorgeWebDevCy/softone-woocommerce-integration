@@ -95,12 +95,30 @@ $customer_id = absint( $customer_id );
                 return '';
             }
 
-            $existing = get_user_meta( $customer_id, self::META_TRDR, true );
-            $existing = is_scalar( $existing ) ? (string) $existing : '';
+$existing = get_user_meta( $customer_id, self::META_TRDR, true );
+$existing = is_scalar( $existing ) ? (string) $existing : '';
 
-            if ( '' !== $existing ) {
-                return $existing;
-            }
+if ( '' !== $existing ) {
+try {
+if ( $this->softone_customer_exists( $existing ) ) {
+return $existing;
+}
+} catch ( Softone_API_Client_Exception $exception ) {
+$this->log( 'error', $exception->getMessage(), array(
+'user_id'   => $customer_id,
+'exception' => $exception,
+'context'   => array( 'trdr' => $existing ),
+) );
+
+return $existing;
+}
+
+$this->log( 'warning', __( 'Stored SoftOne customer reference is missing; recreating the record.', 'softone-woocommerce-integration' ), array(
+'user_id' => $customer_id,
+'context' => array( 'trdr' => $existing ),
+) );
+delete_user_meta( $customer_id, self::META_TRDR );
+}
 
             if ( ! class_exists( 'WC_Customer' ) ) {
                 return '';
@@ -338,6 +356,38 @@ $this->create_customer( $customer, $context );
             }
 
             return array();
+        }
+
+        /**
+         * Check whether a SoftOne customer exists for the provided TRDR.
+         *
+         * @param string $trdr SoftOne customer identifier.
+         *
+         * @throws Softone_API_Client_Exception When API requests fail.
+         *
+         * @return bool
+         */
+        protected function softone_customer_exists( $trdr ) {
+            $trdr = trim( (string) $trdr );
+
+            if ( '' === $trdr ) {
+                return false;
+            }
+
+            $response = $this->api_client->sql_data( 'getCustomers', array( 'TRDR' => $trdr ) );
+            $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
+
+            foreach ( $rows as $row ) {
+                if ( ! isset( $row['TRDR'] ) ) {
+                    continue;
+                }
+
+                if ( strcasecmp( (string) $row['TRDR'], $trdr ) === 0 ) {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /**
