@@ -685,7 +685,7 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
                 return array();
             }
 
-            return array(
+            $payload = array(
                 'CUSTOMER' => array( $record ),
                 'CUSEXTRA' => array(
                     array(
@@ -693,6 +693,37 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
                     ),
                 ),
             );
+
+            $this->validate_payload( $payload );
+
+            return $payload;
+        }
+
+        /**
+         * Validate the CUSTOMER payload for type correctness.
+         *
+         * @param array $payload The constructed payload.
+         * @return void
+         */
+        protected function validate_payload( $payload ) {
+            if ( ! isset( $payload['CUSTOMER'][0] ) ) {
+                return;
+            }
+
+            $record = $payload['CUSTOMER'][0];
+            $issues = array();
+
+            $int_fields = array( 'COUNTRY', 'AREAS', 'SOCURRENCY', 'TRDCATEGORY', 'TRDR' );
+
+            foreach ( $int_fields as $field ) {
+                if ( isset( $record[ $field ] ) && ! is_int( $record[ $field ] ) ) {
+                    $issues[] = sprintf( '%s is %s (expected int)', $field, gettype( $record[ $field ] ) );
+                }
+            }
+
+            if ( ! empty( $issues ) ) {
+                $this->log( 'warning', '[SO-VAL-002] Customer payload validation warnings detected.', array( 'issues' => $issues ) );
+            }
         }
 
         /**
