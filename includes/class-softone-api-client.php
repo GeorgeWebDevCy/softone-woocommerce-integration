@@ -75,6 +75,15 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
         const LEGACY_DEFAULT_REFID    = '1000';
 
         /**
+         * Default identifier values documented in the SoftOne onboarding PDF.
+         */
+        const PDF_DEFAULT_SALDOC_SERIES = '3000';
+        const PDF_DEFAULT_WAREHOUSE     = '101';
+        const PDF_DEFAULT_AREAS         = '22';
+        const PDF_DEFAULT_SOCURRENCY    = '47';
+        const PDF_DEFAULT_TRDCATEGORY   = '1';
+
+        /**
          * Cached settings.
          *
          * @var array
@@ -217,11 +226,11 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             $this->branch   = isset( $this->settings['branch'] ) ? trim( (string) $this->settings['branch'] ) : '';
             $this->module   = isset( $this->settings['module'] ) ? trim( (string) $this->settings['module'] ) : '';
             $this->refid    = isset( $this->settings['refid'] ) ? trim( (string) $this->settings['refid'] ) : '';
-            $this->default_saldoc_series = isset( $this->settings['default_saldoc_series'] ) ? trim( (string) $this->settings['default_saldoc_series'] ) : '';
-            $this->warehouse             = isset( $this->settings['warehouse'] ) ? trim( (string) $this->settings['warehouse'] ) : '';
-            $this->areas                 = isset( $this->settings['areas'] ) ? trim( (string) $this->settings['areas'] ) : '';
-            $this->socurrency            = isset( $this->settings['socurrency'] ) ? trim( (string) $this->settings['socurrency'] ) : '';
-            $this->trdcategory           = isset( $this->settings['trdcategory'] ) ? trim( (string) $this->settings['trdcategory'] ) : '';
+            $this->default_saldoc_series = $this->get_setting_with_pdf_default( 'default_saldoc_series' );
+            $this->warehouse             = $this->get_setting_with_pdf_default( 'warehouse' );
+            $this->areas                 = $this->get_setting_with_pdf_default( 'areas' );
+            $this->socurrency            = $this->get_setting_with_pdf_default( 'socurrency' );
+            $this->trdcategory           = $this->get_setting_with_pdf_default( 'trdcategory' );
 
             $timeout = isset( $this->settings['timeout'] ) ? absint( $this->settings['timeout'] ) : self::DEFAULT_TIMEOUT;
             $this->timeout = $timeout > 0 ? $timeout : self::DEFAULT_TIMEOUT;
@@ -362,6 +371,8 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             if ( '' === $object ) {
                 throw new Softone_API_Client_Exception( __( '[SO-API-008] A SoftOne object name is required for setData requests.', 'softone-woocommerce-integration' ) );
             }
+
+            $this->ensure_payload_defaults_available( $object );
 
             $payload = array_merge(
                 array(
@@ -820,6 +831,21 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
         }
 
         /**
+         * Retrieve the SoftOne identifier defaults documented in the onboarding PDF.
+         *
+         * @return array<string,string>
+         */
+        protected function get_pdf_default_fields() {
+            return array(
+                'default_saldoc_series' => self::PDF_DEFAULT_SALDOC_SERIES,
+                'warehouse'             => self::PDF_DEFAULT_WAREHOUSE,
+                'areas'                 => self::PDF_DEFAULT_AREAS,
+                'socurrency'            => self::PDF_DEFAULT_SOCURRENCY,
+                'trdcategory'           => self::PDF_DEFAULT_TRDCATEGORY,
+            );
+        }
+
+        /**
          * Helper method to normalise stored settings before applying fallbacks.
          *
          * @param array  $settings Settings array.
@@ -843,6 +869,25 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             }
 
             return trim( (string) $value );
+        }
+
+        /**
+         * Retrieve a setting and fall back to the SoftOne PDF defaults when empty.
+         *
+         * @param string $key Settings key to inspect.
+         *
+         * @return string
+         */
+        protected function get_setting_with_pdf_default( $key ) {
+            $value = $this->sanitize_default_fallback_value( $this->settings, $key );
+
+            if ( '' !== $value ) {
+                return $value;
+            }
+
+            $pdf_defaults = $this->get_pdf_default_fields();
+
+            return isset( $pdf_defaults[ $key ] ) ? $pdf_defaults[ $key ] : '';
         }
 
         /**
@@ -898,6 +943,92 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
          */
         public function get_trdcategory() {
             return $this->trdcategory;
+        }
+
+        /**
+         * Ensure default identifiers required by a payload are configured.
+         *
+         * @param string $object SoftOne object name.
+         *
+         * @throws Softone_API_Client_Exception When defaults are missing.
+         */
+        protected function ensure_payload_defaults_available( $object ) {
+            $object = strtoupper( trim( (string) $object ) );
+
+            $field_map = array();
+
+            if ( 'SALDOC' === $object ) {
+                $field_map = array(
+                    'default_saldoc_series' => __( 'Default SALDOC Series', 'softone-woocommerce-integration' ),
+                    'warehouse'             => __( 'Default Warehouse', 'softone-woocommerce-integration' ),
+                );
+            } elseif ( 'CUSTOMER' === $object ) {
+                $field_map = array(
+                    'areas'       => __( 'Default AREAS', 'softone-woocommerce-integration' ),
+                    'socurrency'  => __( 'Default SOCURRENCY', 'softone-woocommerce-integration' ),
+                    'trdcategory' => __( 'Default TRDCATEGORY', 'softone-woocommerce-integration' ),
+                );
+            }
+
+            if ( empty( $field_map ) ) {
+                return;
+            }
+
+            $missing = array();
+
+            foreach ( $field_map as $property => $label ) {
+                if ( '' === $this->get_default_property_value( $property ) ) {
+                    $missing[ $property ] = $label;
+                }
+            }
+
+            if ( empty( $missing ) ) {
+                return;
+            }
+
+            $labels = array_values( $missing );
+
+            $message = sprintf(
+                /* translators: 1: SoftOne object name, 2: comma separated default identifiers. */
+                __( '[SO-API-021] Cannot send %1$s payload because the following defaults are missing: %2$s.', 'softone-woocommerce-integration' ),
+                $object,
+                implode( ', ', $labels )
+            );
+
+            $this->log_error(
+                $message,
+                array(
+                    'object'         => $object,
+                    'missing_fields' => array_keys( $missing ),
+                )
+            );
+
+            throw new Softone_API_Client_Exception( $message );
+        }
+
+        /**
+         * Safely fetch a default identifier property value.
+         *
+         * @param string $property Property name.
+         *
+         * @return string
+         */
+        protected function get_default_property_value( $property ) {
+            if ( ! property_exists( $this, $property ) ) {
+                return '';
+            }
+
+            $value = $this->{$property};
+
+            if ( is_string( $value ) ) {
+                return $value;
+            }
+
+            if ( is_scalar( $value ) ) {
+                return (string) $value;
+            }
+
+            return '';
         }
 
         /**
