@@ -820,12 +820,22 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         protected function normalize_row( array $row ) {
             $normalized = array();
             foreach ( $row as $key => $value ) {
-                $normalized_key = strtolower( preg_replace( '/[^a-zA-Z0-9]+/', '_', (string) $key ) );
-                $normalized_key = trim( $normalized_key, '_' );
+                $normalized_key = $this->normalize_field_key( $key );
                 if ( '' === $normalized_key ) { continue; }
                 $normalized[ $normalized_key ] = $value;
             }
             return $normalized;
+        }
+
+        /**
+         * Normalise Softone payload keys to predictable tokens.
+         *
+         * @param string $key Raw key from the payload.
+         * @return string Normalised key.
+         */
+        protected function normalize_field_key( $key ) {
+            $normalized_key = strtolower( preg_replace( '/[^a-zA-Z0-9]+/', '_', (string) $key ) );
+            return trim( $normalized_key, '_' );
         }
 
         /**
@@ -5001,6 +5011,28 @@ protected function resolve_colour_attribute_slug() {
                     return (string) $data[ $key ];
                 }
             }
+
+            $normalized_data = array();
+            foreach ( $data as $candidate_key => $value ) {
+                $normalized_key = $this->normalize_field_key( $candidate_key );
+                if ( '' === $normalized_key || array_key_exists( $normalized_key, $normalized_data ) ) {
+                    continue;
+                }
+                $normalized_data[ $normalized_key ] = $value;
+            }
+
+            foreach ( $keys as $key ) {
+                $normalized_key = $this->normalize_field_key( $key );
+                if ( '' === $normalized_key || ! array_key_exists( $normalized_key, $normalized_data ) ) {
+                    continue;
+                }
+
+                $value = $normalized_data[ $normalized_key ];
+                if ( '' !== trim( (string) $value ) ) {
+                    return (string) $value;
+                }
+            }
+
             return '';
         }
 
