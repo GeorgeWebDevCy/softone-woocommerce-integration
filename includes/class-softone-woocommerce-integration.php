@@ -116,11 +116,11 @@ protected $order_export_logger;
          * @since    1.0.0
          */
 	public function __construct() {
-                if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
-                        $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
-                } else {
-$this->version = '1.10.25';
-                }
+		if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
+			$this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
+		} else {
+			$this->version = '1.10.26';
+		}
 
 		$this->plugin_name = 'softone-woocommerce-integration';
 
