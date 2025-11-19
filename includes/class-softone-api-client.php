@@ -420,12 +420,20 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 }
             }
 
+            $request_id = uniqid( 'req_', true );
+            
+            $this->log_info( sprintf( '[%s] Calling SoftOne service: %s', $request_id, $service ), array(
+                'request_id' => $request_id,
+                'service'    => $service,
+                'request'    => $this->redact_sensitive_values( $body ),
+            ) );
+
             $body     = $this->prepare_request_body( $service, $data, $client_id );
             $response = $this->dispatch_request( $body, $service );
 
             if ( isset( $response['success'] ) && false === $response['success'] ) {
                 if ( $requires_client_id && $retry_on_authentication && $this->is_authentication_error( $response ) ) {
-                    $this->log_warning( __( '[SO-API-012] SoftOne session appears to have expired. Refreshing credentials.', 'softone-woocommerce-integration' ), array( 'service' => $service ) );
+                    $this->log_warning( sprintf( '[%s] [SO-API-012] SoftOne session appears to have expired. Refreshing credentials.', $request_id ), array( 'service' => $service, 'request_id' => $request_id ) );
                     $this->clear_cached_client_id();
 
                     $client_id = $this->get_client_id( true );
@@ -437,20 +445,29 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
             if ( isset( $response['success'] ) && false === $response['success'] ) {
                 $message = $this->extract_error_message( $response );
                 $context = array(
-                    'service'  => $service,
-                    'request'  => $this->redact_sensitive_values( $body ),
-                    'response' => $this->redact_sensitive_values( $response ),
+                    'request_id' => $request_id,
+                    'service'    => $service,
+                    'request'    => $this->redact_sensitive_values( $body ),
+                    'response'   => $this->redact_sensitive_values( $response ),
                 );
-                $this->log_error( $message, $context );
-                throw new Softone_API_Client_Exception( $message, 0, null, $context );
+                $this->log_error( sprintf( '[%s] %s', $request_id, $message ), $context );
+                throw new Softone_API_Client_Exception( sprintf( '[%s] %s', $request_id, $message ), 0, null, $context );
             }
 
             if ( $requires_client_id && ! empty( $response['clientID'] ) ) {
                 $this->cache_client_id( (string) $response['clientID'] );
             }
 
+            $this->log_info( sprintf( '[%s] SoftOne service call successful.', $request_id ), array(
+                'request_id' => $request_id,
+                'service'    => $service,
+                'response'   => $this->redact_sensitive_values( $response ),
+            ) );
+
             return $response;
         }
+
+
 
         /**
          * Retrieve the cached SoftOne client ID, refreshing when required.
