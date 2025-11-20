@@ -173,7 +173,7 @@ $this->log_order_event(
 'saldoc_payload',
 __( 'Prepared SoftOne SALDOC payload.', 'softone-woocommerce-integration' ),
 array(
-'order_id'     => $order_id,
+'order_id'     => "*",
 'order_number' => $order_number,
 'payload'      => $payload,
 )
