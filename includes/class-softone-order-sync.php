@@ -647,29 +647,30 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
 	 * @return array<string,mixed>
 	 */
 	protected function build_setdata_log_request( array $payload ) {
-		$request = array(
-			'service' => 'setData',
-			'object'  => 'SALDOC',
-			'data'    => $payload,
-		);
-
-		$app_id = softone_wc_integration_get_setting( 'app_id', '' );
-
-		if ( '' !== $app_id ) {
-			$request['AppID'] = $this->normalize_numeric_field( $app_id );
-		}
+		$client_id = '';
 
 		try {
 			$client_id = $this->api_client->get_client_id();
-
-			if ( '' !== $client_id ) {
-				$request['clientID'] = $client_id;
-			}
 		} catch ( Exception $exception ) {
-			// Swallow logging-only failures.
+			$client_id = '';
 		}
 
-		return $request;
+		$app_id = softone_wc_integration_get_setting( 'app_id', '' );
+
+		$request = array(
+			'service'  => 'setData',
+			'clientID' => '' !== $client_id ? $client_id : null,
+			'appID'    => '' !== $app_id ? $this->normalize_numeric_field( $app_id ) : null,
+			'object'   => 'SALDOC',
+			'data'     => $payload,
+		);
+
+		return array_filter(
+			$request,
+			function( $value ) {
+				return null !== $value && '' !== $value;
+			}
+		);
 	}
 
         /**
