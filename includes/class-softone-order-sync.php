@@ -244,11 +244,17 @@ array(
          *
          * @return string
          */
-        protected function determine_order_trdr( WC_Order $order ) {
+protected function determine_order_trdr( WC_Order $order ) {
 $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
 
             if ( '' !== $trdr ) {
                 $this->current_customer_record = $this->fetch_customer_by_trdr( $trdr );
+                $this->log_customer_lookup(
+                    $order,
+                    array(),
+                    $this->current_customer_record,
+                    'order_meta_trdr'
+                );
                 return $trdr;
             }
 
@@ -273,9 +279,22 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
                             'trdr'     => $trdr,
                         ) )
                     );
+                    $this->log_customer_lookup(
+                        $order,
+                        array( 'EMAIL' => $email ),
+                        $matched_customer,
+                        'email'
+                    );
 
                     return $trdr;
                 }
+
+                $this->log_customer_lookup(
+                    $order,
+                    array( 'EMAIL' => $email ),
+                    array(),
+                    'email_miss'
+                );
             }
 
             if ( $customer_id > 0 ) {
@@ -292,6 +311,12 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
                     $this->current_customer_record = $this->fetch_customer_by_trdr( $trdr );
                     $order->update_meta_data( self::ORDER_META_TRDR, $trdr );
                     $this->persist_order_meta( $order );
+                    $this->log_customer_lookup(
+                        $order,
+                        array(),
+                        $this->current_customer_record,
+                        'customer_sync'
+                    );
 
                     return $trdr;
                 }
@@ -304,6 +329,12 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
                     $this->current_customer_record = $this->fetch_customer_by_trdr( $trdr );
                     $order->update_meta_data( self::ORDER_META_TRDR, $trdr );
                     $this->persist_order_meta( $order );
+                    $this->log_customer_lookup(
+                        $order,
+                        array( 'EMAIL' => $email ),
+                        $this->current_customer_record,
+                        'guest_created'
+                    );
                 }
             }
 
@@ -344,6 +375,35 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
             }
 
             return array();
+        }
+
+        /**
+         * Record the outcome of a SoftOne customer lookup to the order export log.
+         *
+         * @param WC_Order               $order           Order being exported.
+         * @param array<string,string>   $filters         Filters used (e.g. EMAIL).
+         * @param array<string,mixed>    $customer_record Customer record returned (if any).
+         * @param string                 $source          Lookup source identifier.
+         *
+         * @return void
+         */
+        protected function log_customer_lookup( WC_Order $order, array $filters, array $customer_record, $source ) {
+            $summary = array(
+                'order_id'  => $order->get_id(),
+                'filters'   => $filters,
+                'trdr'      => isset( $customer_record['TRDR'] ) ? (string) $customer_record['TRDR'] : '',
+                'code'      => isset( $customer_record['CODE'] ) ? (string) $customer_record['CODE'] : '',
+                'email'     => isset( $customer_record['EMAIL'] ) ? (string) $customer_record['EMAIL'] : '',
+                'cusbranch' => isset( $customer_record['CUSBRANCH'] ) ? (string) $customer_record['CUSBRANCH'] : '',
+                'branch'    => isset( $customer_record['BRANCH'] ) ? (string) $customer_record['BRANCH'] : '',
+                'source'    => (string) $source,
+            );
+
+            $this->log_order_event(
+                'customer_lookup',
+                __( 'SoftOne customer lookup performed.', 'softone-woocommerce-integration' ),
+                $this->build_order_event_context( $order, $summary )
+            );
         }
 
         /**
