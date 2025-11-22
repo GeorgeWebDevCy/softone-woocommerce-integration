@@ -92,6 +92,13 @@ private $process_trace_slug = 'softone-woocommerce-integration-process-trace';
  */
 private $api_tester_slug = 'softone-woocommerce-integration-api-tester';
 
+/**
+ * Customer browser submenu slug.
+ *
+ * @var string
+ */
+private $customer_browser_slug = 'softone-woocommerce-integration-customers';
+
         /**
          * Maximum number of category log entries to display.
          *
@@ -107,11 +114,18 @@ private $api_tester_slug = 'softone-woocommerce-integration-api-tester';
 	private $capability = 'manage_options';
 
         /**
-         * Action name for the API tester handler.
-         *
-         * @var string
-         */
-        private $api_tester_action = 'softone_wc_integration_api_tester';
+ * Action name for the API tester handler.
+ *
+ * @var string
+ */
+private $api_tester_action = 'softone_wc_integration_api_tester';
+
+/**
+ * Action name for the SoftOne customer browser handler.
+ *
+ * @var string
+ */
+private $customer_browser_action = 'softone_wc_integration_customers';
 
         /**
          * Action name for clearing the sync activity log.
@@ -233,11 +247,18 @@ private $order_export_log_limit = 200;
         private $sync_activity_poll_interval = 15000;
 
         /**
-         * Base transient key for API tester responses.
-         *
-         * @var string
-         */
-	private $api_tester_transient = 'softone_wc_integration_api_tester_';
+ * Base transient key for API tester responses.
+ *
+ * @var string
+ */
+private $api_tester_transient = 'softone_wc_integration_api_tester_';
+
+/**
+ * Base transient key for SoftOne customer browser responses.
+ *
+ * @var string
+ */
+private $customer_browser_transient = 'softone_wc_integration_customers_';
 
         /**
          * Base transient key for import notices.
@@ -381,6 +402,15 @@ array( $this, 'render_order_export_logs_page' )
                         array( $this, 'render_api_tester_page' )
                 );
 
+		add_submenu_page(
+			$this->menu_slug,
+			__( 'SoftOne Customers', 'softone-woocommerce-integration' ),
+			__( 'Customers', 'softone-woocommerce-integration' ),
+			$this->capability,
+			$this->customer_browser_slug,
+			array( $this, 'render_customer_browser_page' )
+		);
+
                 add_submenu_page(
                         'woocommerce',
                         $page_title,
@@ -434,6 +464,15 @@ array( $this, 'render_order_export_logs_page' )
                         $this->process_trace_slug,
                         array( $this, 'render_process_trace_page' )
                 );
+
+		add_submenu_page(
+			'woocommerce',
+			__( 'SoftOne Customers', 'softone-woocommerce-integration' ),
+			__( 'Customers', 'softone-woocommerce-integration' ),
+			$this->capability,
+			$this->customer_browser_slug,
+			array( $this, 'render_customer_browser_page' )
+		);
 
         }
 
@@ -825,6 +864,15 @@ return $this->item_import_ajax_action;
  */
 public function get_process_trace_action() {
 return $this->process_trace_action;
+}
+
+/**
+ * Retrieve the action name used for the SoftOne customer browser.
+ *
+ * @return string
+ */
+public function get_customer_browser_action() {
+	return $this->customer_browser_action;
 }
 
         /**
@@ -2874,6 +2922,148 @@ include plugin_dir_path( __FILE__ ) . 'partials/softone-woocommerce-integration-
                return array( $clean_message, $context );
        }
 
+	/**
+	 * Render the SoftOne customer browser admin page.
+	 *
+	 * Executes the getCustomers SqlData query and displays the returned rows
+	 * so store managers can quickly inspect SoftOne customer records.
+	 *
+	 * @return void
+	 */
+	public function render_customer_browser_page() {
+
+		if ( ! current_user_can( $this->capability ) ) {
+			return;
+		}
+
+		$result    = $this->get_customer_browser_result();
+		$defaults  = array(
+			'email'     => '',
+			'code'      => '',
+			'trdr'      => '',
+			'page_size' => 50,
+		);
+		$form_data = isset( $result['form'] ) && is_array( $result['form'] ) ? wp_parse_args( $result['form'], $defaults ) : $defaults;
+
+		$form_data['page_size'] = isset( $form_data['page_size'] ) ? max( 1, absint( $form_data['page_size'] ) ) : $defaults['page_size'];
+
+		$rows    = isset( $result['rows'] ) && is_array( $result['rows'] ) ? $result['rows'] : array();
+		$status  = isset( $result['status'] ) ? $result['status'] : '';
+		$message = isset( $result['message'] ) ? $result['message'] : '';
+		$filters = isset( $result['filters'] ) && is_array( $result['filters'] ) ? $result['filters'] : array();
+
+		$columns = array(
+			'TRDR'    => __( 'TRDR', 'softone-woocommerce-integration' ),
+			'CODE'    => __( 'Code', 'softone-woocommerce-integration' ),
+			'NAME'    => __( 'Name', 'softone-woocommerce-integration' ),
+			'EMAIL'   => __( 'Email', 'softone-woocommerce-integration' ),
+			'PHONE01' => __( 'Phone', 'softone-woocommerce-integration' ),
+			'AFM'     => __( 'VAT', 'softone-woocommerce-integration' ),
+		);
+		?>
+<div class="wrap softone-customer-browser">
+	<h1><?php esc_html_e( 'SoftOne Customers', 'softone-woocommerce-integration' ); ?></h1>
+	<p class="description"><?php esc_html_e( 'Run the getCustomers SqlData query to review customers currently stored in SoftOne.', 'softone-woocommerce-integration' ); ?></p>
+
+	<?php if ( '' !== $message ) : ?>
+		<?php $notice_classes = array( 'notice' ); ?>
+		<?php $notice_classes[] = ( 'error' === $status ) ? 'notice-error' : 'notice-success'; ?>
+		<div class="<?php echo esc_attr( implode( ' ', $notice_classes ) ); ?>">
+			<p><?php echo esc_html( $message ); ?></p>
+		</div>
+	<?php endif; ?>
+
+	<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+		<?php wp_nonce_field( $this->customer_browser_action ); ?>
+		<input type="hidden" name="action" value="<?php echo esc_attr( $this->customer_browser_action ); ?>" />
+
+		<table class="form-table" role="presentation">
+			<tr>
+				<th scope="row"><label for="softone_customer_email"><?php esc_html_e( 'Email', 'softone-woocommerce-integration' ); ?></label></th>
+				<td>
+					<input type="email" id="softone_customer_email" name="softone_customer_email" value="<?php echo esc_attr( $form_data['email'] ); ?>" class="regular-text" />
+					<p class="description"><?php esc_html_e( 'Optional filter to match SoftOne customers by email.', 'softone-woocommerce-integration' ); ?></p>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><label for="softone_customer_code"><?php esc_html_e( 'Customer code', 'softone-woocommerce-integration' ); ?></label></th>
+				<td>
+					<input type="text" id="softone_customer_code" name="softone_customer_code" value="<?php echo esc_attr( $form_data['code'] ); ?>" class="regular-text" />
+					<p class="description"><?php esc_html_e( 'Filter by SoftOne customer code (CODE). Leave blank to fetch all records.', 'softone-woocommerce-integration' ); ?></p>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><label for="softone_customer_trdr"><?php esc_html_e( 'TRDR', 'softone-woocommerce-integration' ); ?></label></th>
+				<td>
+					<input type="text" id="softone_customer_trdr" name="softone_customer_trdr" value="<?php echo esc_attr( $form_data['trdr'] ); ?>" class="regular-text" />
+					<p class="description"><?php esc_html_e( 'Filter by SoftOne customer identifier (TRDR).', 'softone-woocommerce-integration' ); ?></p>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><label for="softone_customer_page_size"><?php esc_html_e( 'Results per page', 'softone-woocommerce-integration' ); ?></label></th>
+				<td>
+					<input type="number" min="1" max="200" id="softone_customer_page_size" name="softone_customer_page_size" value="<?php echo esc_attr( $form_data['page_size'] ); ?>" />
+					<p class="description"><?php esc_html_e( 'Limit the number of results returned by SoftOne (max 200).', 'softone-woocommerce-integration' ); ?></p>
+				</td>
+			</tr>
+		</table>
+
+		<?php submit_button( __( 'Fetch customers', 'softone-woocommerce-integration' ) ); ?>
+	</form>
+
+	<?php if ( 'success' === $status ) : ?>
+		<h2><?php esc_html_e( 'Customer results', 'softone-woocommerce-integration' ); ?></h2>
+		<?php if ( ! empty( $filters ) ) : ?>
+			<p class="description">
+				<?php
+				$summary_parts = array();
+
+				foreach ( $filters as $filter_key => $filter_value ) {
+					$summary_parts[] = sprintf(
+						/* translators: 1: filter key, 2: filter value */
+						__( '%1$s: %2$s', 'softone-woocommerce-integration' ),
+						sanitize_text_field( (string) $filter_key ),
+						sanitize_text_field( (string) $filter_value )
+					);
+				}
+
+				printf(
+					/* translators: %s: comma-separated list of filters */
+					esc_html__( 'Filters applied: %s', 'softone-woocommerce-integration' ),
+					esc_html( implode( ', ', $summary_parts ) )
+				);
+				?>
+			</p>
+		<?php endif; ?>
+
+		<?php if ( ! empty( $rows ) ) : ?>
+			<table class="widefat striped">
+				<thead>
+					<tr>
+						<?php foreach ( $columns as $key => $label ) : ?>
+							<th scope="col"><?php echo esc_html( $label ); ?></th>
+						<?php endforeach; ?>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ( $rows as $row ) : ?>
+						<tr>
+							<?php foreach ( $columns as $key => $label ) : ?>
+								<td><?php echo esc_html( isset( $row[ $key ] ) ? (string) $row[ $key ] : '' ); ?></td>
+							<?php endforeach; ?>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		<?php else : ?>
+			<p class="description"><?php esc_html_e( 'No customers matched the provided filters.', 'softone-woocommerce-integration' ); ?></p>
+		<?php endif; ?>
+	<?php endif; ?>
+</div>
+<?php
+
+	}
+
        /**
         * Output the interactive API tester workspace for administrators.
         *
@@ -3333,6 +3523,149 @@ include plugin_dir_path( __FILE__ ) . 'partials/softone-woocommerce-integration-
                return (string) $value;
 
        }
+
+	/**
+	 * Handle requests to browse SoftOne customers via getCustomers.
+	 *
+	 * @return void
+	 */
+	public function handle_customer_browser_request() {
+
+		if ( ! current_user_can( $this->capability ) ) {
+			wp_die( esc_html__( 'You do not have permission to perform this action.', 'softone-woocommerce-integration' ) );
+		}
+
+		check_admin_referer( $this->customer_browser_action );
+
+		$request = $this->prepare_customer_browser_request();
+
+		try {
+			$client = new Softone_API_Client();
+
+			// SoftOne SqlData -> getCustomers.
+			$response = $client->sql_data( 'getCustomers', $request['filters'], $request['extra'] );
+
+			$rows  = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
+			$count = count( $rows );
+
+			$message = sprintf(
+				/* translators: %d: number of customers returned */
+				__( 'Retrieved %d customers from SoftOne.', 'softone-woocommerce-integration' ),
+				$count
+			);
+
+			if ( 0 === $count ) {
+				$message = __( 'No customers were returned for the provided filters.', 'softone-woocommerce-integration' );
+			}
+
+			$this->store_customer_browser_result(
+				array(
+					'status'  => 'success',
+					'message' => $message,
+					'rows'    => $rows,
+					'filters' => $request['filters'],
+					'form'    => $request['form'],
+				)
+			);
+		} catch ( Softone_API_Client_Exception $exception ) {
+			$this->store_customer_browser_result(
+				array(
+					'status'  => 'error',
+					'message' => $exception->getMessage(),
+					'rows'    => array(),
+					'filters' => $request['filters'],
+					'form'    => $request['form'],
+				)
+			);
+		} catch ( Exception $exception ) {
+			$this->store_customer_browser_result(
+				array(
+					'status'  => 'error',
+					'message' => $exception->getMessage(),
+					'rows'    => array(),
+					'filters' => $request['filters'],
+					'form'    => $request['form'],
+				)
+			);
+		}
+
+		wp_safe_redirect( $this->get_customer_browser_page_url() );
+		exit;
+
+	}
+
+	/**
+	 * Prepare sanitized request data for the customer browser form.
+	 *
+	 * @return array<string,array<string,mixed>>
+	 */
+	private function prepare_customer_browser_request() {
+
+		$form = array(
+			'email'     => '',
+			'code'      => '',
+			'trdr'      => '',
+			'page_size' => 50,
+		);
+
+		if ( isset( $_POST['softone_customer_email'] ) ) {
+			$form['email'] = sanitize_email( wp_unslash( $_POST['softone_customer_email'] ) );
+		}
+
+		if ( isset( $_POST['softone_customer_code'] ) ) {
+			$form['code'] = sanitize_text_field( wp_unslash( $_POST['softone_customer_code'] ) );
+		}
+
+		if ( isset( $_POST['softone_customer_trdr'] ) ) {
+			$form['trdr'] = sanitize_text_field( wp_unslash( $_POST['softone_customer_trdr'] ) );
+		}
+
+		if ( isset( $_POST['softone_customer_page_size'] ) ) {
+			$form['page_size'] = $this->sanitize_customer_browser_page_size( wp_unslash( $_POST['softone_customer_page_size'] ) );
+		}
+
+		$filters = array();
+
+		if ( '' !== $form['email'] ) {
+			$filters['EMAIL'] = $form['email'];
+		}
+
+		if ( '' !== $form['code'] ) {
+			$filters['CODE'] = $form['code'];
+		}
+
+		if ( '' !== $form['trdr'] ) {
+			$filters['TRDR'] = $form['trdr'];
+		}
+
+		$extra = array(
+			'pagesize' => $form['page_size'],
+		);
+
+		return array(
+			'form'    => $form,
+			'filters' => $filters,
+			'extra'   => $extra,
+		);
+
+	}
+
+	/**
+	 * Normalize the requested page size for the customer browser.
+	 *
+	 * @param mixed $page_size Raw page size.
+	 *
+	 * @return int
+	 */
+	private function sanitize_customer_browser_page_size( $page_size ) {
+		$page_size = absint( $page_size );
+
+		if ( $page_size < 1 ) {
+			$page_size = 50;
+		}
+
+		return min( 200, $page_size );
+	}
 
         /**
          * Handle API tester submissions.
@@ -4129,6 +4462,42 @@ return new WP_Query( $query_args );
 
         }
 
+	/**
+	 * Store a customer browser result for the current user.
+	 *
+	 * @param array $result Result data.
+	 */
+	private function store_customer_browser_result( array $result ) {
+		set_transient( $this->get_customer_browser_transient_key(), $result, 5 * MINUTE_IN_SECONDS );
+	}
+
+	/**
+	 * Retrieve the stored customer browser result for the current user.
+	 *
+	 * @return array
+	 */
+	private function get_customer_browser_result() {
+		$key    = $this->get_customer_browser_transient_key();
+		$result = get_transient( $key );
+
+		if ( false !== $result ) {
+			delete_transient( $key );
+		}
+
+		return is_array( $result ) ? $result : array();
+	}
+
+	/**
+	 * Generate the transient key for the customer browser store for the current user.
+	 *
+	 * @return string
+	 */
+	private function get_customer_browser_transient_key() {
+		$user_id = get_current_user_id();
+
+		return $this->customer_browser_transient . ( $user_id ? $user_id : 'guest' );
+	}
+
         /**
          * Store an API tester result for the current user.
          *
@@ -4176,11 +4545,20 @@ return new WP_Query( $query_args );
          *
          * @return string
          */
-	private function get_api_tester_page_url() {
+        private function get_api_tester_page_url() {
 
                 return add_query_arg( array( 'page' => $this->api_tester_slug ), admin_url( 'admin.php' ) );
 
         }
+
+	/**
+	 * Retrieve the customer browser page URL.
+	 *
+	 * @return string
+	 */
+	private function get_customer_browser_page_url() {
+		return add_query_arg( array( 'page' => $this->customer_browser_slug ), admin_url( 'admin.php' ) );
+	}
 
         /**
          * Retrieve the settings page URL.
