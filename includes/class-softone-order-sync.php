@@ -580,45 +580,47 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
 	 *
 	 * @return array<string,array<int,array<string,mixed>>>
 	 */
-	protected function build_document_payload( WC_Order $order, $trdr, array $customer_data = array() ) {
-		$series    = $this->normalize_numeric_field( $this->api_client->get_default_saldoc_series() );
-		$warehouse = $this->normalize_numeric_field( $this->api_client->get_warehouse() );
-		$order_id  = $order->get_id();
-            if ( '' === $series ) {
-                $this->log( 'warning', __( '[SO-ORD-009] SoftOne SALDOC series is not configured. Using fallback payload without series.', 'softone-woocommerce-integration' ), array( 'order_id' => $order->get_id() ) );
-            }
+		protected function build_document_payload( WC_Order $order, $trdr, array $customer_data = array() ) {
+			$series    = $this->normalize_numeric_field( $this->api_client->get_default_saldoc_series() );
+			$warehouse = $this->normalize_numeric_field( $this->api_client->get_warehouse() );
+			$order_id  = $order->get_id();
 
-		$header    = array(
-			'SERIES'    => '' !== $series ? $series : null,
-			'TRDR'      => $this->normalize_numeric_field( $trdr ),
-			'VARCHAR01' => $this->normalize_numeric_field( $order_id ),
-			'TRNDATE'   => $this->format_order_date( $order ),
-			'COMMENTS'  => $this->build_order_comments( $order ),
-		);
+			if ( '' === $series ) {
+				$this->log( 'warning', __( '[SO-ORD-009] SoftOne SALDOC series is not configured. Using fallback payload without series.', 'softone-woocommerce-integration' ), array( 'order_id' => $order->get_id() ) );
+			}
 
-		if ( isset( $customer_data['CUSBRANCH'] ) && '' !== $customer_data['CUSBRANCH'] ) {
-			$header['CUSBRANCH'] = $this->normalize_numeric_field( $customer_data['CUSBRANCH'] );
-		} elseif ( isset( $customer_data['BRANCH'] ) && '' !== $customer_data['BRANCH'] ) {
-			$header['CUSBRANCH'] = $this->normalize_numeric_field( $customer_data['BRANCH'] );
-		}
-
-            $header = array_filter( $header, array( $this, 'filter_empty_value' ) );
-
-		$payload = array(
-			'SALDOC'   => array( $header ),
-			'ITELINES' => $this->build_item_lines( $order ),
-		);
-
-		if ( '' !== $warehouse ) {
-			$payload['MTRDOC'] = array(
-				array( 'WHOUSE' => $warehouse ),
+			$header = array(
+				'SERIES'    => '' !== $series ? $series : null,
+				'TRDR'      => $this->normalize_numeric_field( $trdr ),
+				'VARCHAR01' => $this->normalize_numeric_field( $order_id ),
+				'TRNDATE'   => $this->format_order_date( $order ),
+				'COMMENTS'  => $this->build_order_comments( $order ),
 			);
+
+			if ( isset( $customer_data['CUSBRANCH'] ) && '' !== $customer_data['CUSBRANCH'] ) {
+				$header['CUSBRANCH'] = $this->normalize_numeric_field( $customer_data['CUSBRANCH'] );
+			} elseif ( isset( $customer_data['BRANCH'] ) && '' !== $customer_data['BRANCH'] ) {
+				$header['CUSBRANCH'] = $this->normalize_numeric_field( $customer_data['BRANCH'] );
+			}
+
+			$header = array_filter( $header, array( $this, 'filter_empty_value' ) );
+
+			$payload = array(
+				'SALDOC' => array( $header ),
+			);
+
+			if ( '' !== $warehouse ) {
+				$payload['MTRDOC'] = array(
+					array( 'WHOUSE' => $warehouse ),
+				);
+			}
+
+			$payload['ITELINES'] = $this->build_item_lines( $order );
+
+			$payload = apply_filters( 'softone_wc_integration_order_payload', $payload, $order, $trdr, $this );
+
+			return $payload;
 		}
-
-            $payload = apply_filters( 'softone_wc_integration_order_payload', $payload, $order, $trdr, $this );
-
-		return $payload;
-	}
 
 	/**
 	 * Cast numeric-like values to integers where possible to match SoftOne expectations.
