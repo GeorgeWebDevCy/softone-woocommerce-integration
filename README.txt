@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.10.38
+Stable tag: 1.10.39
 =======
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -79,6 +79,9 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Cron_Manager::schedule_event()`.
 
 == Changelog ==
+
+= 1.10.39 =
+* Change: Look up SoftOne customers by email before exporting orders so existing records (or newly created ones) populate SALDOC payloads with the correct TRDR and customer context.
 
 = 1.10.38 =
 * Feature: Add a SoftOne Customers admin screen to run the getCustomers SqlData query and review the current ERP customers directly from wp-admin.

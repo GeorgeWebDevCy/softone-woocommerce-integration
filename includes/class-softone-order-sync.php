@@ -48,6 +48,13 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
 protected $order_event_logger;
 
 /**
+ * Last SoftOne customer record found for the current order.
+ *
+ * @var array<string,mixed>
+ */
+protected $current_customer_record = array();
+
+/**
  * Constructor.
  *
  * @param Softone_API_Client|null        $api_client          Optional API client override.
@@ -59,6 +66,8 @@ public function __construct( ?Softone_API_Client $api_client = null, ?Softone_Cu
 $this->api_client        = $api_client ?: new Softone_API_Client();
 $this->order_event_logger = $order_event_logger;
 $this->customer_sync     = $customer_sync ?: new Softone_Customer_Sync( $this->api_client, null, $this->order_event_logger );
+
+$this->current_customer_record = array();
 
 if ( $this->customer_sync && method_exists( $this->customer_sync, 'set_order_event_logger' ) ) {
 $this->customer_sync->set_order_event_logger( $this->order_event_logger );
@@ -105,6 +114,8 @@ $order = wc_get_order( $order_id );
 if ( ! $order ) {
 return;
 }
+
+$this->current_customer_record = array();
 
 $current_status = method_exists( $order, 'get_status' ) ? (string) $order->get_status() : '';
 $order_number   = method_exists( $order, 'get_order_number' ) ? (string) $order->get_order_number() : (string) $order_id;
@@ -167,7 +178,7 @@ return;
                 return;
             }
 
-$payload = $this->build_document_payload( $order, $trdr );
+$payload = $this->build_document_payload( $order, $trdr, $this->current_customer_record );
 
 $this->log_order_event(
 'saldoc_payload',
@@ -233,40 +244,52 @@ array(
          *
          * @return string
          */
-protected function determine_order_trdr( WC_Order $order ) {
+        protected function determine_order_trdr( WC_Order $order ) {
 $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
 
             if ( '' !== $trdr ) {
+                $this->current_customer_record = $this->fetch_customer_by_trdr( $trdr );
                 return $trdr;
             }
 
-$customer_id  = method_exists( $order, 'get_customer_id' ) ? absint( $order->get_customer_id() ) : 0;
-$order_number = method_exists( $order, 'get_order_number' ) ? (string) $order->get_order_number() : (string) $order->get_id();
+            $customer_id  = method_exists( $order, 'get_customer_id' ) ? absint( $order->get_customer_id() ) : 0;
+            $order_number = method_exists( $order, 'get_order_number' ) ? (string) $order->get_order_number() : (string) $order->get_id();
+            $email        = method_exists( $order, 'get_billing_email' ) ? (string) $order->get_billing_email() : '';
 
-if ( $customer_id > 0 ) {
-$trdr = $this->customer_sync->ensure_customer_trdr(
-$customer_id,
-array(
-'order_id'     => $order->get_id(),
-'order_number' => $order_number,
-'source'       => 'order_export',
-)
-);
+            if ( '' !== $email ) {
+                $matched_customer = $this->find_customer_by_email( $email );
 
-                if ( '' !== $trdr ) {
+                if ( ! empty( $matched_customer ) && isset( $matched_customer['TRDR'] ) ) {
+                    $trdr = (string) $matched_customer['TRDR'];
+                    $this->current_customer_record = $matched_customer;
                     $order->update_meta_data( self::ORDER_META_TRDR, $trdr );
                     $this->persist_order_meta( $order );
+                    $this->log_order_event(
+                        'customer_found_by_email',
+                        __( 'Re-used existing SoftOne customer matched by email.', 'softone-woocommerce-integration' ),
+                        $this->build_order_event_context( $order, array(
+                            'order_id' => $order->get_id(),
+                            'email'    => $email,
+                            'trdr'     => $trdr,
+                        ) )
+                    );
 
                     return $trdr;
                 }
             }
 
-            $email = method_exists( $order, 'get_billing_email' ) ? (string) $order->get_billing_email() : '';
-
-            if ( '' !== $email ) {
-                $trdr = $this->locate_trdr_by_email( $email );
+            if ( $customer_id > 0 ) {
+                $trdr = $this->customer_sync->ensure_customer_trdr(
+                    $customer_id,
+                    array(
+                        'order_id'     => $order->get_id(),
+                        'order_number' => $order_number,
+                        'source'       => 'order_export',
+                    )
+                );
 
                 if ( '' !== $trdr ) {
+                    $this->current_customer_record = $this->fetch_customer_by_trdr( $trdr );
                     $order->update_meta_data( self::ORDER_META_TRDR, $trdr );
                     $this->persist_order_meta( $order );
 
@@ -278,6 +301,7 @@ array(
                 $trdr = $this->create_guest_customer( $order );
 
                 if ( '' !== $trdr ) {
+                    $this->current_customer_record = $this->fetch_customer_by_trdr( $trdr );
                     $order->update_meta_data( self::ORDER_META_TRDR, $trdr );
                     $this->persist_order_meta( $order );
                 }
@@ -293,20 +317,22 @@ array(
          *
          * @throws Softone_API_Client_Exception When the API request fails.
          *
-         * @return string
+         * @return array<string,mixed>
          */
-        protected function locate_trdr_by_email( $email ) {
+        protected function find_customer_by_email( $email ) {
             $email = trim( (string) $email );
 
             if ( '' === $email ) {
-                return '';
+                return array();
             }
 
             $response = $this->api_client->sql_data( 'getCustomers', array( 'EMAIL' => $email ) );
             $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
 
             foreach ( $rows as $row ) {
-                if ( isset( $row['EMAIL'] ) && strcasecmp( (string) $row['EMAIL'], $email ) !== 0 ) {
+                $row_email = isset( $row['EMAIL'] ) ? (string) $row['EMAIL'] : '';
+
+                if ( '' !== $row_email && strcasecmp( $row_email, $email ) !== 0 ) {
                     continue;
                 }
 
@@ -314,10 +340,48 @@ array(
                     continue;
                 }
 
-                return (string) $row['TRDR'];
+                return $row;
             }
 
-            return '';
+            return array();
+        }
+
+        /**
+         * Retrieve a SoftOne customer row by TRDR.
+         *
+         * @param string $trdr SoftOne customer identifier.
+         *
+         * @return array<string,mixed>
+         */
+        protected function fetch_customer_by_trdr( $trdr ) {
+            $trdr = trim( (string) $trdr );
+
+            if ( '' === $trdr ) {
+                return array();
+            }
+
+            try {
+                $response = $this->api_client->sql_data( 'getCustomers', array( 'TRDR' => $trdr ) );
+            } catch ( Softone_API_Client_Exception $exception ) {
+                $this->log( 'warning', $exception->getMessage(), array( 'trdr' => $trdr, 'context' => 'fetch_customer_by_trdr' ) );
+                return array();
+            }
+
+            $rows = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
+
+            foreach ( $rows as $row ) {
+                if ( empty( $row['TRDR'] ) ) {
+                    continue;
+                }
+
+                if ( strcasecmp( (string) $row['TRDR'], $trdr ) !== 0 ) {
+                    continue;
+                }
+
+                return $row;
+            }
+
+            return array();
         }
 
         /**
@@ -447,7 +511,16 @@ array(
          *
          * @return array<string,array<int,array<string,mixed>>>
          */
-        protected function build_document_payload( WC_Order $order, $trdr ) {
+        /**
+         * Build the SoftOne SALDOC payload for the order.
+         *
+         * @param WC_Order              $order          WooCommerce order instance.
+         * @param string                $trdr           SoftOne customer identifier.
+         * @param array<string,mixed>   $customer_data  SoftOne customer record data.
+         *
+         * @return array<string,array<int,array<string,mixed>>>
+         */
+        protected function build_document_payload( WC_Order $order, $trdr, array $customer_data = array() ) {
             $series    = $this->api_client->get_default_saldoc_series();
             $warehouse = $this->api_client->get_warehouse();
             $order_id  = $order->get_id();
@@ -462,6 +535,12 @@ array(
                 'TRNDATE'   => $this->format_order_date( $order ),
                 'COMMENTS'  => $this->build_order_comments( $order ),
             );
+
+            if ( isset( $customer_data['CUSBRANCH'] ) && '' !== $customer_data['CUSBRANCH'] ) {
+                $header['CUSBRANCH'] = (string) $customer_data['CUSBRANCH'];
+            } elseif ( isset( $customer_data['BRANCH'] ) && '' !== $customer_data['BRANCH'] ) {
+                $header['CUSBRANCH'] = (string) $customer_data['BRANCH'];
+            }
 
             $header = array_filter( $header, array( $this, 'filter_empty_value' ) );
 
