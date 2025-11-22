@@ -63,8 +63,21 @@ isset( $order_export_metadata['size_display'] ) ? esc_html( $order_export_metada
 <td><?php echo isset( $entry['action'] ) ? esc_html( $entry['action'] ) : ''; ?></td>
 <td><?php echo isset( $entry['message'] ) ? esc_html( $entry['message'] ) : ''; ?></td>
 <td>
-<?php if ( ! empty( $entry['context_display'] ) ) : ?>
-<pre class="softone-order-export-logs__context"><code><?php echo esc_html( $entry['context_display'] ); ?></code></pre>
+<?php if ( ! empty( $entry['request_display'] ) || ! empty( $entry['response_display'] ) ) : ?>
+	<?php if ( ! empty( $entry['request_display'] ) ) : ?>
+		<p><strong><?php esc_html_e( 'Request', 'softone-woocommerce-integration' ); ?></strong></p>
+		<pre class="softone-order-export-logs__context"><code><?php echo esc_html( $entry['request_display'] ); ?></code></pre>
+	<?php endif; ?>
+	<?php if ( ! empty( $entry['response_display'] ) ) : ?>
+		<p><strong><?php esc_html_e( 'Response', 'softone-woocommerce-integration' ); ?></strong></p>
+		<pre class="softone-order-export-logs__context"><code><?php echo esc_html( $entry['response_display'] ); ?></code></pre>
+	<?php endif; ?>
+	<?php if ( ! empty( $entry['context_display'] ) ) : ?>
+		<p><strong><?php esc_html_e( 'Context', 'softone-woocommerce-integration' ); ?></strong></p>
+		<pre class="softone-order-export-logs__context"><code><?php echo esc_html( $entry['context_display'] ); ?></code></pre>
+	<?php endif; ?>
+<?php elseif ( ! empty( $entry['context_display'] ) ) : ?>
+	<pre class="softone-order-export-logs__context"><code><?php echo esc_html( $entry['context_display'] ); ?></code></pre>
 <?php else : ?>
 <span><?php esc_html_e( 'No additional context provided.', 'softone-woocommerce-integration' ); ?></span>
 <?php endif; ?>

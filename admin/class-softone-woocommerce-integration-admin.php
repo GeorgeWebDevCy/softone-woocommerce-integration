@@ -1733,13 +1733,15 @@ array(
 			$context   = isset( $entry['context'] ) && is_array( $entry['context'] ) ? $entry['context'] : array();
 
 			$prepared[] = array(
-				'timestamp'       => $timestamp,
-				'time'            => $this->format_activity_time( $timestamp ),
-				'channel'         => $channel,
-				'action'          => $action,
-				'message'         => $message,
-				'context'         => $context,
-				'context_display' => $this->format_activity_context( $context ),
+				'timestamp'        => $timestamp,
+				'time'             => $this->format_activity_time( $timestamp ),
+				'channel'          => $channel,
+				'action'           => $action,
+				'message'          => $message,
+				'context'          => $context,
+				'context_display'  => $this->format_activity_context( $context ),
+				'request_display'  => $this->format_raw_payload_field( $context, 'request' ),
+				'response_display' => $this->format_raw_payload_field( $context, 'response' ),
 			);
 		}
 
@@ -1823,23 +1825,53 @@ array(
          *
          * @return string
          */
-        private function format_activity_context( array $context ) {
-                if ( empty( $context ) ) {
-                        return '';
-                }
+	private function format_activity_context( array $context ) {
+		if ( empty( $context ) ) {
+			return '';
+		}
 
-                $encoded = wp_json_encode( $context, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+		$encoded = wp_json_encode( $context, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 
                 if ( false === $encoded ) {
                         $encoded = json_encode( $context, JSON_PRETTY_PRINT );
                 }
 
-                if ( false === $encoded || '' === $encoded ) {
-                        return '';
-                }
+		if ( false === $encoded || '' === $encoded ) {
+			return '';
+		}
 
-                return (string) $encoded;
-        }
+		return (string) $encoded;
+	}
+
+	/**
+	 * Format a specific request/response payload if present in the context.
+	 *
+	 * @param array<string,mixed> $context Log context.
+	 * @param string              $key     Array key to format.
+	 *
+	 * @return string
+	 */
+	private function format_raw_payload_field( array $context, $key ) {
+		if ( empty( $context[ $key ] ) ) {
+			return '';
+		}
+
+		$value = $context[ $key ];
+
+		if ( is_array( $value ) || is_object( $value ) ) {
+			$encoded = wp_json_encode( $value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+
+			if ( false !== $encoded && '' !== $encoded ) {
+				return $encoded;
+			}
+		}
+
+		if ( is_scalar( $value ) ) {
+			return (string) $value;
+		}
+
+		return '';
+	}
 
         /**
          * Normalise metadata output to include readable file size information.
@@ -2309,16 +2341,18 @@ $display_time = __( 'Unknown time', 'softone-woocommerce-integration' );
                foreach ( $prepared_entries as $entry ) {
                        $context = isset( $entry['context'] ) && is_array( $entry['context'] ) ? $entry['context'] : array();
 
-                       $display_entries[] = array(
-                               'timestamp'       => isset( $entry['timestamp'] ) ? (int) $entry['timestamp'] : 0,
-                               'time'            => isset( $entry['time'] ) ? (string) $entry['time'] : '',
-                               'action'          => isset( $entry['action'] ) ? (string) $entry['action'] : '',
-                               'message'         => isset( $entry['message'] ) ? (string) $entry['message'] : '',
-                               'context_display' => isset( $entry['context_display'] ) ? (string) $entry['context_display'] : '',
-                               'context'         => $context,
-                               'reason'          => $this->describe_variable_product_reason( $context ),
-                       );
-               }
+				$display_entries[] = array(
+					'timestamp'       => isset( $entry['timestamp'] ) ? (int) $entry['timestamp'] : 0,
+					'time'            => isset( $entry['time'] ) ? (string) $entry['time'] : '',
+					'action'          => isset( $entry['action'] ) ? (string) $entry['action'] : '',
+					'message'         => isset( $entry['message'] ) ? (string) $entry['message'] : '',
+					'context_display' => isset( $entry['context_display'] ) ? (string) $entry['context_display'] : '',
+					'context'         => $context,
+					'request_display' => isset( $entry['request_display'] ) ? (string) $entry['request_display'] : '',
+					'response_display'=> isset( $entry['response_display'] ) ? (string) $entry['response_display'] : '',
+					'reason'          => $this->describe_variable_product_reason( $context ),
+				);
+			}
 
                $page_size = (int) apply_filters( 'softone_wc_integration_variable_logs_page_size', 20 );
 
