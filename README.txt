@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.10.44
+Stable tag: 1.10.45
 =======
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -79,6 +79,9 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Cron_Manager::schedule_event()`.
 
 == Changelog ==
+
+= 1.10.45 =
+* Fix: Correct SALDOC payload ordering so exported requests follow the SoftOne sequence expected by the API.
 
 = 1.10.40 =
 * Change: Log SoftOne customer lookups in the order export log and carry customer context (TRDR/branch) into SALDOC payloads to match the documented request shape.
