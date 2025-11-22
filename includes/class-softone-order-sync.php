@@ -782,15 +782,15 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
          *
          * @return array
          */
-        protected function transmit_document_with_retry( WC_Order $order, array $payload ) {
-            $attempts           = (int) apply_filters( 'softone_wc_integration_order_sync_max_attempts', 3, $order, $payload, $this );
-            $attempts           = max( 1, $attempts );
-            $last_response      = array();
-            $last_error_message = '';
+	protected function transmit_document_with_retry( WC_Order $order, array $payload ) {
+		$attempts           = (int) apply_filters( 'softone_wc_integration_order_sync_max_attempts', 3, $order, $payload, $this );
+		$attempts           = max( 1, $attempts );
+		$last_response      = array();
+		$last_error_message = '';
 
-            for ( $attempt = 1; $attempt <= $attempts; $attempt++ ) {
-                try {
-                    $response = $this->api_client->set_data( 'SALDOC', $payload );
+		for ( $attempt = 1; $attempt <= $attempts; $attempt++ ) {
+			try {
+				$response = $this->api_client->set_data( 'SALDOC', $payload );
 
                     $this->log( 'info', __( 'SoftOne SALDOC request succeeded.', 'softone-woocommerce-integration' ), array(
                         'order_id' => $order->get_id(),
@@ -799,25 +799,27 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
                     ) );
 
                     $document_id = isset( $response['id'] ) ? (string) $response['id'] : '';
-                    $this->log_order_event(
-                        'saldoc_attempt_succeeded',
-                        sprintf(
-                            /* translators: 1: attempt count, 2: document identifier. */
-                            __( 'SoftOne SALDOC request succeeded on attempt %1$d (document %2$s).', 'softone-woocommerce-integration' ),
-                            $attempt,
-                            '' !== $document_id ? $document_id : __( 'unknown', 'softone-woocommerce-integration' )
-                        ),
-                        $this->build_order_event_context(
-                            $order,
-                            array(
-                                'attempt'     => $attempt,
-                                'document_id' => $document_id,
-                            )
-                        )
-                    );
+				$this->log_order_event(
+					'saldoc_attempt_succeeded',
+					sprintf(
+						/* translators: 1: attempt count, 2: document identifier. */
+						__( 'SoftOne SALDOC request succeeded on attempt %1$d (document %2$s).', 'softone-woocommerce-integration' ),
+						$attempt,
+						'' !== $document_id ? $document_id : __( 'unknown', 'softone-woocommerce-integration' )
+					),
+					$this->build_order_event_context(
+						$order,
+						array(
+							'attempt'     => $attempt,
+							'document_id' => $document_id,
+							'request'     => $payload,
+							'response'    => $response,
+						)
+					)
+				);
 
-                    return $response;
-                } catch ( Softone_API_Client_Exception $exception ) {
+				return $response;
+			} catch ( Softone_API_Client_Exception $exception ) {
                     $exception_context = method_exists( $exception, 'get_context' ) ? $exception->get_context() : array();
                     $exception_context = is_array( $exception_context ) ? $exception_context : array();
 
@@ -836,26 +838,28 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
                     $last_response = array();
                     $last_error_message = $exception->getMessage();
 
-                    $this->log_order_event(
-                        'saldoc_attempt_failed',
-                        sprintf(
-                            /* translators: 1: attempt, 2: error message. */
-                            __( 'SoftOne SALDOC request attempt %1$d failed: %2$s', 'softone-woocommerce-integration' ),
-                            $attempt,
-                            $exception->getMessage()
-                        ),
-                        $this->build_order_event_context(
-                            $order,
-                            array(
-                                'attempt' => $attempt,
-                                'error'   => $exception->getMessage(),
-                            ) + $exception_context
-                        )
-                    );
-                }
+				$this->log_order_event(
+					'saldoc_attempt_failed',
+					sprintf(
+						/* translators: 1: attempt, 2: error message. */
+						__( 'SoftOne SALDOC request attempt %1$d failed: %2$s', 'softone-woocommerce-integration' ),
+						$attempt,
+						$exception->getMessage()
+					),
+					$this->build_order_event_context(
+						$order,
+						array(
+							'attempt' => $attempt,
+							'error'   => $exception->getMessage(),
+							'request' => $payload,
+							'response'=> $last_response,
+						) + $exception_context
+					)
+				);
+		}
 
-                if ( $attempt < $attempts ) {
-                    $delay = (int) apply_filters( 'softone_wc_integration_order_sync_retry_delay', $this->calculate_retry_delay( $attempt ), $order, $payload, $this );
+		if ( $attempt < $attempts ) {
+			$delay = (int) apply_filters( 'softone_wc_integration_order_sync_retry_delay', $this->calculate_retry_delay( $attempt ), $order, $payload, $this );
 
                     if ( $delay > 0 ) {
                         sleep( $delay );
@@ -875,17 +879,19 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
                     );
                 }
 
-                $this->log_order_event(
-                    'saldoc_failed',
-                    $message,
-                    $this->build_order_event_context(
-                        $order,
-                        array(
-                            'attempts' => $attempts,
-                            'error'    => $last_error_message,
-                        )
-                    )
-                );
+				$this->log_order_event(
+					'saldoc_failed',
+					$message,
+					$this->build_order_event_context(
+						$order,
+						array(
+							'attempts' => $attempts,
+							'error'    => $last_error_message,
+							'request'  => $payload,
+							'response' => $last_response,
+						)
+					)
+				);
             }
 
             return $last_response;
