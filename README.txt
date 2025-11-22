@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.10.40
+Stable tag: 1.10.41
 =======
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -82,6 +82,9 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 
 = 1.10.40 =
 * Change: Log SoftOne customer lookups in the order export log and carry customer context (TRDR/branch) into SALDOC payloads to match the documented request shape.
+
+= 1.10.41 =
+* Change: Cast SALDOC numeric fields (series, TRDR, warehouse, item lines) to integers when possible to mirror the documented request format and avoid SoftOne "Operation aborted" errors in strict environments.
 
 = 1.10.39 =
 * Change: Look up SoftOne customers by email before exporting orders so existing records (or newly created ones) populate SALDOC payloads with the correct TRDR and customer context.
