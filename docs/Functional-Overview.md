@@ -128,11 +128,10 @@ This document explains the plugin’s functionality based exclusively on the sou
   - `_softone_trdr` (copied if determined during export)
 - Determine TRDR:
   - Prefer order meta; else use customer meta via `Softone_Customer_Sync::ensure_customer_trdr()`; for guests, may create a SoftOne customer using billing/shipping data (requires country mappings).
-- Payload:
-  - `SALDOC` header: includes `SERIES` (default from settings), `TRDR`, `VARCHAR01` (Woo order id), `TRNDATE` (order date), `COMMENTS` (compiled from payment/shipping methods, transaction and shipping ids, shipping/billing country).
-  - `ITELINES`: collects order line items with `MTRL` from product meta `_softone_mtrl_id`, `QTY1`, and `COMMENTS1` line name. Skips lines without a known SoftOne `MTRL`.
-  - `MTRDOC`: included when default `warehouse` is configured.
-  - Filter: `softone_wc_integration_order_payload` to customize before transmission.
+  - Payload:
+    - `SALDOC` header: includes `SERIES` (default from settings), `TRDR`, `VARCHAR01` (Woo order id), `TRNDATE` (order date), `COMMENTS` (compiled from payment/shipping methods, transaction and shipping ids, shipping/billing country).
+    - `ITELINES`: collects order line items with `MTRL` from product meta `_softone_mtrl_id`, `QTY1`, and `COMMENTS1` line name. Skips lines without a known SoftOne `MTRL`.
+    - Filter: `softone_wc_integration_order_payload` to customize before transmission.
 - Transmission and retry:
   - Calls `set_data('SALDOC', $payload)` with retries. Filters: `softone_wc_integration_order_sync_max_attempts`, `softone_wc_integration_order_sync_retry_delay`.
   - On success, stores `_softone_document_id` and adds private order notes.

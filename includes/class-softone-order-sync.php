@@ -609,12 +609,6 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
 				'SALDOC' => array( $header ),
 			);
 
-			if ( '' !== $warehouse ) {
-				$payload['MTRDOC'] = array(
-					array( 'WHOUSE' => $warehouse ),
-				);
-			}
-
 			$payload['ITELINES'] = $this->build_item_lines( $order );
 
 			$payload = apply_filters( 'softone_wc_integration_order_payload', $payload, $order, $trdr, $this );
