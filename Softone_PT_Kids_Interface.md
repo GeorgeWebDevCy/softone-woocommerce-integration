@@ -327,25 +327,22 @@ Use `setData` to insert/modify records for native or custom objects. Only includ
   "service": "setData",
   "clientID": "[REDACTED_CLIENT_ID]",
   "AppID": 1000,
-  "object": "SALDOC",
-  "data": {
-    "SALDOC": [
-      {
-        "SERIES": 3000,
-        "TRDR": 2937,
-        "VARCHAR01": 1234567,
-        "TRNDATE": "2024-08-05 00:00:00",
-        "COMMENTS": "No comment"
-      }
-    ],
-    "MTRDOC": [
-      { "WHOUSE": 101 }
-    ],
-    "ITELINES": [
-      { "MTRL": 328, "QTY1": 2, "COMMENTS1": "test" },
-      { "MTRL": 329, "QTY1": 1, "COMMENTS1": "" },
-      { "MTRL": 331, "QTY1": 1, "COMMENTS1": "" }
-    ]
+    "object": "SALDOC",
+    "data": {
+      "SALDOC": [
+        {
+          "SERIES": 3000,
+          "TRDR": 2937,
+          "VARCHAR01": 1234567,
+          "TRNDATE": "2024-08-05 00:00:00",
+          "COMMENTS": "No comment"
+        }
+      ],
+      "ITELINES": [
+        { "MTRL": 328, "QTY1": 2, "COMMENTS1": "test" },
+        { "MTRL": 329, "QTY1": 1, "COMMENTS1": "" },
+        { "MTRL": 331, "QTY1": 1, "COMMENTS1": "" }
+      ]
   }
 }
 ```
@@ -358,12 +355,11 @@ Use `setData` to insert/modify records for native or custom objects. Only includ
 **What it means:**
 - `object: "SALDOC"`: Sales document header table.  
 - `SERIES`: Document series (defines numbering rules/doctype).  
-- `TRDR`: Customer id (**must match** an existing `TRDR`, e.g., “2937” created above).  
-- `VARCHAR01`: Free text/auxiliary field — in your usage this stores the **OpenCart Order ID** mapping.  
-- `TRNDATE`: Transaction date/time.  
-- `COMMENTS`: Header comments.  
-- `MTRDOC`: Movement/warehouse context (e.g., `WHOUSE` 101).  
-- `ITELINES`: Line items with `MTRL` (item id), `QTY1` (quantity), optional `COMMENTS1`.  
+- `TRDR`: Customer id (**must match** an existing `TRDR`, e.g., “2937” created above).
+- `VARCHAR01`: Free text/auxiliary field — in your usage this stores the **OpenCart Order ID** mapping.
+- `TRNDATE`: Transaction date/time.
+- `COMMENTS`: Header comments.
+- `ITELINES`: Line items with `MTRL` (item id), `QTY1` (quantity), optional `COMMENTS1`.
 - Response `id`: The created sales document id.
 
 ---
