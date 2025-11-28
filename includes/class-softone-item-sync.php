@@ -1073,8 +1073,8 @@ if ( ! class_exists( 'Softone_Item_Sync' ) ) {
         );
     }
 
-    // ---------- STOCK ----------
-    $stock_quantity = $this->get_value( $data, array( 'stock_qty', 'qty1' ) );
+// ---------- STOCK ----------
+$stock_quantity = $this->get_value( $data, array( 'available_qty', 'stock_qty', 'qty1' ) );
     if ( '' !== $stock_quantity ) {
         $stock_amount = wc_stock_amount( $stock_quantity );
         if ( 0 === $stock_amount && softone_wc_integration_should_force_minimum_stock() ) {
