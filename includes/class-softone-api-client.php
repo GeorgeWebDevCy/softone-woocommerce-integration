@@ -436,11 +436,22 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
 
             if ( isset( $response['success'] ) && false === $response['success'] ) {
                 $message = $this->extract_error_message( $response );
+                $response_diagnostics = isset( $response['_softone_response_diagnostics'] ) && is_array( $response['_softone_response_diagnostics'] )
+                    ? $response['_softone_response_diagnostics']
+                    : array();
+                $response_for_context = $response;
+                unset( $response_for_context['_softone_response_diagnostics'] );
+
                 $context = array(
                     'service'  => $service,
                     'request'  => $this->redact_sensitive_values( $body ),
-                    'response' => $this->redact_sensitive_values( $response ),
+                    'response' => $this->redact_sensitive_values( $response_for_context ),
                 );
+
+                if ( ! empty( $response_diagnostics ) ) {
+                    $context['response_diagnostics'] = $response_diagnostics;
+                }
+
                 $this->log_error( $message, $context );
                 throw new Softone_API_Client_Exception( $message, 0, null, $context );
             }
@@ -653,8 +664,12 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 throw new Softone_API_Client_Exception( $message, 0, null, $context );
             }
 
-            $status_code = wp_remote_retrieve_response_code( $response );
-            $raw_body    = wp_remote_retrieve_body( $response );
+            $status_code          = wp_remote_retrieve_response_code( $response );
+            $raw_body             = wp_remote_retrieve_body( $response );
+            $response_headers     = wp_remote_retrieve_headers( $response );
+            $decode_diagnostics   = array(
+                'response_charset' => $this->extract_response_charset( $response_headers ),
+            );
 
             if ( $status_code < 200 || $status_code >= 300 ) {
                 $message = sprintf(
@@ -677,7 +692,11 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 throw new Softone_API_Client_Exception( $message, 0, null, $context );
             }
 
-            $decoded = $this->decode_json_response( $raw_body );
+            $decoded = $this->decode_json_response( $raw_body, $decode_diagnostics );
+
+            if ( is_array( $decoded ) && $this->should_attach_response_diagnostics( $decode_diagnostics ) ) {
+                $decoded['_softone_response_diagnostics'] = $decode_diagnostics;
+            }
 
             if ( null === $decoded && JSON_ERROR_NONE !== json_last_error() ) {
                 $message = sprintf(
@@ -706,13 +725,64 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
          *
          * @param string $raw_body Raw response body returned by SoftOne.
          *
+         * @param array<string,mixed> $diagnostics Optional diagnostics populated during decoding.
+         *
          * @return array|null
          */
-        protected function decode_json_response( $raw_body ) {
+        protected function decode_json_response( $raw_body, array &$diagnostics = array() ) {
+            $diagnostics['raw_body_length'] = is_string( $raw_body ) ? strlen( $raw_body ) : 0;
             $decoded = json_decode( $raw_body, true );
 
             if ( null !== $decoded || JSON_ERROR_UTF8 !== json_last_error() ) {
+                if ( null !== $decoded ) {
+                    $diagnostics['selected_encoding'] = 'UTF-8';
+
+                    if ( $this->decoded_response_has_question_mark_corruption( $decoded ) ) {
+                        $diagnostics['source_returned_literal_question_marks'] = true;
+                        $this->add_raw_response_sample_diagnostics( $diagnostics, $raw_body );
+                    }
+                }
+
                 return $decoded;
+            }
+
+            $best_candidate = null;
+            $encodings      = $this->get_response_encoding_candidates( isset( $diagnostics['response_charset'] ) ? $diagnostics['response_charset'] : '' );
+
+            foreach ( $encodings as $encoding ) {
+                $converted = $this->convert_to_utf8( $raw_body, $encoding );
+
+                if ( ! is_string( $converted ) || '' === $converted || ! $this->is_valid_utf8( $converted ) ) {
+                    continue;
+                }
+
+                $candidate_decoded = json_decode( $converted, true );
+
+                if ( JSON_ERROR_NONE !== json_last_error() ) {
+                    continue;
+                }
+
+                $candidate = array(
+                    'encoding' => $encoding,
+                    'decoded'  => $candidate_decoded,
+                    'score'    => $this->score_decoded_response( $candidate_decoded ),
+                );
+
+                if ( null === $best_candidate || $candidate['score'] > $best_candidate['score'] ) {
+                    $best_candidate = $candidate;
+                }
+            }
+
+            if ( null !== $best_candidate ) {
+                $diagnostics['selected_encoding'] = $best_candidate['encoding'];
+                $diagnostics['encoding_score']    = $best_candidate['score'];
+
+                if ( $this->decoded_response_has_question_mark_corruption( $best_candidate['decoded'] ) ) {
+                    $diagnostics['source_returned_literal_question_marks'] = true;
+                    $this->add_raw_response_sample_diagnostics( $diagnostics, $raw_body );
+                }
+
+                return $best_candidate['decoded'];
             }
 
             $normalized_body = $this->normalize_json_encoding( $raw_body );
@@ -721,11 +791,15 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 $decoded = json_decode( $normalized_body, true );
 
                 if ( null !== $decoded || JSON_ERROR_NONE === json_last_error() ) {
+                    $diagnostics['selected_encoding'] = 'normalizer';
                     return $decoded;
                 }
             }
 
             if ( defined( 'JSON_INVALID_UTF8_SUBSTITUTE' ) ) {
+                $diagnostics['selected_encoding'] = 'JSON_INVALID_UTF8_SUBSTITUTE';
+                $this->add_raw_response_sample_diagnostics( $diagnostics, $raw_body );
+
                 return json_decode( $raw_body, true, 512, JSON_INVALID_UTF8_SUBSTITUTE );
             }
 
@@ -776,6 +850,40 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
         }
 
         /**
+         * Build an ordered list of response encodings to try.
+         *
+         * @param string $response_charset Charset declared by SoftOne.
+         *
+         * @return array<int,string>
+         */
+        protected function get_response_encoding_candidates( $response_charset = '' ) {
+            $candidates = array();
+
+            $response_charset = trim( (string) $response_charset );
+            if ( '' !== $response_charset ) {
+                $candidates[] = $response_charset;
+            }
+
+            $candidates = array_merge(
+                $candidates,
+                array( 'Windows-1253', 'CP1253', 'ISO-8859-7', 'ISO-8859-1', 'ISO-8859-15', 'Windows-1252', 'ASCII' )
+            );
+
+            $unique = array();
+            foreach ( $candidates as $candidate ) {
+                $key = strtoupper( (string) $candidate );
+
+                if ( '' === $key || isset( $unique[ $key ] ) ) {
+                    continue;
+                }
+
+                $unique[ $key ] = (string) $candidate;
+            }
+
+            return array_values( $unique );
+        }
+
+        /**
          * Convert a string from a given charset to UTF-8.
          *
          * @param string $payload  Raw string.
@@ -784,6 +892,20 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
          * @return string|false
          */
         protected function convert_to_utf8( $payload, $encoding ) {
+            if ( function_exists( 'iconv' ) ) {
+                $converted = @iconv( $encoding, 'UTF-8', $payload );
+
+                if ( false !== $converted ) {
+                    return $converted;
+                }
+
+                $converted = @iconv( $encoding, 'UTF-8//IGNORE', $payload );
+
+                if ( false !== $converted ) {
+                    return $converted;
+                }
+            }
+
             if ( function_exists( 'mb_convert_encoding' ) ) {
                 try {
                     $converted = @mb_convert_encoding( $payload, 'UTF-8', $encoding );
@@ -796,11 +918,129 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 }
             }
 
-            if ( function_exists( 'iconv' ) ) {
-                return @iconv( $encoding, 'UTF-8//IGNORE', $payload );
+            return false;
+        }
+
+        /**
+         * Score a decoded response by readability, preferring Greek over replacement characters.
+         *
+         * @param mixed $decoded Decoded response value.
+         *
+         * @return int
+         */
+        protected function score_decoded_response( $decoded ) {
+            $text = implode( ' ', $this->collect_string_values( $decoded ) );
+
+            if ( '' === $text ) {
+                return 0;
+            }
+
+            $greek_count       = preg_match_all( '/\p{Greek}/u', $text, $matches );
+            $replacement_count = substr_count( $text, '�' );
+            $question_count    = substr_count( $text, '?' );
+
+            return ( (int) $greek_count * 20 ) - ( $replacement_count * 50 ) - ( $question_count * 10 );
+        }
+
+        /**
+         * Collect string values from a nested decoded response.
+         *
+         * @param mixed $value Value to inspect.
+         *
+         * @return array<int,string>
+         */
+        protected function collect_string_values( $value ) {
+            if ( is_string( $value ) ) {
+                return array( $value );
+            }
+
+            if ( ! is_array( $value ) ) {
+                return array();
+            }
+
+            $strings = array();
+
+            foreach ( $value as $item ) {
+                $strings = array_merge( $strings, $this->collect_string_values( $item ) );
+            }
+
+            return $strings;
+        }
+
+        /**
+         * Determine whether decoded strings look like literal question-mark replacement.
+         *
+         * @param mixed $decoded Decoded response value.
+         *
+         * @return bool
+         */
+        protected function decoded_response_has_question_mark_corruption( $decoded ) {
+            foreach ( $this->collect_string_values( $decoded ) as $value ) {
+                if ( preg_match( '/\?(?:\s+\?{2,}){2,}/', $value ) ) {
+                    return true;
+                }
+
+                if ( strlen( $value ) >= 12 && substr_count( $value, '?' ) >= 4 && 0 === preg_match( '/\p{Greek}/u', $value ) ) {
+                    return true;
+                }
             }
 
             return false;
+        }
+
+        /**
+         * Determine whether response diagnostics should be attached to the decoded payload.
+         *
+         * @param array<string,mixed> $diagnostics Decode diagnostics.
+         *
+         * @return bool
+         */
+        protected function should_attach_response_diagnostics( array $diagnostics ) {
+            return ! empty( $diagnostics['source_returned_literal_question_marks'] )
+                || ( isset( $diagnostics['selected_encoding'] ) && 'JSON_INVALID_UTF8_SUBSTITUTE' === $diagnostics['selected_encoding'] );
+        }
+
+        /**
+         * Add safe raw response samples for debugging unrecoverable encoding loss.
+         *
+         * @param array<string,mixed> $diagnostics Diagnostics payload.
+         * @param string              $raw_body    Raw response body.
+         *
+         * @return void
+         */
+        protected function add_raw_response_sample_diagnostics( array &$diagnostics, $raw_body ) {
+            $sample = is_string( $raw_body ) ? substr( $raw_body, 0, 160 ) : '';
+
+            $diagnostics['raw_body_sample_hex']    = bin2hex( $sample );
+            $diagnostics['raw_body_sample_base64'] = base64_encode( $sample );
+        }
+
+        /**
+         * Extract a charset from WordPress response headers.
+         *
+         * @param mixed $headers Response headers.
+         *
+         * @return string
+         */
+        protected function extract_response_charset( $headers ) {
+            $content_type = '';
+
+            if ( is_object( $headers ) && method_exists( $headers, 'offsetGet' ) ) {
+                $content_type = (string) $headers->offsetGet( 'content-type' );
+            } elseif ( is_array( $headers ) ) {
+                foreach ( array( 'content-type', 'Content-Type', 'CONTENT-TYPE' ) as $key ) {
+                    if ( isset( $headers[ $key ] ) ) {
+                        $content_type = is_array( $headers[ $key ] ) ? implode( '; ', $headers[ $key ] ) : (string) $headers[ $key ];
+                        break;
+                    }
+                }
+            }
+
+            if ( '' === $content_type || ! preg_match( '/charset\s*=\s*["\']?([^;"\']+)/i', $content_type, $matches ) ) {
+                return '';
+            }
+
+            return trim( $matches[1] );
         }
 
         /**
