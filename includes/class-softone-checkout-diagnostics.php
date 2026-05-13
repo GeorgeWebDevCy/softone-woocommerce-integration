@@ -36,6 +36,13 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 		protected $request_id;
 
 		/**
+		 * Request start timestamp.
+		 *
+		 * @var float
+		 */
+		protected $request_start = 0.0;
+
+		/**
 		 * Last checkout stage reached by this request.
 		 *
 		 * @var string
@@ -55,8 +62,9 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 		 * @param Softone_Sync_Activity_Logger|null $logger Logger instance.
 		 */
 		public function __construct( ?Softone_Sync_Activity_Logger $logger = null ) {
-			$this->logger     = $logger;
-			$this->request_id = function_exists( 'wp_generate_uuid4' ) ? wp_generate_uuid4() : uniqid( 'softone-checkout-', true );
+			$this->logger        = $logger;
+			$this->request_id    = function_exists( 'wp_generate_uuid4' ) ? wp_generate_uuid4() : uniqid( 'softone-checkout-', true );
+			$this->request_start = isset( $_SERVER['REQUEST_TIME_FLOAT'] ) ? (float) $_SERVER['REQUEST_TIME_FLOAT'] : microtime( true );
 		}
 
 		/**
@@ -82,6 +90,8 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 			$loader->add_action( 'woocommerce_checkout_customer_created', $this, 'handle_checkout_customer_created', 1, 2 );
 			$loader->add_action( 'woocommerce_checkout_create_order', $this, 'handle_checkout_create_order', 1, 2 );
 			$loader->add_action( 'woocommerce_checkout_order_processed', $this, 'handle_checkout_order_processed', 1, 3 );
+			$loader->add_action( 'woocommerce_payment_complete', $this, 'handle_payment_complete', 1, 1 );
+			$loader->add_action( 'woocommerce_order_status_processing', $this, 'handle_order_status_processing', 1, 1 );
 			$loader->add_filter( 'woocommerce_email_enabled_new_order', $this, 'defer_checkout_order_email', 1, 2 );
 			$loader->add_filter( 'woocommerce_email_enabled_customer_processing_order', $this, 'defer_checkout_order_email', 1, 2 );
 			$loader->add_filter( 'woocommerce_email_enabled_customer_completed_order', $this, 'defer_checkout_order_email', 1, 2 );
@@ -448,6 +458,40 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 		}
 
 		/**
+		 * Log when WooCommerce marks the order as paid.
+		 *
+		 * @param int $order_id Order identifier.
+		 *
+		 * @return void
+		 */
+		public function handle_payment_complete( $order_id ) {
+			$order = function_exists( 'wc_get_order' ) ? wc_get_order( absint( $order_id ) ) : null;
+
+			$this->log_stage(
+				'checkout_payment_complete',
+				__( 'WooCommerce marked the checkout order as paid.', 'softone-woocommerce-integration' ),
+				$this->build_order_context( $order )
+			);
+		}
+
+		/**
+		 * Log when WooCommerce moves the order to processing.
+		 *
+		 * @param int $order_id Order identifier.
+		 *
+		 * @return void
+		 */
+		public function handle_order_status_processing( $order_id ) {
+			$order = function_exists( 'wc_get_order' ) ? wc_get_order( absint( $order_id ) ) : null;
+
+			$this->log_stage(
+				'checkout_order_status_processing',
+				__( 'WooCommerce moved the checkout order to processing.', 'softone-woocommerce-integration' ),
+				$this->build_order_context( $order )
+			);
+		}
+
+		/**
 		 * Defer slow WooCommerce order emails during checkout so the thank-you redirect can return promptly.
 		 *
 		 * @param bool  $enabled Whether the email is enabled.
@@ -527,7 +571,7 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 		 * @return void
 		 */
 		public function handle_shutdown() {
-			if ( ! $this->is_checkout_request() || $this->order_processed ) {
+			if ( ! $this->is_checkout_request() ) {
 				return;
 			}
 
@@ -544,14 +588,15 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 			}
 
 			$this->log_stage(
-				'checkout_shutdown_before_order_processed',
-				__( 'Checkout request ended before WooCommerce reported an order as processed.', 'softone-woocommerce-integration' ),
+				$this->order_processed ? 'checkout_shutdown_after_order_processed' : 'checkout_shutdown_before_order_processed',
+				$this->order_processed ? __( 'Checkout request shutdown after WooCommerce processed an order.', 'softone-woocommerce-integration' ) : __( 'Checkout request ended before WooCommerce reported an order as processed.', 'softone-woocommerce-integration' ),
 				array(
 					'last_stage'        => $this->last_stage,
 					'response_code'     => function_exists( 'http_response_code' ) ? (int) http_response_code() : 0,
 					'redirect_location' => $this->get_redirect_location(),
 					'fatal_error'       => $fatal,
 					'memory_peak_mb'    => round( memory_get_peak_usage( true ) / 1048576, 2 ),
+					'duration_ms'       => (int) round( ( microtime( true ) - $this->request_start ) * 1000 ),
 				)
 			);
 		}
@@ -600,7 +645,10 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 			$essential_actions = array(
 				'checkout_empty_cart_order_redirect_recovered',
 				'checkout_order_processed',
+				'checkout_payment_complete',
+				'checkout_order_status_processing',
 				'checkout_shutdown_before_order_processed',
+				'checkout_shutdown_after_order_processed',
 				'checkout_order_attempt_throttle_bypassed',
 				'checkout_order_email_deferred',
 				'checkout_order_email_deferred_sent',

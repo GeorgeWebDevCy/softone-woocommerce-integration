@@ -126,7 +126,7 @@ public function __construct() {
 if ( defined( 'SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION' ) ) {
 $this->version = SOFTONE_WOOCOMMERCE_INTEGRATION_VERSION;
 } else {
-$this->version = '1.10.70';
+$this->version = '1.10.71';
 }
 
 			$this->plugin_name = 'softone-woocommerce-integration';
