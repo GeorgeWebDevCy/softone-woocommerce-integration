@@ -34,11 +34,13 @@ class Softone_Woocommerce_Integration_Deactivator {
                 require_once plugin_dir_path( __FILE__ ) . 'class-softone-item-sync.php';
                 require_once plugin_dir_path( __FILE__ ) . 'class-softone-item-cron-manager.php';
                 require_once plugin_dir_path( __FILE__ ) . 'class-softone-order-sync.php';
+                require_once plugin_dir_path( __FILE__ ) . 'class-softone-checkout-diagnostics.php';
 
                 Softone_Item_Cron_Manager::clear_scheduled_event();
 
                 if ( function_exists( 'wp_clear_scheduled_hook' ) ) {
                         wp_clear_scheduled_hook( Softone_Order_Sync::CRON_HOOK_RETRY_EXPORT );
+                        wp_clear_scheduled_hook( Softone_Checkout_Diagnostics::CRON_HOOK_SEND_DEFERRED_EMAIL );
                 }
 
         }

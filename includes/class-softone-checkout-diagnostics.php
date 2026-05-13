@@ -17,6 +17,11 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 	class Softone_Checkout_Diagnostics {
 
 		/**
+		 * Cron hook for deferred checkout emails.
+		 */
+		const CRON_HOOK_SEND_DEFERRED_EMAIL = 'softone_wc_integration_send_deferred_checkout_email';
+
+		/**
 		 * Logger used by the Order Export Logs admin screen.
 		 *
 		 * @var Softone_Sync_Activity_Logger|null
@@ -77,6 +82,10 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 			$loader->add_action( 'woocommerce_checkout_customer_created', $this, 'handle_checkout_customer_created', 1, 2 );
 			$loader->add_action( 'woocommerce_checkout_create_order', $this, 'handle_checkout_create_order', 1, 2 );
 			$loader->add_action( 'woocommerce_checkout_order_processed', $this, 'handle_checkout_order_processed', 1, 3 );
+			$loader->add_filter( 'woocommerce_email_enabled_new_order', $this, 'defer_checkout_order_email', 1, 2 );
+			$loader->add_filter( 'woocommerce_email_enabled_customer_processing_order', $this, 'defer_checkout_order_email', 1, 2 );
+			$loader->add_filter( 'woocommerce_email_enabled_customer_completed_order', $this, 'defer_checkout_order_email', 1, 2 );
+			$loader->add_action( self::CRON_HOOK_SEND_DEFERRED_EMAIL, $this, 'send_deferred_checkout_email', 10, 2 );
 			$loader->add_action( 'shutdown', $this, 'handle_shutdown', 999, 0 );
 		}
 
@@ -439,6 +448,80 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 		}
 
 		/**
+		 * Defer slow WooCommerce order emails during checkout so the thank-you redirect can return promptly.
+		 *
+		 * @param bool  $enabled Whether the email is enabled.
+		 * @param mixed $object  Email object, commonly an order.
+		 *
+		 * @return bool
+		 */
+		public function defer_checkout_order_email( $enabled, $object = null ) {
+			if ( ! $enabled || ! $this->is_checkout_request() ) {
+				return $enabled;
+			}
+
+			$order = $this->resolve_email_order( $object );
+
+			if ( ! $order ) {
+				return $enabled;
+			}
+
+			$email_id = $this->get_current_email_id();
+
+			if ( '' === $email_id ) {
+				return $enabled;
+			}
+
+			$this->schedule_deferred_checkout_email( $order, $email_id );
+
+			return false;
+		}
+
+		/**
+		 * Send a deferred WooCommerce order email.
+		 *
+		 * @param int    $order_id Order identifier.
+		 * @param string $email_id WooCommerce email ID.
+		 *
+		 * @return void
+		 */
+		public function send_deferred_checkout_email( $order_id, $email_id ) {
+			$order_id = absint( $order_id );
+			$email_id = sanitize_key( (string) $email_id );
+
+			if ( $order_id <= 0 || '' === $email_id || ! function_exists( 'WC' ) ) {
+				return;
+			}
+
+			$mailer = WC()->mailer();
+
+			if ( ! $mailer || ! method_exists( $mailer, 'get_emails' ) ) {
+				return;
+			}
+
+			$emails = $mailer->get_emails();
+
+			foreach ( $emails as $email ) {
+				if ( ! is_object( $email ) || ! isset( $email->id ) || $email_id !== sanitize_key( (string) $email->id ) || ! method_exists( $email, 'trigger' ) ) {
+					continue;
+				}
+
+				$email->trigger( $order_id );
+
+				$this->log_stage(
+					'checkout_order_email_deferred_sent',
+					__( 'Sent deferred WooCommerce checkout order email.', 'softone-woocommerce-integration' ),
+					array(
+						'order_id' => $order_id,
+						'email_id' => $email_id,
+					)
+				);
+
+				return;
+			}
+		}
+
+		/**
 		 * Log checkout request shutdown if it exits before order processing.
 		 *
 		 * @return void
@@ -485,6 +568,10 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 		protected function log_stage( $action, $message, array $context = array() ) {
 			$this->last_stage = (string) $action;
 
+			if ( ! $this->should_log_stage( $action, $context ) ) {
+				return;
+			}
+
 			if ( ! $this->logger || ! method_exists( $this->logger, 'log' ) ) {
 				return;
 			}
@@ -495,6 +582,44 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 				$message,
 				array_merge( $this->build_request_context(), $context )
 			);
+		}
+
+		/**
+		 * Decide whether a checkout stage should be written to disk.
+		 *
+		 * @param string $action  Action key.
+		 * @param array  $context Extra context.
+		 *
+		 * @return bool
+		 */
+		protected function should_log_stage( $action, array $context = array() ) {
+			if ( $this->is_verbose_checkout_logging_enabled() ) {
+				return true;
+			}
+
+			$essential_actions = array(
+				'checkout_empty_cart_order_redirect_recovered',
+				'checkout_order_processed',
+				'checkout_shutdown_before_order_processed',
+				'checkout_order_attempt_throttle_bypassed',
+				'checkout_order_email_deferred',
+				'checkout_order_email_deferred_sent',
+			);
+
+			if ( in_array( (string) $action, $essential_actions, true ) ) {
+				return true;
+			}
+
+			return 'checkout_after_validation' === $action && ! empty( $context['validation_error_count'] );
+		}
+
+		/**
+		 * Whether detailed checkout diagnostics should be logged.
+		 *
+		 * @return bool
+		 */
+		protected function is_verbose_checkout_logging_enabled() {
+			return (bool) apply_filters( 'softone_wc_integration_verbose_checkout_logging', false, $this );
 		}
 
 		/**
@@ -745,11 +870,90 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 		}
 
 		/**
+		 * Schedule a deferred order email once per order/email pair.
+		 *
+		 * @param WC_Order $order    Order object.
+		 * @param string   $email_id WooCommerce email ID.
+		 *
+		 * @return void
+		 */
+		protected function schedule_deferred_checkout_email( $order, $email_id ) {
+			if ( ! function_exists( 'wp_schedule_single_event' ) || ! function_exists( 'wp_next_scheduled' ) || ! is_object( $order ) || ! method_exists( $order, 'get_id' ) ) {
+				return;
+			}
+
+			$order_id = absint( $order->get_id() );
+			$email_id = sanitize_key( (string) $email_id );
+
+			if ( $order_id <= 0 || '' === $email_id ) {
+				return;
+			}
+
+			$args = array( $order_id, $email_id );
+
+			if ( ! wp_next_scheduled( self::CRON_HOOK_SEND_DEFERRED_EMAIL, $args ) ) {
+				wp_schedule_single_event( time() + 120, self::CRON_HOOK_SEND_DEFERRED_EMAIL, $args );
+			}
+
+			$this->log_stage(
+				'checkout_order_email_deferred',
+				__( 'Deferred WooCommerce checkout order email until after checkout returns.', 'softone-woocommerce-integration' ),
+				array(
+					'order_id' => $order_id,
+					'email_id' => $email_id,
+				)
+			);
+		}
+
+		/**
+		 * Resolve an order from a WooCommerce email filter object.
+		 *
+		 * @param mixed $object Filter object.
+		 *
+		 * @return WC_Order|null
+		 */
+		protected function resolve_email_order( $object ) {
+			if ( is_object( $object ) && method_exists( $object, 'get_id' ) && method_exists( $object, 'get_billing_email' ) ) {
+				return $object;
+			}
+
+			if ( is_numeric( $object ) && function_exists( 'wc_get_order' ) ) {
+				$order = wc_get_order( absint( $object ) );
+				return $order ? $order : null;
+			}
+
+			return null;
+		}
+
+		/**
+		 * Infer the WooCommerce email ID from the current filter name.
+		 *
+		 * @return string
+		 */
+		protected function get_current_email_id() {
+			if ( ! function_exists( 'current_filter' ) ) {
+				return '';
+			}
+
+			$filter = (string) current_filter();
+
+			if ( 0 !== strpos( $filter, 'woocommerce_email_enabled_' ) ) {
+				return '';
+			}
+
+			return sanitize_key( substr( $filter, strlen( 'woocommerce_email_enabled_' ) ) );
+		}
+
+		/**
 		 * Inspect checkout-related hooks so blocked requests reveal the next callback.
 		 *
 		 * @return array<string,array<int,array<string,mixed>>>
 		 */
 		protected function inspect_checkout_hooks() {
+			if ( ! $this->is_verbose_checkout_logging_enabled() ) {
+				return array();
+			}
+
 			$hooks = array(
 				'woocommerce_created_customer',
 				'woocommerce_checkout_update_customer',

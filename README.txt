@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.10.69
+Stable tag: 1.10.70
 =======
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -79,6 +79,9 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Cron_Manager::schedule_event()`.
 
 == Changelog ==
+
+= 1.10.70 =
+* Fix: Defer slow WooCommerce order emails from checkout requests so new-customer orders can reach the thank-you page before SMTP work runs in the background.
 
 = 1.10.69 =
 * Fix: Delay checkout-deferred SoftOne order exports for two minutes so WP-Cron cannot run slow ERP calls while the customer is still waiting for the thank-you redirect.
