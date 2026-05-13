@@ -503,7 +503,12 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
                 return '';
             }
 
-            return sprintf( '%s%0' . Softone_Customer_Sync::CODE_WIDTH . 'd', Softone_Customer_Sync::CODE_PREFIX, $customer_id );
+            return sprintf(
+                '%s%s%0' . Softone_Customer_Sync::CODE_WIDTH . 'd',
+                Softone_Customer_Sync::CODE_PREFIX,
+                Softone_Customer_Sync::CODE_RANGE_REGISTERED,
+                $customer_id
+            );
         }
 
         /**
@@ -520,7 +525,12 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
                 return '';
             }
 
-            return sprintf( '%s%0' . Softone_Customer_Sync::CODE_WIDTH . 'd', Softone_Customer_Sync::CODE_PREFIX, $order_id );
+            return sprintf(
+                '%s%s%0' . Softone_Customer_Sync::CODE_WIDTH . 'd',
+                Softone_Customer_Sync::CODE_PREFIX,
+                Softone_Customer_Sync::CODE_RANGE_GUEST,
+                $order_id
+            );
         }
 
         /**

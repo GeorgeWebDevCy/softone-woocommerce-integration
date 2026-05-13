@@ -18,7 +18,9 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
         const META_TRDR     = '_softone_trdr';
         const LOGGER_SOURCE = 'softone-customer-sync';
         const CODE_PREFIX   = 'C';
-        const CODE_WIDTH    = 5;
+        const CODE_WIDTH    = 4;
+        const CODE_RANGE_REGISTERED = '8';
+        const CODE_RANGE_GUEST      = '9';
 
         /**
          * API client instance.
@@ -355,11 +357,11 @@ $this->create_customer( $customer, $context );
                 $row_code  = isset( $row['CODE'] ) ? (string) $row['CODE'] : '';
                 $row_email = isset( $row['EMAIL'] ) ? (string) $row['EMAIL'] : '';
 
-                if ( '' !== $code && strcasecmp( $row_code, $code ) === 0 ) {
+                if ( '' !== $email && strcasecmp( $row_email, $email ) === 0 ) {
                     return $row;
                 }
 
-                if ( '' !== $email && strcasecmp( $row_email, $email ) === 0 ) {
+                if ( '' !== $code && strcasecmp( $row_code, $code ) === 0 && $this->customer_row_email_is_reusable( $row_email, $email ) ) {
                     return $row;
                 }
             }
@@ -833,7 +835,26 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
                 return '';
             }
 
-            return sprintf( '%s%0' . self::CODE_WIDTH . 'd', self::CODE_PREFIX, $id );
+            return sprintf( '%s%s%0' . self::CODE_WIDTH . 'd', self::CODE_PREFIX, self::CODE_RANGE_REGISTERED, $id );
+        }
+
+        /**
+         * Check whether a customer row can be reused for the requested email.
+         *
+         * @param string $row_email      Email stored in SoftOne.
+         * @param string $requested_email Email being synchronised.
+         *
+         * @return bool
+         */
+        protected function customer_row_email_is_reusable( $row_email, $requested_email ) {
+            $row_email       = trim( (string) $row_email );
+            $requested_email = trim( (string) $requested_email );
+
+            if ( '' === $requested_email || '' === $row_email ) {
+                return true;
+            }
+
+            return strcasecmp( $row_email, $requested_email ) === 0;
         }
 
         /**
