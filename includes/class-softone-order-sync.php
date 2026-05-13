@@ -595,7 +595,7 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
                 ) )
             );
 
-            $response = $this->api_client->set_data( 'CUSTOMER', $payload );
+            $response = $this->set_customer_data_with_code_seed_fallback( $payload, $order );
 
             if ( empty( $response['id'] ) ) {
                 return '';
@@ -651,6 +651,65 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
             }
 
             return array();
+        }
+
+        /**
+         * Create a SoftOne customer, retrying with the tenant's automatic C-code seed when required.
+         *
+         * @param array<string,array<int,array<string,mixed>>> $payload Customer payload.
+         * @param WC_Order                                    $order   Order being exported.
+         *
+         * @throws Softone_API_Client_Exception When the API request fails.
+         *
+         * @return array<string,mixed>
+         */
+        protected function set_customer_data_with_code_seed_fallback( array $payload, WC_Order $order ) {
+            try {
+                return $this->api_client->set_data( 'CUSTOMER', $payload );
+            } catch ( Softone_API_Client_Exception $exception ) {
+                if ( ! $this->is_customer_code_seed_error( $exception ) ) {
+                    throw $exception;
+                }
+            }
+
+            $retry_payload = $this->build_customer_code_seed_payload( $payload );
+
+            $this->log_order_event(
+                'customer_code_seed_retry',
+                __( 'Retrying SoftOne customer creation with automatic C-code seed.', 'softone-woocommerce-integration' ),
+                $this->build_order_event_context( $order, array( 'payload' => $retry_payload ) )
+            );
+
+            return $this->api_client->set_data( 'CUSTOMER', $retry_payload );
+        }
+
+        /**
+         * Replace generated customer code with SoftOne's automatic C-code seed.
+         *
+         * @param array<string,array<int,array<string,mixed>>> $payload Customer payload.
+         *
+         * @return array<string,array<int,array<string,mixed>>>
+         */
+        protected function build_customer_code_seed_payload( array $payload ) {
+            if ( isset( $payload['CUSTOMER'][0] ) && is_array( $payload['CUSTOMER'][0] ) ) {
+                $payload['CUSTOMER'][0]['CODE'] = Softone_Customer_Sync::CODE_PREFIX;
+            }
+
+            return $payload;
+        }
+
+        /**
+         * Check whether SoftOne rejected a generated code because the tenant expects a C seed.
+         *
+         * @param Softone_API_Client_Exception $exception API exception.
+         *
+         * @return bool
+         */
+        protected function is_customer_code_seed_error( Softone_API_Client_Exception $exception ) {
+            $message = $exception->getMessage();
+
+            return false !== stripos( $message, 'μορφής C' )
+                || false !== stripos( $message, 'form C' );
         }
 
         /**
@@ -979,7 +1038,7 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
                 )
             );
 
-            $response = $this->api_client->set_data( 'CUSTOMER', $payload );
+            $response = $this->set_customer_data_with_code_seed_fallback( $payload, $order );
 
             if ( empty( $response['id'] ) ) {
                 return '';
