@@ -654,7 +654,7 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
         }
 
         /**
-         * Create a SoftOne customer, retrying with the tenant's automatic C-code seed when required.
+         * Create a SoftOne customer, retrying with the tenant's automatic web-code seed when required.
          *
          * @param array<string,array<int,array<string,mixed>>> $payload Customer payload.
          * @param WC_Order                                    $order   Order being exported.
@@ -676,7 +676,7 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
 
             $this->log_order_event(
                 'customer_code_seed_retry',
-                __( 'Retrying SoftOne customer creation with automatic C-code seed.', 'softone-woocommerce-integration' ),
+                __( 'Retrying SoftOne customer creation with automatic web-code seed.', 'softone-woocommerce-integration' ),
                 $this->build_order_event_context( $order, array( 'payload' => $retry_payload ) )
             );
 
@@ -684,7 +684,7 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
         }
 
         /**
-         * Replace generated customer code with SoftOne's automatic C-code seed.
+         * Replace generated customer code with SoftOne's automatic web-code seed.
          *
          * @param array<string,array<int,array<string,mixed>>> $payload Customer payload.
          *
@@ -747,7 +747,7 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
         }
 
         /**
-         * Find a reusable or unused SoftOne customer code in a reserved C range.
+         * Find a reusable or unused SoftOne customer code in the documented web range.
          *
          * @param WC_Order $order       WooCommerce order instance.
          * @param string   $range_digit Reserved range digit.
@@ -795,7 +795,7 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
         }
 
         /**
-         * Format a customer code that always stays inside SoftOne's C + five digits mask.
+         * Format a customer code that matches the documented WEB + five digits mask.
          *
          * @param string $range_digit Reserved range digit.
          * @param int    $number      Numeric suffix.

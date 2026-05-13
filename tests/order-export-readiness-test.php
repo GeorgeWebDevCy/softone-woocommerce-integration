@@ -24,7 +24,7 @@ if ( ! function_exists( 'absint' ) ) {
 
 if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
 	class Softone_Customer_Sync {
-		const CODE_PREFIX = 'C';
+		const CODE_PREFIX = 'WEB';
 		const CODE_WIDTH = 5;
 		const CODE_RANGE_REGISTERED = '8';
 		const CODE_RANGE_GUEST = '9';
@@ -173,7 +173,7 @@ $sync->fake_rows = array(
 );
 
 softone_order_readiness_assert(
-	'C00044' === $sync->available_code( new WC_Order(), '8', 44 ),
+	'WEB00044' === $sync->available_code( new WC_Order(), '8', 44 ),
 	'Unfiltered SoftOne getCustomers rows must not make every generated customer code look taken.'
 );
 

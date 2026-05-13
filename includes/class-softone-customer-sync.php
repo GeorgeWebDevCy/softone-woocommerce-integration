@@ -17,7 +17,7 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
 
         const META_TRDR     = '_softone_trdr';
         const LOGGER_SOURCE = 'softone-customer-sync';
-        const CODE_PREFIX   = 'C';
+        const CODE_PREFIX   = 'WEB';
         const CODE_WIDTH    = 5;
         const CODE_RANGE_REGISTERED = '8';
         const CODE_RANGE_GUEST      = '9';
@@ -539,7 +539,7 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
 }
 
         /**
-         * Create a SoftOne customer, retrying with automatic C-code seed when required.
+         * Create a SoftOne customer, retrying with automatic web-code seed when required.
          *
          * @param array<string,array<int,array<string,mixed>>> $payload  Customer payload.
          * @param WC_Customer                                 $customer WooCommerce customer.
@@ -561,7 +561,7 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
             $retry_payload = $this->build_customer_code_seed_payload( $payload );
             $this->log_customer_payload(
                 'customer_code_seed_retry',
-                __( 'Retrying SoftOne customer creation with automatic C-code seed.', 'softone-woocommerce-integration' ),
+                __( 'Retrying SoftOne customer creation with automatic web-code seed.', 'softone-woocommerce-integration' ),
                 $customer,
                 $retry_payload,
                 $context
@@ -571,7 +571,7 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
         }
 
         /**
-         * Replace generated customer code with SoftOne's automatic C-code seed.
+         * Replace generated customer code with SoftOne's automatic web-code seed.
          *
          * @param array<string,array<int,array<string,mixed>>> $payload Customer payload.
          *
