@@ -561,7 +561,7 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
             $retry_payload = $this->build_customer_code_seed_payload( $payload );
             $this->log_customer_payload(
                 'customer_code_seed_retry',
-                __( 'Retrying SoftOne customer creation with automatic web-code seed.', 'softone-woocommerce-integration' ),
+                __( 'Retrying SoftOne customer creation with automatic C-code seed.', 'softone-woocommerce-integration' ),
                 $customer,
                 $retry_payload,
                 $context
@@ -571,7 +571,7 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
         }
 
         /**
-         * Replace generated customer code with SoftOne's automatic web-code seed.
+         * Replace generated customer code with SoftOne's automatic C-code seed.
          *
          * @param array<string,array<int,array<string,mixed>>> $payload Customer payload.
          *
@@ -579,7 +579,7 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
          */
         protected function build_customer_code_seed_payload( array $payload ) {
             if ( isset( $payload['CUSTOMER'][0] ) && is_array( $payload['CUSTOMER'][0] ) ) {
-                $payload['CUSTOMER'][0]['CODE'] = self::CODE_PREFIX;
+                $payload['CUSTOMER'][0]['CODE'] = 'C';
             }
 
             return $payload;

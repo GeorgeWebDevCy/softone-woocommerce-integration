@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.10.77
+Stable tag: 1.10.78
 =======
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -79,6 +79,9 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Cron_Manager::schedule_event()`.
 
 == Changelog ==
+
+= 1.10.78 =
+* Fix: Keep documented WEB customer codes as the primary create attempt, then retry with SoftOne's literal C-code seed when the API reports the code must be form C.
 
 = 1.10.77 =
 * Fix: Align new SoftOne customer codes with the documented WEB + five digit format used by the PT Kids interface.

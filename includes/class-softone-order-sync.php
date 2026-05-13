@@ -676,7 +676,7 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
 
             $this->log_order_event(
                 'customer_code_seed_retry',
-                __( 'Retrying SoftOne customer creation with automatic web-code seed.', 'softone-woocommerce-integration' ),
+                __( 'Retrying SoftOne customer creation with automatic C-code seed.', 'softone-woocommerce-integration' ),
                 $this->build_order_event_context( $order, array( 'payload' => $retry_payload ) )
             );
 
@@ -684,7 +684,7 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
         }
 
         /**
-         * Replace generated customer code with SoftOne's automatic web-code seed.
+         * Replace generated customer code with SoftOne's automatic C-code seed.
          *
          * @param array<string,array<int,array<string,mixed>>> $payload Customer payload.
          *
@@ -692,7 +692,7 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
          */
         protected function build_customer_code_seed_payload( array $payload ) {
             if ( isset( $payload['CUSTOMER'][0] ) && is_array( $payload['CUSTOMER'][0] ) ) {
-                $payload['CUSTOMER'][0]['CODE'] = Softone_Customer_Sync::CODE_PREFIX;
+                $payload['CUSTOMER'][0]['CODE'] = 'C';
             }
 
             return $payload;
