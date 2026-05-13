@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.10.56
+Stable tag: 1.10.57
 =======
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -79,6 +79,9 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Cron_Manager::schedule_event()`.
 
 == Changelog ==
+
+= 1.10.57 =
+* Fix: Defer SoftOne customer sync during checkout customer hooks so new-customer checkout can finish creating the WooCommerce order before SoftOne calls run.
 
 = 1.10.56 =
 * Change: Add checkout lifecycle diagnostics to Order Export Logs so new-customer checkout failures show the last WooCommerce hook reached before order creation.

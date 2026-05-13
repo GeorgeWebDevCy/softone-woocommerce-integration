@@ -180,6 +180,10 @@ delete_user_meta( $customer_id, self::META_TRDR );
          * @return void
          */
         public function handle_customer_created( $customer_id ) {
+            if ( $this->defer_checkout_customer_sync( $customer_id, 'woocommerce_created_customer' ) ) {
+                return;
+            }
+
             $this->maybe_sync_customer( $customer_id );
         }
 
@@ -191,7 +195,11 @@ delete_user_meta( $customer_id, self::META_TRDR );
          *
          * @return void
          */
-        public function handle_checkout_customer_created( $customer_id, $data = array() ) { // phpcs:ignore VariableAnalysis.CodeAnalysis.VariableAnalysis.UnusedVariable
+        public function handle_checkout_customer_created( $customer_id, $data = array() ) {
+            if ( $this->defer_checkout_customer_sync( $customer_id, 'woocommerce_checkout_customer_created', $data ) ) {
+                return;
+            }
+
             $this->maybe_sync_customer( $customer_id );
         }
 
@@ -203,11 +211,15 @@ delete_user_meta( $customer_id, self::META_TRDR );
          *
          * @return void
          */
-        public function handle_checkout_update_customer( $customer, $data = array() ) { // phpcs:ignore VariableAnalysis.CodeAnalysis.VariableAnalysis.UnusedVariable
+        public function handle_checkout_update_customer( $customer, $data = array() ) {
             if ( is_object( $customer ) && method_exists( $customer, 'get_id' ) ) {
                 $customer_id = $customer->get_id();
             } else {
                 $customer_id = $customer;
+            }
+
+            if ( $this->defer_checkout_customer_sync( $customer_id, 'woocommerce_checkout_update_customer', $data ) ) {
+                return;
             }
 
             $this->maybe_sync_customer( $customer_id );
@@ -292,6 +304,73 @@ delete_user_meta( $customer_id, self::META_TRDR );
 
                 $this->log( 'error', $exception->getMessage(), $log_context );
             }
+        }
+
+        /**
+         * Defer SoftOne customer sync while WooCommerce is still processing checkout.
+         *
+         * @param int   $customer_id Customer identifier.
+         * @param string $hook        Hook name that requested the sync.
+         * @param array  $data        Optional checkout data.
+         *
+         * @return bool
+         */
+        protected function defer_checkout_customer_sync( $customer_id, $hook, array $data = array() ) {
+            if ( ! $this->is_checkout_processing_request() ) {
+                return false;
+            }
+
+            $this->log_deferred_checkout_customer_sync( $customer_id, $hook, $data );
+
+            return true;
+        }
+
+        /**
+         * Check whether the current request is WooCommerce's checkout AJAX endpoint.
+         *
+         * @return bool
+         */
+        protected function is_checkout_processing_request() {
+            return isset( $_GET['wc-ajax'] ) && 'checkout' === sanitize_key( wp_unslash( $_GET['wc-ajax'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        }
+
+        /**
+         * Log a deferred checkout customer sync.
+         *
+         * @param int    $customer_id Customer identifier.
+         * @param string $hook        Hook name that requested the sync.
+         * @param array  $data        Optional checkout data.
+         *
+         * @return void
+         */
+        protected function log_deferred_checkout_customer_sync( $customer_id, $hook, array $data = array() ) {
+            if ( ! $this->order_event_logger || ! method_exists( $this->order_event_logger, 'log' ) ) {
+                return;
+            }
+
+            $email = '';
+
+            if ( isset( $data['billing_email'] ) ) {
+                $email = sanitize_email( (string) $data['billing_email'] );
+            } elseif ( $customer_id > 0 ) {
+                $user = get_userdata( absint( $customer_id ) );
+
+                if ( $user && isset( $user->user_email ) ) {
+                    $email = sanitize_email( (string) $user->user_email );
+                }
+            }
+
+            $this->order_event_logger->log(
+                'order_exports',
+                'checkout_customer_sync_deferred',
+                __( 'Deferred SoftOne customer sync until a WooCommerce order exists.', 'softone-woocommerce-integration' ),
+                array(
+                    'customer_id' => absint( $customer_id ),
+                    'email'       => $email,
+                    'hook'        => (string) $hook,
+                    'wc_ajax'     => isset( $_GET['wc-ajax'] ) ? sanitize_key( wp_unslash( $_GET['wc-ajax'] ) ) : '', // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+                )
+            );
         }
 
         /**
