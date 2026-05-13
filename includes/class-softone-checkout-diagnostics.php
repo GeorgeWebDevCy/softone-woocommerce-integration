@@ -517,6 +517,10 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 			$mailer  = WC()->mailer();
 			$removed = remove_action( 'woocommerce_created_customer', array( $mailer, 'send_transactional_email' ), 10 );
 
+			if ( ! $removed ) {
+				$removed = $this->remove_hook_callback( 'woocommerce_created_customer', 'WC_Emails', 'send_transactional_email', 10 );
+			}
+
 			$this->log_stage(
 				'checkout_created_customer_email_deferred',
 				__( 'Deferred WooCommerce created-customer email for the controlled SoftOne test checkout.', 'softone-woocommerce-integration' ),
@@ -549,6 +553,47 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 			}
 
 			return $inspection;
+		}
+
+		/**
+		 * Remove a hook callback by class and method when the original object differs.
+		 *
+		 * @param string $hook_name Hook name.
+		 * @param string $class     Callback class.
+		 * @param string $method    Callback method.
+		 * @param int    $priority  Hook priority.
+		 *
+		 * @return bool
+		 */
+		protected function remove_hook_callback( $hook_name, $class, $method, $priority ) {
+			global $wp_filter;
+
+			if ( empty( $wp_filter[ $hook_name ] ) || ! is_object( $wp_filter[ $hook_name ] ) ) {
+				return false;
+			}
+
+			if ( empty( $wp_filter[ $hook_name ]->callbacks[ $priority ] ) || ! is_array( $wp_filter[ $hook_name ]->callbacks[ $priority ] ) ) {
+				return false;
+			}
+
+			$removed = false;
+
+			foreach ( $wp_filter[ $hook_name ]->callbacks[ $priority ] as $callback_id => $item ) {
+				if ( empty( $item['function'] ) || ! is_array( $item['function'] ) || ! isset( $item['function'][0], $item['function'][1] ) ) {
+					continue;
+				}
+
+				$target = is_object( $item['function'][0] ) ? get_class( $item['function'][0] ) : (string) $item['function'][0];
+
+				if ( $class !== $target || $method !== (string) $item['function'][1] ) {
+					continue;
+				}
+
+				unset( $wp_filter[ $hook_name ]->callbacks[ $priority ][ $callback_id ] );
+				$removed = true;
+			}
+
+			return $removed;
 		}
 
 		/**
