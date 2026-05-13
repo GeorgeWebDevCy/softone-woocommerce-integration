@@ -66,6 +66,7 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 			$loader->add_action( 'woocommerce_checkout_process', $this, 'handle_checkout_process', 1, 0 );
 			$loader->add_action( 'woocommerce_after_checkout_validation', $this, 'handle_after_checkout_validation', 999, 2 );
 			$loader->add_action( 'woocommerce_created_customer', $this, 'handle_created_customer', 1, 3 );
+			$loader->add_action( 'woocommerce_created_customer', $this, 'handle_created_customer_hook_completed', PHP_INT_MAX, 3 );
 			$loader->add_action( 'woocommerce_checkout_customer_created', $this, 'handle_checkout_customer_created', 1, 2 );
 			$loader->add_action( 'woocommerce_checkout_create_order', $this, 'handle_checkout_create_order', 1, 2 );
 			$loader->add_action( 'woocommerce_checkout_order_processed', $this, 'handle_checkout_order_processed', 1, 3 );
@@ -78,7 +79,13 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 		 * @return void
 		 */
 		public function handle_before_checkout_process() {
-			$this->log_stage( 'checkout_before_process', __( 'WooCommerce checkout processing started.', 'softone-woocommerce-integration' ) );
+			$this->log_stage(
+				'checkout_before_process',
+				__( 'WooCommerce checkout processing started.', 'softone-woocommerce-integration' ),
+				array(
+					'hooks' => $this->inspect_checkout_hooks(),
+				)
+			);
 		}
 
 		/**
@@ -135,6 +142,27 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 					'email'              => is_array( $new_customer_data ) && isset( $new_customer_data['user_email'] ) ? sanitize_email( (string) $new_customer_data['user_email'] ) : '',
 					'password_generated' => is_scalar( $password_generated ) ? (string) $password_generated : '',
 					'has_softone_trdr'    => $this->customer_has_softone_trdr( $customer_id ),
+					'hooks'              => $this->inspect_checkout_hooks(),
+				)
+			);
+		}
+
+		/**
+		 * Log whether every callback on woocommerce_created_customer completed.
+		 *
+		 * @param int    $customer_id Customer identifier.
+		 * @param array  $new_customer_data New customer data.
+		 * @param string $password_generated Generated password flag.
+		 *
+		 * @return void
+		 */
+		public function handle_created_customer_hook_completed( $customer_id, $new_customer_data = array(), $password_generated = '' ) { // phpcs:ignore VariableAnalysis.CodeAnalysis.VariableAnalysis.UnusedVariable
+			$this->log_stage(
+				'checkout_created_customer_hook_completed',
+				__( 'All WooCommerce created-customer callbacks completed.', 'softone-woocommerce-integration' ),
+				array(
+					'customer_id' => absint( $customer_id ),
+					'email'       => is_array( $new_customer_data ) && isset( $new_customer_data['user_email'] ) ? sanitize_email( (string) $new_customer_data['user_email'] ) : '',
 				)
 			);
 		}
@@ -389,6 +417,95 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 			}
 
 			return '';
+		}
+
+		/**
+		 * Inspect checkout-related hooks so blocked requests reveal the next callback.
+		 *
+		 * @return array<string,array<int,array<string,mixed>>>
+		 */
+		protected function inspect_checkout_hooks() {
+			$hooks = array(
+				'woocommerce_created_customer',
+				'woocommerce_checkout_customer_created',
+				'woocommerce_checkout_create_order',
+				'woocommerce_checkout_order_processed',
+			);
+
+			$inspection = array();
+
+			foreach ( $hooks as $hook_name ) {
+				$inspection[ $hook_name ] = $this->describe_hook_callbacks( $hook_name );
+			}
+
+			return $inspection;
+		}
+
+		/**
+		 * Describe callbacks registered to a hook.
+		 *
+		 * @param string $hook_name Hook name.
+		 *
+		 * @return array<int,array<string,mixed>>
+		 */
+		protected function describe_hook_callbacks( $hook_name ) {
+			global $wp_filter;
+
+			if ( empty( $wp_filter[ $hook_name ] ) || ! is_object( $wp_filter[ $hook_name ] ) ) {
+				return array();
+			}
+
+			$callbacks = isset( $wp_filter[ $hook_name ]->callbacks ) && is_array( $wp_filter[ $hook_name ]->callbacks ) ? $wp_filter[ $hook_name ]->callbacks : array();
+			$described = array();
+
+			foreach ( $callbacks as $priority => $items ) {
+				if ( ! is_array( $items ) ) {
+					continue;
+				}
+
+				foreach ( $items as $item ) {
+					if ( ! is_array( $item ) || ! isset( $item['function'] ) ) {
+						continue;
+					}
+
+					$described[] = array(
+						'priority'      => (int) $priority,
+						'callback'      => $this->describe_callback( $item['function'] ),
+						'accepted_args' => isset( $item['accepted_args'] ) ? absint( $item['accepted_args'] ) : 0,
+					);
+				}
+			}
+
+			return $described;
+		}
+
+		/**
+		 * Convert a WordPress callback into a log-safe label.
+		 *
+		 * @param mixed $callback Callback definition.
+		 *
+		 * @return string
+		 */
+		protected function describe_callback( $callback ) {
+			if ( is_string( $callback ) ) {
+				return $callback;
+			}
+
+			if ( is_array( $callback ) && isset( $callback[0], $callback[1] ) ) {
+				$target = is_object( $callback[0] ) ? get_class( $callback[0] ) : (string) $callback[0];
+
+				return $target . '::' . (string) $callback[1];
+			}
+
+			if ( $callback instanceof Closure ) {
+				return 'Closure';
+			}
+
+			if ( is_object( $callback ) ) {
+				return get_class( $callback ) . '::__invoke';
+			}
+
+			return 'unknown';
 		}
 
 		/**
