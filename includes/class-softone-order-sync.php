@@ -301,9 +301,9 @@ array(
                 return;
             }
 
-            $default_delay = defined( 'MINUTE_IN_SECONDS' ) ? MINUTE_IN_SECONDS : 60;
+            $default_delay = defined( 'MINUTE_IN_SECONDS' ) ? 5 * MINUTE_IN_SECONDS : 300;
             $delay         = (int) apply_filters( 'softone_wc_integration_order_export_checkout_defer_delay', $default_delay, $order, $this );
-            $delay         = max( 10, $delay );
+            $delay         = max( 300, $delay );
 
             wp_schedule_single_event( time() + $delay, self::CRON_HOOK_RETRY_EXPORT, $args );
 
