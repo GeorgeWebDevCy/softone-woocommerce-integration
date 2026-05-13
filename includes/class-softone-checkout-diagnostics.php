@@ -91,6 +91,7 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 			$loader->add_action( 'woocommerce_checkout_create_order', $this, 'handle_checkout_create_order', 1, 2 );
 			$loader->add_action( 'woocommerce_checkout_order_processed', $this, 'handle_checkout_order_processed', 1, 3 );
 			$loader->add_action( 'woocommerce_payment_complete', $this, 'handle_payment_complete', 1, 1 );
+			$loader->add_action( 'woocommerce_payment_complete', $this, 'return_checkout_success_after_payment_complete', PHP_INT_MAX, 1 );
 			$loader->add_action( 'woocommerce_order_status_processing', $this, 'handle_order_status_processing', 1, 1 );
 			$loader->add_filter( 'woocommerce_email_enabled_new_order', $this, 'defer_checkout_order_email', 1, 2 );
 			$loader->add_filter( 'woocommerce_email_enabled_customer_processing_order', $this, 'defer_checkout_order_email', 1, 2 );
@@ -475,6 +476,54 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 		}
 
 		/**
+		 * Return the checkout redirect as soon as a no-payment order is complete.
+		 *
+		 * @param int $order_id Order identifier.
+		 *
+		 * @return void
+		 */
+		public function return_checkout_success_after_payment_complete( $order_id ) {
+			if ( ! $this->is_checkout_request() || headers_sent() || ! function_exists( 'wc_get_order' ) ) {
+				return;
+			}
+
+			$order = wc_get_order( absint( $order_id ) );
+
+			if ( ! is_object( $order ) || ! method_exists( $order, 'needs_payment' ) || $order->needs_payment() ) {
+				return;
+			}
+
+			if ( method_exists( $order, 'get_total' ) && (float) $order->get_total() > 0 ) {
+				return;
+			}
+
+			$redirect = $this->get_order_redirect_url( $order );
+
+			if ( '' === $redirect ) {
+				return;
+			}
+
+			$this->order_processed = true;
+			$this->log_stage(
+				'checkout_ajax_success_returned_after_payment_complete',
+				__( 'Returned the no-payment checkout success redirect after WooCommerce completed the order.', 'softone-woocommerce-integration' ),
+				array_merge(
+					$this->build_order_context( $order ),
+					array(
+						'duration_ms' => (int) round( ( microtime( true ) - $this->request_start ) * 1000 ),
+					)
+				)
+			);
+
+			wp_send_json(
+				array(
+					'result'   => 'success',
+					'redirect' => $redirect,
+				)
+			);
+		}
+
+		/**
 		 * Log when WooCommerce moves the order to processing.
 		 *
 		 * @param int $order_id Order identifier.
@@ -646,6 +695,7 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 				'checkout_empty_cart_order_redirect_recovered',
 				'checkout_order_processed',
 				'checkout_payment_complete',
+				'checkout_ajax_success_returned_after_payment_complete',
 				'checkout_order_status_processing',
 				'checkout_shutdown_before_order_processed',
 				'checkout_shutdown_after_order_processed',
