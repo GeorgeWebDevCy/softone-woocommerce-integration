@@ -62,6 +62,7 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 		 * @return void
 		 */
 		public function register_hooks( Softone_Woocommerce_Integration_Loader $loader ) {
+			$loader->add_action( 'woocommerce_before_checkout_process', $this, 'handle_empty_cart_after_recent_order', 0, 0 );
 			$loader->add_action( 'woocommerce_before_checkout_process', $this, 'handle_before_checkout_process', 1, 0 );
 			$loader->add_action( 'woocommerce_checkout_process', $this, 'handle_checkout_process', 1, 0 );
 			$loader->add_filter( 'woocommerce_checkout_update_customer_data', $this, 'handle_checkout_update_customer_data_test_bypass', 1, 2 );
@@ -92,6 +93,43 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 				__( 'WooCommerce checkout processing started.', 'softone-woocommerce-integration' ),
 				array(
 					'hooks' => $this->inspect_checkout_hooks(),
+				)
+			);
+		}
+
+		/**
+		 * Recover duplicate checkout AJAX attempts that arrive after WooCommerce already created the order.
+		 *
+		 * @return void
+		 */
+		public function handle_empty_cart_after_recent_order() {
+			if ( ! $this->is_checkout_request() || $this->get_cart_item_count() > 0 || ! function_exists( 'wc_get_orders' ) ) {
+				return;
+			}
+
+			$order = $this->find_recent_checkout_order_for_posted_email();
+
+			if ( ! $order ) {
+				return;
+			}
+
+			$redirect = $this->get_order_redirect_url( $order );
+
+			if ( '' === $redirect ) {
+				return;
+			}
+
+			$this->order_processed = true;
+			$this->log_stage(
+				'checkout_empty_cart_order_redirect_recovered',
+				__( 'Recovered checkout redirect after WooCommerce had already processed the order.', 'softone-woocommerce-integration' ),
+				$this->build_order_context( $order )
+			);
+
+			wp_send_json(
+				array(
+					'result'   => 'success',
+					'redirect' => $redirect,
 				)
 			);
 		}
@@ -550,6 +588,62 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 			}
 
 			return (bool) WC()->cart->needs_payment();
+		}
+
+		/**
+		 * Find a very recent order for the posted checkout email.
+		 *
+		 * @return WC_Order|null
+		 */
+		protected function find_recent_checkout_order_for_posted_email() {
+			$email = isset( $_POST['billing_email'] ) ? sanitize_email( wp_unslash( $_POST['billing_email'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+
+			if ( '' === $email ) {
+				return null;
+			}
+
+			$recent_cutoff = time() - 15 * ( defined( 'MINUTE_IN_SECONDS' ) ? MINUTE_IN_SECONDS : 60 );
+			$orders        = wc_get_orders(
+				array(
+					'billing_email' => $email,
+					'limit'         => 1,
+					'orderby'       => 'date',
+					'order'         => 'DESC',
+					'return'        => 'objects',
+					'date_created'  => '>' . $recent_cutoff,
+				)
+			);
+
+			if ( empty( $orders ) || ! is_array( $orders ) ) {
+				return null;
+			}
+
+			$order = reset( $orders );
+
+			if ( ! is_object( $order ) || ! method_exists( $order, 'get_id' ) ) {
+				return null;
+			}
+
+			return $order;
+		}
+
+		/**
+		 * Get the proper frontend redirect for a recovered order.
+		 *
+		 * @param WC_Order $order Order object.
+		 *
+		 * @return string
+		 */
+		protected function get_order_redirect_url( $order ) {
+			if ( is_object( $order ) && method_exists( $order, 'needs_payment' ) && $order->needs_payment() && method_exists( $order, 'get_checkout_payment_url' ) ) {
+				return esc_url_raw( $order->get_checkout_payment_url() );
+			}
+
+			if ( is_object( $order ) && method_exists( $order, 'get_checkout_order_received_url' ) ) {
+				return esc_url_raw( $order->get_checkout_order_received_url() );
+			}
+
+			return '';
 		}
 
 		/**
