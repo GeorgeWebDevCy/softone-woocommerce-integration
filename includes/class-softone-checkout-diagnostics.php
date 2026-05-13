@@ -91,7 +91,7 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 			$loader->add_action( 'woocommerce_checkout_create_order', $this, 'handle_checkout_create_order', 1, 2 );
 			$loader->add_action( 'woocommerce_checkout_order_processed', $this, 'handle_checkout_order_processed', 1, 3 );
 			$loader->add_action( 'woocommerce_payment_complete', $this, 'handle_payment_complete', 1, 1 );
-			$loader->add_action( 'woocommerce_payment_complete', $this, 'return_checkout_success_after_payment_complete', PHP_INT_MAX, 1 );
+			$loader->add_action( 'woocommerce_payment_complete', $this, 'return_checkout_success_after_payment_complete', 2, 1 );
 			$loader->add_action( 'woocommerce_order_status_processing', $this, 'handle_order_status_processing', 1, 1 );
 			$loader->add_filter( 'woocommerce_email_enabled_new_order', $this, 'defer_checkout_order_email', 1, 2 );
 			$loader->add_filter( 'woocommerce_email_enabled_customer_processing_order', $this, 'defer_checkout_order_email', 1, 2 );
