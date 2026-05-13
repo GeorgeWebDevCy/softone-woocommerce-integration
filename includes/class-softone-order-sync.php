@@ -151,10 +151,7 @@ return;
 $not_ready_reason = $this->get_order_export_not_ready_reason( $order, $current_status );
 
 if ( '' !== $not_ready_reason ) {
-$this->log_order_event(
-'order_export_skipped_not_ready',
-__( 'Skipped SoftOne order export because the WooCommerce order is not ready for export.', 'softone-woocommerce-integration' ),
-$this->build_order_event_context(
+$not_ready_context = $this->build_order_event_context(
 $order,
 array(
 'order_id'     => $order_id,
@@ -162,7 +159,22 @@ array(
 'order_status' => $current_status,
 'reason'       => $not_ready_reason,
 )
-)
+);
+
+if ( $this->should_retry_not_ready_order_export( $not_ready_reason ) ) {
+$this->log_order_event(
+'order_export_deferred_not_ready',
+__( 'Deferred SoftOne order export because the WooCommerce order is not ready for export yet.', 'softone-woocommerce-integration' ),
+$not_ready_context
+);
+$this->schedule_order_export_retry( $order, $not_ready_reason );
+return;
+}
+
+$this->log_order_event(
+'order_export_skipped_not_ready',
+__( 'Skipped SoftOne order export because the WooCommerce order is not ready for export.', 'softone-woocommerce-integration' ),
+$not_ready_context
 );
 return;
 }
@@ -380,6 +392,23 @@ array(
             }
 
             return '';
+        }
+
+        /**
+         * Determine whether a not-ready order should be retried later.
+         *
+         * @param string $reason Not-ready reason key.
+         *
+         * @return bool
+         */
+        protected function should_retry_not_ready_order_export( $reason ) {
+            $retryable_reasons = array(
+                'missing_line_items',
+                'missing_billing_email',
+                'missing_customer_name',
+            );
+
+            return in_array( sanitize_key( (string) $reason ), $retryable_reasons, true );
         }
 
         /**
@@ -685,6 +714,19 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
                 $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
 
                 if ( empty( $rows ) ) {
+                    return $code;
+                }
+
+                $code_taken = false;
+                foreach ( $rows as $row ) {
+                    $row_code = isset( $row['CODE'] ) ? trim( (string) $row['CODE'] ) : '';
+                    if ( '' !== $row_code && strcasecmp( $row_code, $code ) === 0 ) {
+                        $code_taken = true;
+                        break;
+                    }
+                }
+
+                if ( ! $code_taken ) {
                     return $code;
                 }
 
@@ -1447,7 +1489,7 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
         }
 
         /**
-         * Schedule a follow-up export attempt when customer/TRDR creation is not ready.
+         * Schedule a follow-up export attempt when order/customer data is not ready.
          *
          * @param WC_Order $order  Order to retry.
          * @param string   $reason Retry reason.
@@ -1477,7 +1519,7 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
             if ( $retry_count >= $max_retries ) {
                 $this->log_order_event(
                     'order_export_retry_exhausted',
-                    __( 'SoftOne order export retry limit reached before customer/TRDR could be resolved.', 'softone-woocommerce-integration' ),
+                    __( 'SoftOne order export retry limit reached before the WooCommerce order was ready for export.', 'softone-woocommerce-integration' ),
                     $this->build_order_event_context( $order, array(
                         'reason'      => (string) $reason,
                         'retry_count' => $retry_count,
@@ -1499,7 +1541,7 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
 
             $this->log_order_event(
                 'order_export_retry_scheduled',
-                __( 'Scheduled SoftOne order export retry while waiting for customer/TRDR resolution.', 'softone-woocommerce-integration' ),
+                __( 'Scheduled SoftOne order export retry while waiting for the WooCommerce order to be ready.', 'softone-woocommerce-integration' ),
                 $this->build_order_event_context( $order, array(
                     'reason'      => (string) $reason,
                     'retry_count' => $retry_count,

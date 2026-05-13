@@ -16,6 +16,21 @@ if ( ! function_exists( 'sanitize_key' ) ) {
 	}
 }
 
+if ( ! function_exists( 'absint' ) ) {
+	function absint( $value ) {
+		return abs( (int) $value );
+	}
+}
+
+if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
+	class Softone_Customer_Sync {
+		const CODE_PREFIX = 'C';
+		const CODE_WIDTH = 4;
+		const CODE_RANGE_REGISTERED = '8';
+		const CODE_RANGE_GUEST = '9';
+	}
+}
+
 class WC_Order {
 	private $items;
 	private $email;
@@ -57,8 +72,26 @@ class WC_Order {
 require_once dirname( __DIR__ ) . '/includes/class-softone-order-sync.php';
 
 class Softone_Order_Sync_Readiness_Test extends Softone_Order_Sync {
+	public $fake_rows = array();
+
 	public function readiness_reason( WC_Order $order, $status ) {
 		return $this->get_order_export_not_ready_reason( $order, $status );
+	}
+
+	public function available_code( WC_Order $order, $range_digit, $seed_id ) {
+		$this->api_client = new class( $this ) {
+			private $sync;
+
+			public function __construct( $sync ) {
+				$this->sync = $sync;
+			}
+
+			public function sql_data( $query, array $filters = array() ) {
+				return array( 'rows' => $this->sync->fake_rows );
+			}
+		};
+
+		return $this->find_available_order_customer_code( $order, $range_digit, $seed_id );
 	}
 }
 
@@ -129,6 +162,19 @@ softone_order_readiness_assert(
 		'processing'
 	),
 	'Processing orders with line items and billing identity should export.'
+);
+
+$sync->fake_rows = array(
+	array(
+		'TRDR'  => '2967',
+		'CODE'  => 'C00006',
+		'EMAIL' => 'spyros@cydigitalnet.com',
+	),
+);
+
+softone_order_readiness_assert(
+	'C80044' === $sync->available_code( new WC_Order(), '8', 44 ),
+	'Unfiltered SoftOne getCustomers rows must not make every generated customer code look taken.'
 );
 
 echo "Order export readiness regression passed.\n";

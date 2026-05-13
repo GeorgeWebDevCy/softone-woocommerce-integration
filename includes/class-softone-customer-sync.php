@@ -959,6 +959,19 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
                     return $code;
                 }
 
+                $code_taken = false;
+                foreach ( $rows as $row ) {
+                    $row_code = isset( $row['CODE'] ) ? trim( (string) $row['CODE'] ) : '';
+                    if ( '' !== $row_code && strcasecmp( $row_code, $code ) === 0 ) {
+                        $code_taken = true;
+                        break;
+                    }
+                }
+
+                if ( ! $code_taken ) {
+                    return $code;
+                }
+
             }
 
             return '';
