@@ -64,6 +64,7 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 		public function register_hooks( Softone_Woocommerce_Integration_Loader $loader ) {
 			$loader->add_action( 'woocommerce_before_checkout_process', $this, 'handle_before_checkout_process', 1, 0 );
 			$loader->add_action( 'woocommerce_checkout_process', $this, 'handle_checkout_process', 1, 0 );
+			$loader->add_action( 'woocommerce_after_checkout_validation', $this, 'handle_checkout_attempt_test_bypass', 998, 2 );
 			$loader->add_action( 'woocommerce_after_checkout_validation', $this, 'handle_after_checkout_validation', 999, 2 );
 			$loader->add_action( 'woocommerce_created_customer', $this, 'handle_created_customer', 1, 3 );
 			$loader->add_action( 'woocommerce_created_customer', $this, 'handle_created_customer_hook_completed', PHP_INT_MAX, 3 );
@@ -120,6 +121,53 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 					'validation_errors'      => $this->limit_messages( $error_messages ),
 					'posted_email'           => isset( $data['billing_email'] ) ? sanitize_email( (string) $data['billing_email'] ) : '',
 					'create_account'         => isset( $data['createaccount'] ) ? (string) $data['createaccount'] : '',
+				)
+			);
+		}
+
+		/**
+		 * Remove the order-attempt throttle only for the controlled live test checkout.
+		 *
+		 * @param array    $data   Posted checkout data.
+		 * @param WP_Error $errors Validation errors.
+		 *
+		 * @return void
+		 */
+		public function handle_checkout_attempt_test_bypass( $data, $errors ) {
+			if ( ! $this->should_bypass_order_attempt_validation( $data ) || ! is_wp_error( $errors ) ) {
+				return;
+			}
+
+			$removed = array();
+
+			foreach ( $errors->get_error_codes() as $code ) {
+				$messages = $errors->get_error_messages( $code );
+
+				foreach ( $messages as $message ) {
+					if ( false === stripos( (string) $message, 'Too many order attempts' ) ) {
+						continue;
+					}
+
+					if ( method_exists( $errors, 'remove' ) ) {
+						$errors->remove( $code );
+						$removed[] = $code;
+					}
+
+					break;
+				}
+			}
+
+			if ( empty( $removed ) ) {
+				return;
+			}
+
+			$this->log_stage(
+				'checkout_order_attempt_throttle_bypassed',
+				__( 'Bypassed checkout order-attempt throttle for the controlled SoftOne test checkout.', 'softone-woocommerce-integration' ),
+				array(
+					'posted_email' => isset( $data['billing_email'] ) ? sanitize_email( (string) $data['billing_email'] ) : '',
+					'removed_codes' => array_values( array_unique( $removed ) ),
+					'coupon'       => '100george',
 				)
 			);
 		}
@@ -417,6 +465,34 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 			}
 
 			return '';
+		}
+
+		/**
+		 * Check whether this checkout is the controlled live diagnostic test.
+		 *
+		 * @param array $data Posted checkout data.
+		 *
+		 * @return bool
+		 */
+		protected function should_bypass_order_attempt_validation( array $data ) {
+			$email = isset( $data['billing_email'] ) ? sanitize_email( (string) $data['billing_email'] ) : '';
+
+			$allowed_emails = apply_filters(
+				'softone_wc_integration_checkout_attempt_bypass_emails',
+				array( 'support@georgenicolaou.me' )
+			);
+
+			$allowed_emails = is_array( $allowed_emails ) ? array_map( 'strtolower', array_map( 'sanitize_email', $allowed_emails ) ) : array();
+
+			if ( '' === $email || ! in_array( strtolower( $email ), $allowed_emails, true ) ) {
+				return false;
+			}
+
+			if ( ! function_exists( 'WC' ) || ! WC()->cart || ! method_exists( WC()->cart, 'has_discount' ) ) {
+				return false;
+			}
+
+			return (bool) WC()->cart->has_discount( '100george' );
 		}
 
 		/**
