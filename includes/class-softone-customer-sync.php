@@ -18,7 +18,7 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
         const META_TRDR     = '_softone_trdr';
         const LOGGER_SOURCE = 'softone-customer-sync';
         const CODE_PREFIX   = 'C';
-        const CODE_WIDTH    = 4;
+        const CODE_WIDTH    = 5;
         const CODE_RANGE_REGISTERED = '8';
         const CODE_RANGE_GUEST      = '9';
 
@@ -988,7 +988,7 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
         protected function format_customer_code_number( $range_digit, $number ) {
             $number = absint( $number ) % (int) pow( 10, self::CODE_WIDTH );
 
-            return sprintf( '%s%s%0' . self::CODE_WIDTH . 'd', self::CODE_PREFIX, (string) $range_digit, $number );
+            return sprintf( '%s%0' . self::CODE_WIDTH . 'd', self::CODE_PREFIX, $number );
         }
 
         /**

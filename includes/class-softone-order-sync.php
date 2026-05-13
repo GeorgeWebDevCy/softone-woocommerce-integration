@@ -747,9 +747,8 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
             $number = absint( $number ) % (int) pow( 10, Softone_Customer_Sync::CODE_WIDTH );
 
             return sprintf(
-                '%s%s%0' . Softone_Customer_Sync::CODE_WIDTH . 'd',
+                '%s%0' . Softone_Customer_Sync::CODE_WIDTH . 'd',
                 Softone_Customer_Sync::CODE_PREFIX,
-                (string) $range_digit,
                 $number
             );
         }
