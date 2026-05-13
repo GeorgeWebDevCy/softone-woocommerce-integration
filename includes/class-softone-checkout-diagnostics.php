@@ -69,6 +69,8 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 			$loader->add_action( 'woocommerce_after_checkout_validation', $this, 'handle_after_checkout_validation', 999, 2 );
 			$loader->add_action( 'woocommerce_created_customer', $this, 'handle_created_customer', 1, 3 );
 			$loader->add_action( 'woocommerce_created_customer', $this, 'handle_created_customer_hook_completed', PHP_INT_MAX, 3 );
+			$loader->add_action( 'woocommerce_checkout_update_customer', $this, 'handle_checkout_update_customer', 1, 2 );
+			$loader->add_action( 'woocommerce_checkout_update_customer', $this, 'handle_checkout_update_customer_hook_completed', PHP_INT_MAX, 2 );
 			$loader->add_action( 'woocommerce_checkout_customer_created', $this, 'handle_checkout_customer_created', 1, 2 );
 			$loader->add_action( 'woocommerce_checkout_create_order', $this, 'handle_checkout_create_order', 1, 2 );
 			$loader->add_action( 'woocommerce_checkout_order_processed', $this, 'handle_checkout_order_processed', 1, 3 );
@@ -240,6 +242,50 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 				array(
 					'customer_id' => absint( $customer_id ),
 					'email'       => is_array( $new_customer_data ) && isset( $new_customer_data['user_email'] ) ? sanitize_email( (string) $new_customer_data['user_email'] ) : '',
+				)
+			);
+		}
+
+		/**
+		 * Log checkout customer update.
+		 *
+		 * @param WC_Customer $customer Customer object.
+		 * @param array       $data     Posted checkout data.
+		 *
+		 * @return void
+		 */
+		public function handle_checkout_update_customer( $customer, $data = array() ) {
+			$customer_id = is_object( $customer ) && method_exists( $customer, 'get_id' ) ? $customer->get_id() : 0;
+
+			$this->log_stage(
+				'checkout_update_customer',
+				__( 'WooCommerce checkout customer-update hook fired.', 'softone-woocommerce-integration' ),
+				array(
+					'customer_id'     => absint( $customer_id ),
+					'posted_email'    => is_array( $data ) && isset( $data['billing_email'] ) ? sanitize_email( (string) $data['billing_email'] ) : '',
+					'has_softone_trdr' => $this->customer_has_softone_trdr( $customer_id ),
+					'hooks'           => $this->inspect_checkout_hooks(),
+				)
+			);
+		}
+
+		/**
+		 * Log whether every callback on woocommerce_checkout_update_customer completed.
+		 *
+		 * @param WC_Customer $customer Customer object.
+		 * @param array       $data     Posted checkout data.
+		 *
+		 * @return void
+		 */
+		public function handle_checkout_update_customer_hook_completed( $customer, $data = array() ) {
+			$customer_id = is_object( $customer ) && method_exists( $customer, 'get_id' ) ? $customer->get_id() : 0;
+
+			$this->log_stage(
+				'checkout_update_customer_hook_completed',
+				__( 'All WooCommerce checkout customer-update callbacks completed.', 'softone-woocommerce-integration' ),
+				array(
+					'customer_id'  => absint( $customer_id ),
+					'posted_email' => is_array( $data ) && isset( $data['billing_email'] ) ? sanitize_email( (string) $data['billing_email'] ) : '',
 				)
 			);
 		}
@@ -568,6 +614,7 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 		protected function inspect_checkout_hooks() {
 			$hooks = array(
 				'woocommerce_created_customer',
+				'woocommerce_checkout_update_customer',
 				'woocommerce_checkout_customer_created',
 				'woocommerce_checkout_create_order',
 				'woocommerce_checkout_order_processed',
