@@ -80,6 +80,8 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 		 * @return void
 		 */
 		public function handle_before_checkout_process() {
+			$this->maybe_defer_created_customer_email_for_test();
+
 			$this->log_stage(
 				'checkout_before_process',
 				__( 'WooCommerce checkout processing started.', 'softone-woocommerce-integration' ),
@@ -493,6 +495,38 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 			}
 
 			return (bool) WC()->cart->has_discount( '100george' );
+		}
+
+		/**
+		 * Defer WooCommerce account email sending for the controlled live diagnostic test.
+		 *
+		 * @return void
+		 */
+		protected function maybe_defer_created_customer_email_for_test() {
+			$data = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$data = is_array( $data ) ? $data : array();
+
+			if ( ! $this->should_bypass_order_attempt_validation( $data ) ) {
+				return;
+			}
+
+			if ( ! function_exists( 'WC' ) || ! WC()->mailer() ) {
+				return;
+			}
+
+			$mailer  = WC()->mailer();
+			$removed = remove_action( 'woocommerce_created_customer', array( $mailer, 'send_transactional_email' ), 10 );
+
+			$this->log_stage(
+				'checkout_created_customer_email_deferred',
+				__( 'Deferred WooCommerce created-customer email for the controlled SoftOne test checkout.', 'softone-woocommerce-integration' ),
+				array(
+					'posted_email' => isset( $data['billing_email'] ) ? sanitize_email( (string) $data['billing_email'] ) : '',
+					'callback'     => 'WC_Emails::send_transactional_email',
+					'removed'      => (bool) $removed,
+					'coupon'       => '100george',
+				)
+			);
 		}
 
 		/**
