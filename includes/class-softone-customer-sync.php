@@ -412,7 +412,13 @@ $this->create_customer( $customer, $context );
          * @return void
          */
 protected function create_customer( WC_Customer $customer, array $context = array() ) {
-$payload = $this->build_customer_payload( $customer );
+$code    = $this->find_available_customer_code( $customer );
+
+if ( '' === $code ) {
+return;
+}
+
+$payload = $this->build_customer_payload( $customer, null, $code );
 
 if ( empty( $payload['CUSTOMER'] ) ) {
 return;
@@ -578,7 +584,7 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
          *
          * @return array<string,array<int,array<string,string>>>
          */
-        protected function build_customer_payload( WC_Customer $customer, $trdr = null ) {
+        protected function build_customer_payload( WC_Customer $customer, $trdr = null, $code = '' ) {
             $billing_first_name = $customer->get_billing_first_name();
             $billing_last_name  = $customer->get_billing_last_name();
             $shipping_first     = method_exists( $customer, 'get_shipping_first_name' ) ? $customer->get_shipping_first_name() : '';
@@ -660,7 +666,7 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
             }
 
             $record = array(
-                'CODE'        => $this->generate_customer_code( $customer ),
+                'CODE'        => '' !== (string) $code ? (string) $code : $this->generate_customer_code( $customer ),
                 'NAME'        => $name,
                 'EMAIL'       => $customer->get_email(),
                 'PHONE01'     => $primary_phone,
@@ -682,7 +688,7 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
             $record = array_filter( $record, array( $this, 'filter_empty_value' ) );
 
             if ( empty( $record['CODE'] ) ) {
-                $record['CODE'] = $this->generate_customer_code( $customer );
+                $record['CODE'] = '' !== (string) $code ? (string) $code : $this->generate_customer_code( $customer );
             }
 
             if ( empty( $record['NAME'] ) ) {
@@ -836,7 +842,61 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
                 return '';
             }
 
-            return sprintf( '%s%s%0' . self::CODE_WIDTH . 'd', self::CODE_PREFIX, self::CODE_RANGE_REGISTERED, $id );
+            return $this->format_customer_code_number( self::CODE_RANGE_REGISTERED, $id );
+        }
+
+        /**
+         * Find a reusable or unused SoftOne customer code within the web customer range.
+         *
+         * @param WC_Customer $customer WooCommerce customer instance.
+         *
+         * @throws Softone_API_Client_Exception When API requests fail.
+         *
+         * @return string
+         */
+        protected function find_available_customer_code( WC_Customer $customer ) {
+            $id    = absint( $customer->get_id() );
+            $email = trim( (string) $customer->get_email() );
+
+            if ( $id <= 0 ) {
+                return '';
+            }
+
+            $range_size = (int) pow( 10, self::CODE_WIDTH );
+            $start      = $id % $range_size;
+
+            for ( $offset = 0; $offset < $range_size; $offset++ ) {
+                $number = ( $start + $offset ) % $range_size;
+                $code   = $this->format_customer_code_number( self::CODE_RANGE_REGISTERED, $number );
+
+                if ( '' === $code ) {
+                    continue;
+                }
+
+                $response = $this->api_client->sql_data( 'getCustomers', array( 'CODE' => $code ) );
+                $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
+
+                if ( empty( $rows ) ) {
+                    return $code;
+                }
+
+            }
+
+            return '';
+        }
+
+        /**
+         * Format a customer code inside a reserved SoftOne C range.
+         *
+         * @param string $range_digit Reserved range digit.
+         * @param int    $number      Numeric suffix.
+         *
+         * @return string
+         */
+        protected function format_customer_code_number( $range_digit, $number ) {
+            $number = absint( $number ) % (int) pow( 10, self::CODE_WIDTH );
+
+            return sprintf( '%s%s%0' . self::CODE_WIDTH . 'd', self::CODE_PREFIX, (string) $range_digit, $number );
         }
 
         /**

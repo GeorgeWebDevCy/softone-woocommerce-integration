@@ -402,7 +402,10 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
                 return $existing;
             }
 
-            $code = $this->generate_registered_customer_code( $customer_id );
+            $code = $this->find_available_order_customer_code( $order, Softone_Customer_Sync::CODE_RANGE_REGISTERED, $customer_id );
+            if ( '' === $code ) {
+                return '';
+            }
             $matched_customer = $this->find_customer_by_code( $code, $order );
 
             if ( ! empty( $matched_customer['TRDR'] ) ) {
@@ -506,12 +509,7 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
                 return '';
             }
 
-            return sprintf(
-                '%s%s%0' . Softone_Customer_Sync::CODE_WIDTH . 'd',
-                Softone_Customer_Sync::CODE_PREFIX,
-                Softone_Customer_Sync::CODE_RANGE_REGISTERED,
-                $customer_id
-            );
+            return $this->format_reserved_customer_code( Softone_Customer_Sync::CODE_RANGE_REGISTERED, $customer_id );
         }
 
         /**
@@ -528,11 +526,60 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
                 return '';
             }
 
+            return $this->find_available_order_customer_code( $order, Softone_Customer_Sync::CODE_RANGE_GUEST, $order_id );
+        }
+
+        /**
+         * Find a reusable or unused SoftOne customer code in a reserved C range.
+         *
+         * @param WC_Order $order       WooCommerce order instance.
+         * @param string   $range_digit Reserved range digit.
+         * @param int      $seed_id     Seed identifier for deterministic probing.
+         *
+         * @throws Softone_API_Client_Exception When API requests fail.
+         *
+         * @return string
+         */
+        protected function find_available_order_customer_code( WC_Order $order, $range_digit, $seed_id ) {
+            $range_size = (int) pow( 10, Softone_Customer_Sync::CODE_WIDTH );
+            $start      = absint( $seed_id ) % $range_size;
+
+            for ( $offset = 0; $offset < $range_size; $offset++ ) {
+                $number = ( $start + $offset ) % $range_size;
+                $code   = $this->format_reserved_customer_code( $range_digit, $number );
+
+                if ( '' === $code ) {
+                    continue;
+                }
+
+                $response = $this->api_client->sql_data( 'getCustomers', array( 'CODE' => $code ) );
+                $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
+
+                if ( empty( $rows ) ) {
+                    return $code;
+                }
+
+            }
+
+            return '';
+        }
+
+        /**
+         * Format a customer code that always stays inside SoftOne's C + five digits mask.
+         *
+         * @param string $range_digit Reserved range digit.
+         * @param int    $number      Numeric suffix.
+         *
+         * @return string
+         */
+        protected function format_reserved_customer_code( $range_digit, $number ) {
+            $number = absint( $number ) % (int) pow( 10, Softone_Customer_Sync::CODE_WIDTH );
+
             return sprintf(
                 '%s%s%0' . Softone_Customer_Sync::CODE_WIDTH . 'd',
                 Softone_Customer_Sync::CODE_PREFIX,
-                Softone_Customer_Sync::CODE_RANGE_GUEST,
-                $order_id
+                (string) $range_digit,
+                $number
             );
         }
 
