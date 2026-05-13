@@ -100,6 +100,13 @@ protected $order_export_logger;
 	protected $order_sync;
 
 	/**
+	 * Checkout diagnostics service instance.
+	 *
+	 * @var Softone_Checkout_Diagnostics
+	 */
+	protected $checkout_diagnostics;
+
+	/**
 	 * Shared module containing hooks used in both contexts.
 	 *
 	 * @var Softone_Woocommerce_Integration_Shared
@@ -190,6 +197,11 @@ $this->version = '1.10.47';
                 require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-customer-sync.php';
 
                 /**
+                 * Checkout lifecycle diagnostics for customer/order creation failures.
+                 */
+                require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-checkout-diagnostics.php';
+
+                /**
                  * Service class for exporting WooCommerce orders to SoftOne.
                  */
                 require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-softone-order-sync.php';
@@ -241,9 +253,11 @@ $this->item_sync           = new Softone_Item_Sync( null, null, null, $this->act
 $this->item_cron_manager   = new Softone_Item_Cron_Manager( $this->item_sync, $this->item_sync->get_logger() );
 $this->customer_sync       = new Softone_Customer_Sync( null, null, $this->order_export_logger );
 $this->order_sync          = new Softone_Order_Sync( null, $this->customer_sync, null, $this->order_export_logger );
+$this->checkout_diagnostics = new Softone_Checkout_Diagnostics( $this->order_export_logger );
                 $this->shared_module   = new Softone_Woocommerce_Integration_Shared();
 
                 $this->item_cron_manager->register_hooks( $this->loader );
+                $this->checkout_diagnostics->register_hooks( $this->loader );
                 $this->customer_sync->register_hooks( $this->loader );
                 $this->order_sync->register_hooks( $this->loader );
                 $this->shared_module->register_hooks( $this->loader );
