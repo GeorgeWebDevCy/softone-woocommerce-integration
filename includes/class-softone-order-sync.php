@@ -143,8 +143,8 @@ if ( $this->is_order_already_exported( $order ) ) {
 return;
 }
 
-if ( $this->is_checkout_ajax_request() ) {
-$this->schedule_checkout_order_export( $order );
+if ( $this->should_defer_order_export_for_request() ) {
+$this->schedule_async_order_export( $order );
 return;
 }
 
@@ -265,26 +265,30 @@ array(
         }
 
         /**
-         * Determine whether the current request is WooCommerce checkout AJAX.
+         * Determine whether the current request should only queue the SoftOne export.
          *
          * @return bool
          */
-        protected function is_checkout_ajax_request() {
-            if ( empty( $_REQUEST['wc-ajax'] ) ) {
+        protected function should_defer_order_export_for_request() {
+            if ( function_exists( 'wp_doing_cron' ) && wp_doing_cron() ) {
                 return false;
             }
 
-            return 'checkout' === sanitize_key( wp_unslash( $_REQUEST['wc-ajax'] ) );
+            if ( function_exists( 'wp_doing_ajax' ) && wp_doing_ajax() && ! empty( $_REQUEST['wc-ajax'] ) ) {
+                return true;
+            }
+
+            return ! is_admin();
         }
 
         /**
-         * Defer initial checkout-triggered exports so the customer gets the thank-you redirect promptly.
+         * Defer frontend-triggered exports so WooCommerce checkout can finish independently.
          *
          * @param WC_Order $order Order to export later.
          *
          * @return void
          */
-        protected function schedule_checkout_order_export( WC_Order $order ) {
+        protected function schedule_async_order_export( WC_Order $order ) {
             if ( ! function_exists( 'wp_schedule_single_event' ) || ! function_exists( 'wp_next_scheduled' ) ) {
                 return;
             }
@@ -301,18 +305,18 @@ array(
                 return;
             }
 
-            $default_delay = defined( 'MINUTE_IN_SECONDS' ) ? 5 * MINUTE_IN_SECONDS : 300;
-            $delay         = (int) apply_filters( 'softone_wc_integration_order_export_checkout_defer_delay', $default_delay, $order, $this );
-            $delay         = max( 300, $delay );
+            $default_delay = 10;
+            $delay         = (int) apply_filters( 'softone_wc_integration_order_export_async_delay', $default_delay, $order, $this );
+            $delay         = max( 10, $delay );
 
             wp_schedule_single_event( time() + $delay, self::CRON_HOOK_RETRY_EXPORT, $args );
 
             $this->log_order_event(
-                'order_export_deferred_from_checkout',
-                __( 'Deferred SoftOne order export until after WooCommerce checkout AJAX returns.', 'softone-woocommerce-integration' ),
+                'order_export_scheduled_async',
+                __( 'Scheduled SoftOne order export to run after WooCommerce finishes the order request.', 'softone-woocommerce-integration' ),
                 $this->build_order_event_context( $order, array(
                     'delay'   => $delay,
-                    'wc_ajax' => 'checkout',
+                    'wc_ajax' => isset( $_REQUEST['wc-ajax'] ) ? sanitize_key( wp_unslash( $_REQUEST['wc-ajax'] ) ) : '',
                 ) )
             );
         }
