@@ -287,6 +287,9 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
                     $trdr = (string) $matched_customer['TRDR'];
                     $this->current_customer_record = $matched_customer;
                     $order->update_meta_data( self::ORDER_META_TRDR, $trdr );
+                    if ( $customer_id > 0 ) {
+                        update_user_meta( $customer_id, Softone_Customer_Sync::META_TRDR, $trdr );
+                    }
                     $this->persist_order_meta( $order );
                     $this->log_order_event(
                         'customer_found_by_email',

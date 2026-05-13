@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.10.52
+Stable tag: 1.10.53
 =======
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -79,6 +79,9 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Cron_Manager::schedule_event()`.
 
 == Changelog ==
+
+= 1.10.53 =
+* Fix: Re-link recreated WooCommerce users to existing SoftOne customers by email before checking generated customer codes.
 
 = 1.10.52 =
 * Fix: Reserve C8/C9 customer code ranges for web customers and avoid reusing colliding SoftOne customer codes with different emails.

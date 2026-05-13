@@ -340,29 +340,30 @@ $this->create_customer( $customer, $context );
             $code  = $this->generate_customer_code( $customer );
             $email = $customer->get_email();
 
-            $arguments = array();
+            if ( '' !== $email ) {
+                $response = $this->api_client->sql_data( 'getCustomers', array( 'EMAIL' => $email ) );
+                $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
+
+                foreach ( $rows as $row ) {
+                    $row_email = isset( $row['EMAIL'] ) ? (string) $row['EMAIL'] : '';
+
+                    if ( strcasecmp( $row_email, $email ) === 0 ) {
+                        return $row;
+                    }
+                }
+            }
 
             if ( '' !== $code ) {
-                $arguments['CODE'] = $code;
-            }
+                $response = $this->api_client->sql_data( 'getCustomers', array( 'CODE' => $code ) );
+                $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
 
-            if ( '' !== $email ) {
-                $arguments['EMAIL'] = $email;
-            }
+                foreach ( $rows as $row ) {
+                    $row_code  = isset( $row['CODE'] ) ? (string) $row['CODE'] : '';
+                    $row_email = isset( $row['EMAIL'] ) ? (string) $row['EMAIL'] : '';
 
-            $response = $this->api_client->sql_data( 'getCustomers', $arguments );
-            $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
-
-            foreach ( $rows as $row ) {
-                $row_code  = isset( $row['CODE'] ) ? (string) $row['CODE'] : '';
-                $row_email = isset( $row['EMAIL'] ) ? (string) $row['EMAIL'] : '';
-
-                if ( '' !== $email && strcasecmp( $row_email, $email ) === 0 ) {
-                    return $row;
-                }
-
-                if ( '' !== $code && strcasecmp( $row_code, $code ) === 0 && $this->customer_row_email_is_reusable( $row_email, $email ) ) {
-                    return $row;
+                    if ( strcasecmp( $row_code, $code ) === 0 && $this->customer_row_email_is_reusable( $row_email, $email ) ) {
+                        return $row;
+                    }
                 }
             }
 
