@@ -17,6 +17,8 @@ if ( ! class_exists( 'Softone_Order_Sync' ) ) {
 
         const ORDER_META_DOCUMENT_ID = '_softone_document_id';
         const ORDER_META_TRDR        = '_softone_trdr';
+        const ORDER_META_RETRY_COUNT = '_softone_order_export_retry_count';
+        const CRON_HOOK_RETRY_EXPORT = 'softone_wc_integration_retry_order_export';
         const LOGGER_SOURCE          = 'softone-order-sync';
 
         /**
@@ -89,6 +91,8 @@ $this->logger            = $logger ?: $this->get_default_logger();
                 $hook = sprintf( 'woocommerce_order_status_%s', $status );
                 $loader->add_action( $hook, $this, 'handle_order_status_transition', 10, 1 );
             }
+
+            $loader->add_action( self::CRON_HOOK_RETRY_EXPORT, $this, 'handle_scheduled_retry', 10, 1 );
         }
 
         /**
@@ -160,6 +164,7 @@ return;
                 );
 
                 $this->add_order_note( $order, $error_message );
+                $this->schedule_order_export_retry( $order, 'customer_sync_exception' );
                 return;
             }
 
@@ -175,6 +180,7 @@ return;
                     ) )
                 );
                 $this->add_order_note( $order, __( '[SO-ORD-003] SoftOne order export skipped because a customer record could not be located.', 'softone-woocommerce-integration' ) );
+                $this->schedule_order_export_retry( $order, 'missing_trdr' );
                 return;
             }
 
@@ -213,6 +219,7 @@ array(
             $document_id = (string) $response['id'];
 
             $order->update_meta_data( self::ORDER_META_DOCUMENT_ID, $document_id );
+            $order->update_meta_data( self::ORDER_META_RETRY_COUNT, 0 );
             $this->persist_order_meta( $order );
 
             $this->add_order_note( $order, sprintf( /* translators: %s: document identifier */ __( 'SoftOne document #%s created.', 'softone-woocommerce-integration' ), $document_id ) );
@@ -220,6 +227,17 @@ array(
                 'order_id'    => $order->get_id(),
                 'document_id' => $document_id,
             ) );
+        }
+
+        /**
+         * Retry a previously deferred order export.
+         *
+         * @param int $order_id WooCommerce order identifier.
+         *
+         * @return void
+         */
+        public function handle_scheduled_retry( $order_id ) {
+            $this->handle_order_status_transition( $order_id );
         }
 
         /**
@@ -298,12 +316,28 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
             }
 
             if ( $customer_id > 0 ) {
+                $trdr = $this->ensure_registered_order_customer_trdr( $order, $customer_id );
+
+                if ( '' !== $trdr ) {
+                    $this->current_customer_record = $this->fetch_customer_by_trdr( $trdr );
+                    $order->update_meta_data( self::ORDER_META_TRDR, $trdr );
+                    $this->persist_order_meta( $order );
+                    $this->log_customer_lookup(
+                        $order,
+                        array(),
+                        $this->current_customer_record,
+                        'customer_sync'
+                    );
+
+                    return $trdr;
+                }
+
                 $trdr = $this->customer_sync->ensure_customer_trdr(
                     $customer_id,
                     array(
                         'order_id'     => $order->get_id(),
                         'order_number' => $order_number,
-                        'source'       => 'order_export',
+                        'source'       => 'order_export_fallback',
                     )
                 );
 
@@ -315,7 +349,7 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
                         $order,
                         array(),
                         $this->current_customer_record,
-                        'customer_sync'
+                        'customer_sync_fallback'
                     );
 
                     return $trdr;
@@ -339,6 +373,116 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
             }
 
             return $trdr;
+        }
+
+        /**
+         * Ensure a registered checkout customer exists in SoftOne using the order snapshot.
+         *
+         * @param WC_Order $order       Order being exported.
+         * @param int      $customer_id WooCommerce customer identifier.
+         *
+         * @throws Softone_API_Client_Exception When the API request fails.
+         *
+         * @return string
+         */
+        protected function ensure_registered_order_customer_trdr( WC_Order $order, $customer_id ) {
+            $customer_id = absint( $customer_id );
+
+            if ( $customer_id <= 0 ) {
+                return '';
+            }
+
+            $existing = get_user_meta( $customer_id, Softone_Customer_Sync::META_TRDR, true );
+            $existing = is_scalar( $existing ) ? trim( (string) $existing ) : '';
+
+            if ( '' !== $existing ) {
+                return $existing;
+            }
+
+            $code = sprintf( '%s%06d', Softone_Customer_Sync::CODE_PREFIX, $customer_id );
+            $matched_customer = $this->find_customer_by_code( $code );
+
+            if ( ! empty( $matched_customer['TRDR'] ) ) {
+                $trdr = (string) $matched_customer['TRDR'];
+                update_user_meta( $customer_id, Softone_Customer_Sync::META_TRDR, $trdr );
+
+                $this->log_customer_lookup(
+                    $order,
+                    array( 'CODE' => $code ),
+                    $matched_customer,
+                    'customer_code'
+                );
+
+                return $trdr;
+            }
+
+            $payload = $this->build_order_customer_payload( $order, $code );
+
+            if ( empty( $payload['CUSTOMER'] ) ) {
+                return '';
+            }
+
+            $this->log_order_event(
+                'order_customer_payload',
+                __( 'Prepared SoftOne customer payload from order checkout data.', 'softone-woocommerce-integration' ),
+                $this->build_order_event_context( $order, array(
+                    'customer_id' => $customer_id,
+                    'payload'     => $payload,
+                ) )
+            );
+
+            $response = $this->api_client->set_data( 'CUSTOMER', $payload );
+
+            if ( empty( $response['id'] ) ) {
+                return '';
+            }
+
+            $trdr = (string) $response['id'];
+            update_user_meta( $customer_id, Softone_Customer_Sync::META_TRDR, $trdr );
+
+            $this->log( 'info', __( 'Registered checkout customer created in SoftOne from order data.', 'softone-woocommerce-integration' ), array(
+                'order_id'    => $order->get_id(),
+                'customer_id' => $customer_id,
+                'trdr'        => $trdr,
+            ) );
+
+            return $trdr;
+        }
+
+        /**
+         * Locate a SoftOne customer by deterministic WooCommerce customer code.
+         *
+         * @param string $code SoftOne customer code.
+         *
+         * @throws Softone_API_Client_Exception When the API request fails.
+         *
+         * @return array<string,mixed>
+         */
+        protected function find_customer_by_code( $code ) {
+            $code = trim( (string) $code );
+
+            if ( '' === $code ) {
+                return array();
+            }
+
+            $response = $this->api_client->sql_data( 'getCustomers', array( 'CODE' => $code ) );
+            $rows     = isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array();
+
+            foreach ( $rows as $row ) {
+                $row_code = isset( $row['CODE'] ) ? (string) $row['CODE'] : '';
+
+                if ( '' !== $row_code && strcasecmp( $row_code, $code ) !== 0 ) {
+                    continue;
+                }
+
+                if ( empty( $row['TRDR'] ) ) {
+                    continue;
+                }
+
+                return $row;
+            }
+
+            return array();
         }
 
         /**
@@ -561,6 +705,120 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
             ) );
 
             return $trdr;
+        }
+
+        /**
+         * Build a SoftOne customer payload from the immutable order checkout data.
+         *
+         * @param WC_Order $order Order being exported.
+         * @param string   $code  Deterministic SoftOne customer code.
+         *
+         * @return array<string,array<int,array<string,mixed>>>
+         */
+        protected function build_order_customer_payload( WC_Order $order, $code ) {
+            $name = trim( implode( ' ', array_filter( array(
+                $order->get_billing_first_name(),
+                $order->get_billing_last_name(),
+            ) ) ) );
+
+            if ( '' === $name ) {
+                $name = trim( implode( ' ', array_filter( array(
+                    $order->get_shipping_first_name(),
+                    $order->get_shipping_last_name(),
+                ) ) ) );
+            }
+
+            if ( '' === $name ) {
+                $name = (string) $order->get_billing_email();
+            }
+
+            if ( '' === $name ) {
+                return array();
+            }
+
+            $country_code = strtoupper( trim( (string) $order->get_billing_country() ) );
+
+            if ( '' === $country_code && method_exists( $order, 'get_shipping_country' ) ) {
+                $country_code = strtoupper( trim( (string) $order->get_shipping_country() ) );
+            }
+
+            $softone_country = $this->resolve_order_customer_country( $order, $country_code );
+
+            if ( false === $softone_country ) {
+                return array();
+            }
+
+            $record = array(
+                'CODE'        => trim( (string) $code ),
+                'NAME'        => $name,
+                'EMAIL'       => $order->get_billing_email(),
+                'PHONE01'     => $order->get_billing_phone(),
+                'ADDRESS'     => $order->get_billing_address_1(),
+                'ADDRESS2'    => $order->get_billing_address_2(),
+                'CITY'        => $order->get_billing_city(),
+                'ZIP'         => $order->get_billing_postcode(),
+                'COUNTRY'     => $softone_country,
+                'AREAS'       => $this->api_client->get_areas(),
+                'SOCURRENCY'  => $this->api_client->get_socurrency(),
+                'TRDCATEGORY' => $this->api_client->get_trdcategory(),
+            );
+
+            $record = array_filter( $record, array( $this, 'filter_empty_value' ) );
+
+            if ( empty( $record['CODE'] ) || empty( $record['NAME'] ) ) {
+                return array();
+            }
+
+            return array(
+                'CUSTOMER' => array( $record ),
+                'CUSEXTRA' => array(
+                    array(
+                        'BOOL01' => '1', // SoftOne requires BOOL01=1 to expose WooCommerce customers in downstream apps.
+                    ),
+                ),
+            );
+        }
+
+        /**
+         * Resolve the SoftOne country identifier for order-based customer creation.
+         *
+         * @param WC_Order $order        Order being exported.
+         * @param string   $country_code ISO country code.
+         *
+         * @return string|false
+         */
+        protected function resolve_order_customer_country( WC_Order $order, $country_code ) {
+            $country_code = strtoupper( trim( (string) $country_code ) );
+
+            if ( '' === $country_code ) {
+                return '';
+            }
+
+            $softone_country = $this->customer_sync ? $this->customer_sync->map_country_to_softone_id( $country_code ) : '';
+
+            if ( '' !== $softone_country ) {
+                return $softone_country;
+            }
+
+            $this->log(
+                'error',
+                sprintf(
+                    /* translators: %s: ISO 3166-1 alpha-2 country code. */
+                    __( '[SO-CNTRY-001] SoftOne country mapping missing for ISO code %s.', 'softone-woocommerce-integration' ),
+                    $country_code
+                ),
+                array(
+                    'order_id' => $order->get_id(),
+                    'country'  => $country_code,
+                )
+            );
+
+            $this->add_order_note(
+                $order,
+                __( '[SO-ORD-011] SoftOne customer creation skipped because the country mapping is missing.', 'softone-woocommerce-integration' )
+            );
+
+            return false;
         }
 
         /**
@@ -939,6 +1197,68 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
             $attempt = max( 1, (int) $attempt );
 
             return min( 30, (int) pow( 2, $attempt - 1 ) );
+        }
+
+        /**
+         * Schedule a follow-up export attempt when customer/TRDR creation is not ready.
+         *
+         * @param WC_Order $order  Order to retry.
+         * @param string   $reason Retry reason.
+         *
+         * @return void
+         */
+        protected function schedule_order_export_retry( WC_Order $order, $reason ) {
+            if ( ! function_exists( 'wp_schedule_single_event' ) || ! function_exists( 'wp_next_scheduled' ) ) {
+                return;
+            }
+
+            $order_id = $order->get_id();
+
+            if ( $order_id <= 0 || $this->is_order_already_exported( $order ) ) {
+                return;
+            }
+
+            $args = array( $order_id );
+
+            if ( wp_next_scheduled( self::CRON_HOOK_RETRY_EXPORT, $args ) ) {
+                return;
+            }
+
+            $retry_count = absint( $order->get_meta( self::ORDER_META_RETRY_COUNT, true ) );
+            $max_retries = (int) apply_filters( 'softone_wc_integration_order_export_max_deferred_retries', 5, $order, $this );
+
+            if ( $retry_count >= $max_retries ) {
+                $this->log_order_event(
+                    'order_export_retry_exhausted',
+                    __( 'SoftOne order export retry limit reached before customer/TRDR could be resolved.', 'softone-woocommerce-integration' ),
+                    $this->build_order_event_context( $order, array(
+                        'reason'      => (string) $reason,
+                        'retry_count' => $retry_count,
+                        'max_retries' => $max_retries,
+                    ) )
+                );
+                return;
+            }
+
+            $retry_count++;
+            $order->update_meta_data( self::ORDER_META_RETRY_COUNT, $retry_count );
+            $this->persist_order_meta( $order );
+
+            $default_delay = defined( 'MINUTE_IN_SECONDS' ) ? 5 * MINUTE_IN_SECONDS : 300;
+            $delay         = (int) apply_filters( 'softone_wc_integration_order_export_deferred_retry_delay', $default_delay, $order, $retry_count, $reason, $this );
+            $delay         = max( 60, $delay );
+
+            wp_schedule_single_event( time() + $delay, self::CRON_HOOK_RETRY_EXPORT, $args );
+
+            $this->log_order_event(
+                'order_export_retry_scheduled',
+                __( 'Scheduled SoftOne order export retry while waiting for customer/TRDR resolution.', 'softone-woocommerce-integration' ),
+                $this->build_order_event_context( $order, array(
+                    'reason'      => (string) $reason,
+                    'retry_count' => $retry_count,
+                    'delay'       => $delay,
+                ) )
+            );
         }
 
         /**
