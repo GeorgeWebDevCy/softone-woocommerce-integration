@@ -17,7 +17,8 @@ if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
 
         const META_TRDR     = '_softone_trdr';
         const LOGGER_SOURCE = 'softone-customer-sync';
-        const CODE_PREFIX   = 'WEB';
+        const CODE_PREFIX   = 'C';
+        const CODE_WIDTH    = 5;
 
         /**
          * API client instance.
@@ -832,7 +833,7 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
                 return '';
             }
 
-            return sprintf( '%s%06d', self::CODE_PREFIX, $id );
+            return sprintf( '%s%0' . self::CODE_WIDTH . 'd', self::CODE_PREFIX, $id );
         }
 
         /**

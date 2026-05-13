@@ -399,8 +399,8 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
                 return $existing;
             }
 
-            $code = sprintf( '%s%06d', Softone_Customer_Sync::CODE_PREFIX, $customer_id );
-            $matched_customer = $this->find_customer_by_code( $code );
+            $code = $this->generate_registered_customer_code( $customer_id );
+            $matched_customer = $this->find_customer_by_code( $code, $order );
 
             if ( ! empty( $matched_customer['TRDR'] ) ) {
                 $trdr = (string) $matched_customer['TRDR'];
@@ -458,7 +458,7 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
          *
          * @return array<string,mixed>
          */
-        protected function find_customer_by_code( $code ) {
+        protected function find_customer_by_code( $code, ?WC_Order $order = null ) {
             $code = trim( (string) $code );
 
             if ( '' === $code ) {
@@ -479,10 +479,68 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
                     continue;
                 }
 
+                if ( $order && ! $this->customer_record_matches_order_email( $row, $order ) ) {
+                    continue;
+                }
+
                 return $row;
             }
 
             return array();
+        }
+
+        /**
+         * Generate a SoftOne customer code for registered WooCommerce customers.
+         *
+         * @param int $customer_id WooCommerce customer identifier.
+         *
+         * @return string
+         */
+        protected function generate_registered_customer_code( $customer_id ) {
+            $customer_id = absint( $customer_id );
+
+            if ( $customer_id <= 0 ) {
+                return '';
+            }
+
+            return sprintf( '%s%0' . Softone_Customer_Sync::CODE_WIDTH . 'd', Softone_Customer_Sync::CODE_PREFIX, $customer_id );
+        }
+
+        /**
+         * Generate a SoftOne customer code for guest checkout customers.
+         *
+         * @param WC_Order $order WooCommerce order instance.
+         *
+         * @return string
+         */
+        protected function generate_guest_customer_code( WC_Order $order ) {
+            $order_id = $order->get_id();
+
+            if ( $order_id <= 0 ) {
+                return '';
+            }
+
+            return sprintf( '%s%0' . Softone_Customer_Sync::CODE_WIDTH . 'd', Softone_Customer_Sync::CODE_PREFIX, $order_id );
+        }
+
+        /**
+         * Confirm a SoftOne customer row belongs to the order email before reusing a code match.
+         *
+         * @param array<string,mixed> $row   SoftOne customer row.
+         * @param WC_Order            $order WooCommerce order instance.
+         *
+         * @return bool
+         */
+        protected function customer_record_matches_order_email( array $row, WC_Order $order ) {
+            $order_email = method_exists( $order, 'get_billing_email' ) ? trim( (string) $order->get_billing_email() ) : '';
+
+            if ( '' === $order_email ) {
+                return true;
+            }
+
+            $row_email = isset( $row['EMAIL'] ) ? trim( (string) $row['EMAIL'] ) : '';
+
+            return '' !== $row_email && strcasecmp( $row_email, $order_email ) === 0;
         }
 
         /**
@@ -653,7 +711,7 @@ $trdr = (string) $order->get_meta( self::ORDER_META_TRDR, true );
             }
 
             $record = array(
-                'CODE'        => sprintf( '%sG%06d', Softone_Customer_Sync::CODE_PREFIX, $order->get_id() ),
+                'CODE'        => $this->generate_guest_customer_code( $order ),
                 'NAME'        => $name,
                 'EMAIL'       => $order->get_billing_email(),
                 'PHONE01'     => $order->get_billing_phone(),
