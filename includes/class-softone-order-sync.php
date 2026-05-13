@@ -305,9 +305,9 @@ array(
                 return;
             }
 
-            $default_delay = 10;
+            $default_delay = 120;
             $delay         = (int) apply_filters( 'softone_wc_integration_order_export_async_delay', $default_delay, $order, $this );
-            $delay         = max( 10, $delay );
+            $delay         = max( 30, $delay );
 
             wp_schedule_single_event( time() + $delay, self::CRON_HOOK_RETRY_EXPORT, $args );
 
