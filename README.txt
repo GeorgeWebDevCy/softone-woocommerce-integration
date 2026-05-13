@@ -5,7 +5,7 @@ Tags: softone, erp, woocommerce, integration, inventory, orders, api
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.10.47
+Stable tag: 1.10.48
 =======
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -79,6 +79,9 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 * **Cron events not running** – Verify WP-Cron execution by visiting `wp-cron.php` manually or configuring a real cron job. You can reschedule events programmatically via `Softone_Item_Cron_Manager::schedule_event()`.
 
 == Changelog ==
+
+= 1.10.48 =
+* Fix: Convert legacy Greek SoftOne JSON responses to UTF-8 before decoding so order export errors remain readable in logs.
 
 = 1.10.47 =
 * Change: Pull WooCommerce stock quantities from the SoftOne "Available QTY" field so storefront inventory reflects sellable stock.

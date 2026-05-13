@@ -677,20 +677,7 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 throw new Softone_API_Client_Exception( $message, 0, null, $context );
             }
 
-            $decoded = json_decode( $raw_body, true );
-
-            if ( null === $decoded && JSON_ERROR_UTF8 === json_last_error() ) {
-                $normalized_body = $this->normalize_json_encoding( $raw_body );
-
-                if ( $normalized_body !== $raw_body ) {
-                    $raw_body = $normalized_body;
-                    $decoded  = json_decode( $raw_body, true );
-                }
-
-                if ( null === $decoded && defined( 'JSON_INVALID_UTF8_SUBSTITUTE' ) ) {
-                    $decoded = json_decode( $raw_body, true, 512, JSON_INVALID_UTF8_SUBSTITUTE );
-                }
-            }
+            $decoded = $this->decode_json_response( $raw_body );
 
             if ( null === $decoded && JSON_ERROR_NONE !== json_last_error() ) {
                 $message = sprintf(
@@ -715,9 +702,40 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
         }
 
         /**
-         * Ensure the provided JSON payload is valid UTF-8.
+         * Decode a SoftOne JSON response, normalising legacy encodings when needed.
          *
-         * @param string $payload Response payload returned by SoftOne.
+         * @param string $raw_body Raw response body returned by SoftOne.
+         *
+         * @return array|null
+         */
+        protected function decode_json_response( $raw_body ) {
+            $decoded = json_decode( $raw_body, true );
+
+            if ( null !== $decoded || JSON_ERROR_UTF8 !== json_last_error() ) {
+                return $decoded;
+            }
+
+            $normalized_body = $this->normalize_json_encoding( $raw_body );
+
+            if ( $normalized_body !== $raw_body ) {
+                $decoded = json_decode( $normalized_body, true );
+
+                if ( null !== $decoded || JSON_ERROR_NONE === json_last_error() ) {
+                    return $decoded;
+                }
+            }
+
+            if ( defined( 'JSON_INVALID_UTF8_SUBSTITUTE' ) ) {
+                return json_decode( $raw_body, true, 512, JSON_INVALID_UTF8_SUBSTITUTE );
+            }
+
+            return null;
+        }
+
+        /**
+         * Convert legacy-encoded JSON responses to UTF-8 before decoding.
+         *
+         * @param string $payload Raw response payload.
          *
          * @return string
          */
@@ -726,49 +744,74 @@ if ( ! class_exists( 'Softone_API_Client' ) ) {
                 return $payload;
             }
 
+            if ( $this->is_valid_utf8( $payload ) ) {
+                return $payload;
+            }
+
+            $candidate_encodings = array( 'Windows-1253', 'CP1253', 'ISO-8859-7', 'ISO-8859-1', 'ISO-8859-15', 'Windows-1252', 'ASCII' );
+
+            foreach ( $candidate_encodings as $encoding ) {
+                $converted = $this->convert_to_utf8( $payload, $encoding );
+
+                if ( ! is_string( $converted ) || '' === $converted || ! $this->is_valid_utf8( $converted ) ) {
+                    continue;
+                }
+
+                json_decode( $converted, true );
+
+                if ( JSON_ERROR_NONE === json_last_error() ) {
+                    return $converted;
+                }
+            }
+
             if ( function_exists( 'wp_check_invalid_utf8' ) ) {
                 $checked = wp_check_invalid_utf8( $payload, true );
+
                 if ( is_string( $checked ) ) {
-                    $payload = $checked;
+                    return $checked;
                 }
             }
 
-            $encoding            = false;
-            $candidate_encodings = array( 'UTF-8', 'ISO-8859-1', 'ISO-8859-7', 'ISO-8859-15', 'Windows-1253', 'Windows-1252', 'ASCII' );
+            return $payload;
+        }
 
-            if ( function_exists( 'mb_list_encodings' ) ) {
-                $available_encodings = array_map( 'strtoupper', mb_list_encodings() );
-                $candidate_encodings = array_values( array_filter( $candidate_encodings, function( $candidate ) use ( $available_encodings ) {
-                    return in_array( strtoupper( $candidate ), $available_encodings, true );
-                } ) );
-            }
-
-            if ( function_exists( 'mb_detect_encoding' ) && function_exists( 'mb_convert_encoding' ) ) {
+        /**
+         * Convert a string from a given charset to UTF-8.
+         *
+         * @param string $payload  Raw string.
+         * @param string $encoding Source encoding.
+         *
+         * @return string|false
+         */
+        protected function convert_to_utf8( $payload, $encoding ) {
+            if ( function_exists( 'mb_convert_encoding' ) ) {
                 try {
-                    $encoding = mb_detect_encoding( $payload, $candidate_encodings, true );
-                } catch ( ValueError $exception ) {
-                    $encoding = false;
-                }
-
-                if ( $encoding && 'UTF-8' !== strtoupper( $encoding ) ) {
                     $converted = @mb_convert_encoding( $payload, 'UTF-8', $encoding );
-
-                    if ( false !== $converted ) {
-                        return $converted;
-                    }
+                } catch ( \Throwable $exception ) {
+                    $converted = false;
                 }
-            }
-
-            if ( function_exists( 'iconv' ) ) {
-                $from_encoding = ( $encoding && 'UTF-8' !== strtoupper( $encoding ) ) ? $encoding : 'UTF-8';
-                $converted     = @iconv( $from_encoding, 'UTF-8//IGNORE', $payload );
 
                 if ( false !== $converted ) {
                     return $converted;
                 }
             }
 
-            return $payload;
+            if ( function_exists( 'iconv' ) ) {
+                return @iconv( $encoding, 'UTF-8//IGNORE', $payload );
+            }
+
+            return false;
+        }
+
+        /**
+         * Determine whether a string is valid UTF-8.
+         *
+         * @param string $value String to inspect.
+         *
+         * @return bool
+         */
+        protected function is_valid_utf8( $value ) {
+            return 1 === preg_match( '//u', $value );
         }
 
         /**
