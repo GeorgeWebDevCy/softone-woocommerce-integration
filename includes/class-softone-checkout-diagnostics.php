@@ -64,6 +64,7 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 		public function register_hooks( Softone_Woocommerce_Integration_Loader $loader ) {
 			$loader->add_action( 'woocommerce_before_checkout_process', $this, 'handle_before_checkout_process', 1, 0 );
 			$loader->add_action( 'woocommerce_checkout_process', $this, 'handle_checkout_process', 1, 0 );
+			$loader->add_filter( 'woocommerce_checkout_update_customer_data', $this, 'handle_checkout_update_customer_data_test_bypass', 1, 2 );
 			$loader->add_action( 'woocommerce_after_checkout_validation', $this, 'handle_checkout_attempt_test_bypass', 998, 2 );
 			$loader->add_action( 'woocommerce_after_checkout_validation', $this, 'handle_after_checkout_validation', 999, 2 );
 			$loader->add_action( 'woocommerce_created_customer', $this, 'handle_created_customer', 1, 3 );
@@ -98,6 +99,32 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 		 */
 		public function handle_checkout_process() {
 			$this->log_stage( 'checkout_process', __( 'WooCommerce checkout process hook fired.', 'softone-woocommerce-integration' ) );
+		}
+
+		/**
+		 * Skip checkout customer profile updates only for the controlled live diagnostic test.
+		 *
+		 * @param bool  $update_customer Whether WooCommerce should update the customer object.
+		 * @param array $data            Posted checkout data.
+		 *
+		 * @return bool
+		 */
+		public function handle_checkout_update_customer_data_test_bypass( $update_customer, $data = array() ) {
+			if ( ! $this->should_bypass_order_attempt_validation( is_array( $data ) ? $data : array() ) ) {
+				return $update_customer;
+			}
+
+			$this->log_stage(
+				'checkout_customer_profile_update_bypassed',
+				__( 'Bypassed checkout customer profile update for the controlled SoftOne test checkout.', 'softone-woocommerce-integration' ),
+				array(
+					'posted_email' => isset( $data['billing_email'] ) ? sanitize_email( (string) $data['billing_email'] ) : '',
+					'original'     => (bool) $update_customer,
+					'coupon'       => '100george',
+				)
+			);
+
+			return false;
 		}
 
 		/**
