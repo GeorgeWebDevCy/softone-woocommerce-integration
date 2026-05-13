@@ -143,6 +143,25 @@ if ( $this->is_order_already_exported( $order ) ) {
 return;
 }
 
+$not_ready_reason = $this->get_order_export_not_ready_reason( $order, $current_status );
+
+if ( '' !== $not_ready_reason ) {
+$this->log_order_event(
+'order_export_skipped_not_ready',
+__( 'Skipped SoftOne order export because the WooCommerce order is not ready for export.', 'softone-woocommerce-integration' ),
+$this->build_order_event_context(
+$order,
+array(
+'order_id'     => $order_id,
+'order_number' => $order_number,
+'order_status' => $current_status,
+'reason'       => $not_ready_reason,
+)
+)
+);
+return;
+}
+
             try {
                 $trdr = $this->determine_order_trdr( $order );
             } catch ( Softone_API_Client_Exception $exception ) {
@@ -251,6 +270,54 @@ array(
             $existing = $order->get_meta( self::ORDER_META_DOCUMENT_ID, true );
 
             return is_scalar( $existing ) && '' !== (string) $existing;
+        }
+
+        /**
+         * Return why an order should not yet be exported to SoftOne.
+         *
+         * @param WC_Order $order  WooCommerce order instance.
+         * @param string   $status Current WooCommerce order status.
+         *
+         * @return string
+         */
+        protected function get_order_export_not_ready_reason( WC_Order $order, $status ) {
+            if ( 'pending' === sanitize_key( (string) $status ) ) {
+                return 'pending_checkout';
+            }
+
+            $items = method_exists( $order, 'get_items' ) ? $order->get_items( array( 'line_item' ) ) : array();
+
+            if ( empty( $items ) ) {
+                return 'missing_line_items';
+            }
+
+            $email = method_exists( $order, 'get_billing_email' ) ? trim( (string) $order->get_billing_email() ) : '';
+
+            if ( '' === $email ) {
+                return 'missing_billing_email';
+            }
+
+            $name = '';
+
+            if ( method_exists( $order, 'get_billing_first_name' ) && method_exists( $order, 'get_billing_last_name' ) ) {
+                $name = trim( implode( ' ', array_filter( array(
+                    (string) $order->get_billing_first_name(),
+                    (string) $order->get_billing_last_name(),
+                ) ) ) );
+            }
+
+            if ( '' === $name && method_exists( $order, 'get_shipping_first_name' ) && method_exists( $order, 'get_shipping_last_name' ) ) {
+                $name = trim( implode( ' ', array_filter( array(
+                    (string) $order->get_shipping_first_name(),
+                    (string) $order->get_shipping_last_name(),
+                ) ) ) );
+            }
+
+            if ( '' === $name ) {
+                return 'missing_customer_name';
+            }
+
+            return '';
         }
 
         /**
