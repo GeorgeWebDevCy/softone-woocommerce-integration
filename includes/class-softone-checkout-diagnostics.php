@@ -71,6 +71,8 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 			$loader->add_action( 'woocommerce_created_customer', $this, 'handle_created_customer_hook_completed', PHP_INT_MAX, 3 );
 			$loader->add_action( 'woocommerce_checkout_update_customer', $this, 'handle_checkout_update_customer', 1, 2 );
 			$loader->add_action( 'woocommerce_checkout_update_customer', $this, 'handle_checkout_update_customer_hook_completed', PHP_INT_MAX, 2 );
+			$loader->add_action( 'woocommerce_checkout_update_user_meta', $this, 'handle_checkout_update_user_meta', 1, 2 );
+			$loader->add_action( 'woocommerce_checkout_update_user_meta', $this, 'handle_checkout_update_user_meta_hook_completed', PHP_INT_MAX, 2 );
 			$loader->add_action( 'woocommerce_checkout_customer_created', $this, 'handle_checkout_customer_created', 1, 2 );
 			$loader->add_action( 'woocommerce_checkout_create_order', $this, 'handle_checkout_create_order', 1, 2 );
 			$loader->add_action( 'woocommerce_checkout_order_processed', $this, 'handle_checkout_order_processed', 1, 3 );
@@ -107,11 +109,14 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 		 * Skip checkout customer profile updates only for the controlled live diagnostic test.
 		 *
 		 * @param bool  $update_customer Whether WooCommerce should update the customer object.
-		 * @param array $data            Posted checkout data.
+		 * @param mixed $checkout        Checkout object.
 		 *
 		 * @return bool
 		 */
-		public function handle_checkout_update_customer_data_test_bypass( $update_customer, $data = array() ) {
+		public function handle_checkout_update_customer_data_test_bypass( $update_customer, $checkout = null ) { // phpcs:ignore VariableAnalysis.CodeAnalysis.VariableAnalysis.UnusedVariable
+			$data = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$data = is_array( $data ) ? $data : array();
+
 			if ( ! $this->should_bypass_order_attempt_validation( is_array( $data ) ? $data : array() ) ) {
 				return $update_customer;
 			}
@@ -283,6 +288,45 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 			$this->log_stage(
 				'checkout_update_customer_hook_completed',
 				__( 'All WooCommerce checkout customer-update callbacks completed.', 'softone-woocommerce-integration' ),
+				array(
+					'customer_id'  => absint( $customer_id ),
+					'posted_email' => is_array( $data ) && isset( $data['billing_email'] ) ? sanitize_email( (string) $data['billing_email'] ) : '',
+				)
+			);
+		}
+
+		/**
+		 * Log checkout user meta updates.
+		 *
+		 * @param int   $customer_id Customer identifier.
+		 * @param array $data        Posted checkout data.
+		 *
+		 * @return void
+		 */
+		public function handle_checkout_update_user_meta( $customer_id, $data = array() ) {
+			$this->log_stage(
+				'checkout_update_user_meta',
+				__( 'WooCommerce checkout user-meta update hook fired.', 'softone-woocommerce-integration' ),
+				array(
+					'customer_id'  => absint( $customer_id ),
+					'posted_email' => is_array( $data ) && isset( $data['billing_email'] ) ? sanitize_email( (string) $data['billing_email'] ) : '',
+					'hooks'        => $this->inspect_checkout_hooks(),
+				)
+			);
+		}
+
+		/**
+		 * Log whether every callback on woocommerce_checkout_update_user_meta completed.
+		 *
+		 * @param int   $customer_id Customer identifier.
+		 * @param array $data        Posted checkout data.
+		 *
+		 * @return void
+		 */
+		public function handle_checkout_update_user_meta_hook_completed( $customer_id, $data = array() ) {
+			$this->log_stage(
+				'checkout_update_user_meta_hook_completed',
+				__( 'All WooCommerce checkout user-meta update callbacks completed.', 'softone-woocommerce-integration' ),
 				array(
 					'customer_id'  => absint( $customer_id ),
 					'posted_email' => is_array( $data ) && isset( $data['billing_email'] ) ? sanitize_email( (string) $data['billing_email'] ) : '',
@@ -615,6 +659,7 @@ if ( ! class_exists( 'Softone_Checkout_Diagnostics' ) ) {
 			$hooks = array(
 				'woocommerce_created_customer',
 				'woocommerce_checkout_update_customer',
+				'woocommerce_checkout_update_user_meta',
 				'woocommerce_checkout_customer_created',
 				'woocommerce_checkout_create_order',
 				'woocommerce_checkout_order_processed',
