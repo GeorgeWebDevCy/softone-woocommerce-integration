@@ -22,6 +22,12 @@ if ( ! function_exists( 'absint' ) ) {
 	}
 }
 
+if ( ! function_exists( '__' ) ) {
+	function __( $text, $domain = 'default' ) {
+		return $text;
+	}
+}
+
 if ( ! class_exists( 'Softone_Customer_Sync' ) ) {
 	class Softone_Customer_Sync {
 		const CODE_PREFIX = 'WEB';
@@ -36,12 +42,26 @@ class WC_Order {
 	private $email;
 	private $first_name;
 	private $last_name;
+	private $id;
 
 	public function __construct( array $args = array() ) {
 		$this->items      = isset( $args['items'] ) ? $args['items'] : array();
 		$this->email      = isset( $args['email'] ) ? $args['email'] : '';
 		$this->first_name = isset( $args['first_name'] ) ? $args['first_name'] : '';
 		$this->last_name  = isset( $args['last_name'] ) ? $args['last_name'] : '';
+		$this->id         = isset( $args['id'] ) ? (int) $args['id'] : 0;
+	}
+
+	public function get_id() {
+		return $this->id;
+	}
+
+	public function get_order_number() {
+		return (string) $this->id;
+	}
+
+	public function get_customer_id() {
+		return 0;
 	}
 
 	public function get_items( $types = array() ) {
@@ -69,10 +89,12 @@ class WC_Order {
 	}
 }
 
+require_once dirname( __DIR__ ) . '/includes/class-softone-api-client.php';
 require_once dirname( __DIR__ ) . '/includes/class-softone-order-sync.php';
 
 class Softone_Order_Sync_Readiness_Test extends Softone_Order_Sync {
 	public $fake_rows = array();
+	public $sent_payloads = array();
 
 	public function readiness_reason( WC_Order $order, $status ) {
 		return $this->get_order_export_not_ready_reason( $order, $status );
@@ -92,6 +114,44 @@ class Softone_Order_Sync_Readiness_Test extends Softone_Order_Sync {
 		};
 
 		return $this->find_available_order_customer_code( $order, $range_digit, $seed_id );
+	}
+
+	public function create_customer_with_seed_fallback( array $payload ) {
+		$this->sent_payloads = array();
+		$this->api_client    = new class( $this ) {
+			private $sync;
+
+			public function __construct( $sync ) {
+				$this->sync = $sync;
+			}
+
+			public function set_data( $object, array $payload ) {
+				$this->sync->sent_payloads[] = $payload;
+				$count                       = count( $this->sync->sent_payloads );
+
+				if ( 1 === $count ) {
+					throw new Softone_API_Client_Exception( 'Ο κωδικός πρέπει να είναι μορφής C.' );
+				}
+
+				if ( 2 === $count ) {
+					throw new Softone_API_Client_Exception( 'Ο κωδικός υπάρχει ήδη.' );
+				}
+
+				return array( 'id' => '3001' );
+			}
+		};
+
+		return $this->set_customer_data_with_code_seed_fallback(
+			$payload,
+			new WC_Order(
+				array(
+					'id'         => 83726,
+					'email'      => 'customer@example.com',
+					'first_name' => 'Test',
+					'last_name'  => 'Customer',
+				)
+			)
+		);
 	}
 }
 
@@ -175,6 +235,37 @@ $sync->fake_rows = array(
 softone_order_readiness_assert(
 	'WEB00044' === $sync->available_code( new WC_Order(), '8', 44 ),
 	'Unfiltered SoftOne getCustomers rows must not make every generated customer code look taken.'
+);
+
+$response = $sync->create_customer_with_seed_fallback(
+	array(
+		'CUSTOMER' => array(
+			array(
+				'CODE' => 'WEB00050',
+				'NAME' => 'Test Customer',
+			),
+		),
+	)
+);
+
+softone_order_readiness_assert(
+	'3001' === $response['id'],
+	'Customer creation should fall back to omitting CODE when SoftOne says the literal C seed already exists.'
+);
+
+softone_order_readiness_assert(
+	'WEB00050' === $sync->sent_payloads[0]['CUSTOMER'][0]['CODE'],
+	'The first customer creation attempt should keep the documented WEB code.'
+);
+
+softone_order_readiness_assert(
+	'C' === $sync->sent_payloads[1]['CUSTOMER'][0]['CODE'],
+	'The second customer creation attempt should use SoftOne literal C seed.'
+);
+
+softone_order_readiness_assert(
+	! array_key_exists( 'CODE', $sync->sent_payloads[2]['CUSTOMER'][0] ),
+	'The third customer creation attempt should omit CODE so SoftOne can assign it.'
 );
 
 echo "Order export readiness regression passed.\n";

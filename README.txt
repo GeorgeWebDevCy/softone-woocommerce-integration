@@ -80,6 +80,9 @@ Yes. Filters such as `softone_wc_integration_order_payload`, `softone_wc_integra
 
 == Changelog ==
 
+= 1.10.79 =
+* Fix: When SoftOne reports that the literal C customer-code seed already exists, retry customer creation without CODE so the tenant default sequence can assign it.
+
 = 1.10.78 =
 * Fix: Keep documented WEB customer codes as the primary create attempt, then retry with SoftOne's literal C-code seed when the API reports the code must be form C.
 

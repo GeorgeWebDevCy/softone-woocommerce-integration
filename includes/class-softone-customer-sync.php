@@ -567,7 +567,25 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
                 $context
             );
 
-            return $this->api_client->set_data( 'CUSTOMER', $retry_payload );
+            try {
+                return $this->api_client->set_data( 'CUSTOMER', $retry_payload );
+            } catch ( Softone_API_Client_Exception $exception ) {
+                if ( ! $this->is_duplicate_customer_code_error( $exception ) || ! $this->payload_uses_literal_customer_code_seed( $retry_payload ) ) {
+                    throw $exception;
+                }
+            }
+
+            $code_less_payload = $this->build_customer_code_seed_payload_without_code( $payload );
+
+            $this->log_customer_payload(
+                'customer_code_seed_omitted_retry',
+                __( 'Retrying SoftOne customer creation without CODE after the literal C seed already existed.', 'softone-woocommerce-integration' ),
+                $customer,
+                $code_less_payload,
+                $context
+            );
+
+            return $this->api_client->set_data( 'CUSTOMER', $code_less_payload );
         }
 
         /**
@@ -583,6 +601,38 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
             }
 
             return $payload;
+        }
+
+        /**
+         * Remove the customer code so SoftOne can apply its tenant-side default sequence.
+         *
+         * @param array<string,array<int,array<string,mixed>>> $payload Customer payload.
+         *
+         * @return array<string,array<int,array<string,mixed>>>
+         */
+        protected function build_customer_code_seed_payload_without_code( array $payload ) {
+            if ( isset( $payload['CUSTOMER'][0] ) && is_array( $payload['CUSTOMER'][0] ) ) {
+                unset( $payload['CUSTOMER'][0]['CODE'] );
+            }
+
+            return $payload;
+        }
+
+        /**
+         * Check whether the payload is using SoftOne's literal C code seed.
+         *
+         * @param array<string,array<int,array<string,mixed>>> $payload Customer payload.
+         *
+         * @return bool
+         */
+        protected function payload_uses_literal_customer_code_seed( array $payload ) {
+            if ( ! isset( $payload['CUSTOMER'][0] ) || ! is_array( $payload['CUSTOMER'][0] ) ) {
+                return false;
+            }
+
+            $code = isset( $payload['CUSTOMER'][0]['CODE'] ) ? trim( (string) $payload['CUSTOMER'][0]['CODE'] ) : '';
+
+            return 'C' === strtoupper( $code );
         }
 
         /**
@@ -657,7 +707,8 @@ $this->api_client->set_data( 'CUSTOMER', $payload );
         protected function is_duplicate_customer_code_error( Softone_API_Client_Exception $exception ) {
             $message = $exception->getMessage();
 
-            return false !== stripos( $message, 'Ο κωδικός υπάρχει ήδη' );
+            return false !== stripos( $message, 'Ο κωδικός υπάρχει ήδη' )
+                || false !== stripos( $message, 'code already exists' );
         }
 
         /**
